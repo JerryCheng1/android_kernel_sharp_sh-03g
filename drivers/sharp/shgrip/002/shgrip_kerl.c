@@ -55,6 +55,8 @@
 /* ------------------------------------------------------------------------- */
 /* DEFINE                                                                    */
 /* ------------------------------------------------------------------------- */
+#define SHGRIP_ENABLE_CHECK_HORIZONTAL_AXIS
+
 /* --------------------------------------------------------- */
 /* Debug Parameter                                           */
 /* --------------------------------------------------------- */
@@ -256,6 +258,7 @@ static struct work_struct		shgrip_work_data;
 static spinlock_t shgrip_spinlock;
 static struct mutex shgrip_mutex_lock;
 static struct wake_lock shgrip_wake_lock;
+static struct wake_lock shgrip_io_wake_lock;
 
 static struct pm_qos_request shgrip_qos_cpu_dma_latency;
 
@@ -304,6 +307,44 @@ static unsigned long th_msec_tmp = 0;
 static unsigned char hrtimer_flg = 0;
 static struct wake_lock shgrip_dump_wake_lock;
 #endif /* CONFIG_ANDROID_ENGINEERING */
+
+#if defined(SHGRIP_ENABLE_CHECK_HORIZONTAL_AXIS)
+#include <sharp/shub_driver.h>
+
+enum{
+	SHGRIP_HORIZONTAL_STATE_ERR  = -1,
+	SHGRIP_HORIZONTAL_STATE_NONE = 0,
+	SHGRIP_HORIZONTAL_STATE_FACE_DOWN,
+	SHGRIP_HORIZONTAL_STATE_FACE_UP,
+	SHGRIP_HORIZONTAL_STATE_ACC_DISABLE,
+};
+
+#define SHGRIP_HORIZONTAL_AXIS_COUNT_VAL (6)
+#define SHGRIP_HORIZONTAL_AXIS_TIMER_VAL (10*1000) // ms
+
+static struct delayed_work shgrip_horizontal_axis_check_work;
+
+static int shgrip_horizontal_axis_check_flg   = 1;
+static int shgrip_horizontal_axis_check_count = SHGRIP_HORIZONTAL_AXIS_COUNT_VAL;
+static int shgrip_horizontal_axis_check_time  = SHGRIP_HORIZONTAL_AXIS_TIMER_VAL;
+static int shgrip_horizontal_axis_log = 0;
+
+static int shgrip_horizontal_axis_counter = 0;
+
+#if defined (CONFIG_ANDROID_ENGINEERING)
+module_param(shgrip_horizontal_axis_check_flg,   int, 0600);
+module_param(shgrip_horizontal_axis_check_count, int, 0600);
+module_param(shgrip_horizontal_axis_check_time,  int, 0600);
+module_param(shgrip_horizontal_axis_log,         int, 0600);
+#endif /* CONFIG_ANDROID_ENGINEERING */
+
+#define SHGRIP_H_AXIS_LOG(fmt, args...) \
+		if(shgrip_horizontal_axis_log == 1) { \
+			printk("[SHGRIP_H_AXIS][%s] " fmt, __func__, ## args); \
+		}
+
+static void shgrip_horizontal_axis_timer_stop(void);
+#endif /* SHGRIP_ENABLE_CHECK_HORIZONTAL_AXIS */
 
 /* ------------------------------------------------------------------------- */
 /* MACROS                                                                    */
@@ -573,6 +614,11 @@ static int shgrip_suspend(struct spi_device *spi, pm_message_t mesg)
 		shgrip_sys_disable_irq();
 		shgrip_sys_enable_irq_wake();
 	}
+	
+#if defined(SHGRIP_ENABLE_CHECK_HORIZONTAL_AXIS)
+	SHGRIP_H_AXIS_LOG("shgrip_horizontal_axis_timer_stop\n");
+	shgrip_horizontal_axis_timer_stop();
+#endif /* SHGRIP_ENABLE_CHECK_HORIZONTAL_AXIS */
 	
 	mutex_unlock(&shgrip_mutex_lock);
 	
@@ -2014,6 +2060,11 @@ static int shgrip_seq_grip_sensor_off(void)
 	
 	SHGRIP_DBG("start\n");
 	
+#if defined(SHGRIP_ENABLE_CHECK_HORIZONTAL_AXIS)
+	SHGRIP_H_AXIS_LOG("shgrip_horizontal_axis_timer_stop\n");
+	shgrip_horizontal_axis_timer_stop();
+#endif /* SHGRIP_ENABLE_CHECK_HORIZONTAL_AXIS */
+	
 	if ((shgrip_status == SHGRIP_STATE_POWER_OFF)
 	 || (shgrip_status == SHGRIP_STATE_HALT_MODE)
 	 || (shgrip_status == SHGRIP_STATE_FW_DL)) {
@@ -2952,6 +3003,226 @@ static int shgrip_ioctl_set_reset(void)
 	return GRIP_RESULT_SUCCESS;
 }
 
+
+/* ========================================================================= */
+/* SHGRIP Host Tuning Function                                               */
+/* ========================================================================= */
+#if defined(SHGRIP_ENABLE_CHECK_HORIZONTAL_AXIS)
+/* ------------------------------------------------------------------------- */
+/* shgrip_horizontal_axis_timer_stop                                         */
+/* ------------------------------------------------------------------------- */
+static void shgrip_horizontal_axis_timer_stop(void)
+{
+	cancel_delayed_work(&shgrip_horizontal_axis_check_work);
+	shgrip_horizontal_axis_counter = 0;
+	return;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shgrip_horizontal_axis_timer_start                                        */
+/* ------------------------------------------------------------------------- */
+static void shgrip_horizontal_axis_timer_start(void)
+{
+	cancel_delayed_work(&shgrip_horizontal_axis_check_work);
+	queue_delayed_work(shgrip_work_queue, &shgrip_horizontal_axis_check_work, 
+						msecs_to_jiffies(shgrip_horizontal_axis_check_time));
+	return;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shgrip_horizontal_axis_calc_data                                          */
+/* ------------------------------------------------------------------------- */
+static int shgrip_horizontal_axis_calc_data(void)
+{
+	struct shub_face_acc_info acc_data;
+	int ret;
+
+	memset(&acc_data, 0, sizeof(struct shub_face_acc_info));
+
+#if 1
+	ret = shub_api_get_face_check_info(&acc_data);
+	if(ret != 0){
+		SHGRIP_ERR("shub_api_get_face_down_info failed. ret:%d\n", ret);
+		return SHGRIP_HORIZONTAL_STATE_ERR;
+	}
+	
+	SHGRIP_H_AXIS_LOG("horizontal_axis, status:%d, judge;%d, x:%d, y:%d, z:%d\n", 
+				acc_data.nStat, acc_data.nJudge, acc_data.nX, acc_data.nY, acc_data.nZ);
+	
+	if (acc_data.nStat == 0) {
+		SHGRIP_ERR("shub status failed\n");
+		return SHGRIP_HORIZONTAL_STATE_ACC_DISABLE;
+	}
+	
+	if (acc_data.nJudge == 1) {
+		return SHGRIP_HORIZONTAL_STATE_FACE_DOWN;
+	} else if (acc_data.nJudge == 2) {
+		return SHGRIP_HORIZONTAL_STATE_FACE_UP;
+	} else {
+		return SHGRIP_HORIZONTAL_STATE_NONE;
+	}
+#else
+	ret = shub_api_get_face_down_info(&acc_data);
+	if(ret != 0){
+		SHGRIP_ERR("shub_api_get_face_down_info failed. ret:%d\n", ret);
+		return SHGRIP_HORIZONTAL_STATE_ERR;
+	}
+	
+	SHGRIP_H_AXIS_LOG("horizontal_axis, status:%d, x:%d, y:%d, z:%d\n", 
+				acc_data.nStat, acc_data.nX, acc_data.nY, acc_data.nZ);
+	
+	if (acc_data.nStat == 0) {
+		SHGRIP_ERR("shub status failed\n");
+		return SHGRIP_HORIZONTAL_STATE_ACC_DISABLE;
+	}
+	
+	if (((acc_data.nX > -50)   && (acc_data.nX < 50))
+	&&  ((acc_data.nY > -50)   && (acc_data.nY < 50))
+	&&  ((acc_data.nZ > -1100) && (acc_data.nZ < -900))) {
+		SHGRIP_H_AXIS_LOG("horizontal_axis, face_down\n");
+		return SHGRIP_HORIZONTAL_STATE_FACE_DOWN;
+	}
+
+	if (((acc_data.nX > -50) && (acc_data.nX < 50))
+	&&  ((acc_data.nY > -50) && (acc_data.nY < 50))
+	&&  ((acc_data.nZ > 900) && (acc_data.nZ < 1100))) {
+		SHGRIP_H_AXIS_LOG("horizontal_axis, face_up\n");
+		return SHGRIP_HORIZONTAL_STATE_FACE_UP;
+	}
+	
+	return SHGRIP_HORIZONTAL_STATE_NONE;
+#endif
+}
+
+/* ------------------------------------------------------------------------- */
+/* shgrip_horizontal_axis_recovery                                           */
+/* ------------------------------------------------------------------------- */
+static int shgrip_horizontal_axis_recovery(void)
+{
+	int ret = 0;
+	
+	SHGRIP_DBG("start\n");
+	
+	ret = shgrip_seq_start_app();
+	if (ret) {
+		SHGRIP_ERR("shgrip_seq_start_app err. ret=%d\n", ret);
+		return -1;
+	}
+	
+	ret = shgrip_cmd_chenr(SHGRIP_OFF);
+	if (ret) {
+		SHGRIP_ERR("shgrip_cmd_chenr off err. ret=%d\n", ret);
+		return -1;
+	}
+	
+	ret = shgrip_cmd_chenr(SHGRIP_ON);
+	if (ret) {
+		SHGRIP_ERR("shgrip_cmd_chenr err. ret=%d\n", ret);
+		return -1;
+	}
+	
+	shgrip_status = SHGRIP_STATE_SENSOR_ON;
+	
+	return 0;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shgrip_horizontal_axis_grip_force_off                                     */
+/* ------------------------------------------------------------------------- */
+static void shgrip_horizontal_axis_grip_force_off(void)
+{
+	input_report_switch(shgrip_input, SW_GRIP_00, SHGRIP_OFF);
+	input_sync(shgrip_input);
+	
+#ifndef SHGRIP_FACTORY_MODE_ENABLE
+	msm_tps_set_grip_state(SHGRIP_OFF);
+#endif /* SHGRIP_FACTORY_MODE_ENABLE */
+}
+
+/* ------------------------------------------------------------------------- */
+/* shgrip_horizontal_axis_check_func                                         */
+/* ------------------------------------------------------------------------- */
+static void shgrip_horizontal_axis_check_func(struct work_struct *work)
+{
+	int i = 0;
+	int ret = 0;
+	
+	mutex_lock(&shgrip_mutex_lock);
+	
+	SHGRIP_H_AXIS_LOG("start\n");
+	
+	if (!shgrip_horizontal_axis_check_flg) {
+		shgrip_horizontal_axis_timer_stop();
+		goto shgrip_work_func_done;
+	}
+	
+	if (shgrip_suspend_state) {
+		SHGRIP_WARN("Already Suspended\n");
+		goto shgrip_work_func_done;
+	}
+
+	switch (shgrip_status) { 
+	case SHGRIP_STATE_SENSOR_ON:
+		ret = shgrip_horizontal_axis_calc_data();
+		switch (ret) {
+		case SHGRIP_HORIZONTAL_STATE_ERR:
+			shgrip_horizontal_axis_timer_start();
+			break;
+		case SHGRIP_HORIZONTAL_STATE_FACE_DOWN:
+		case SHGRIP_HORIZONTAL_STATE_FACE_UP:
+			shgrip_horizontal_axis_counter++;
+			if (shgrip_horizontal_axis_counter >= shgrip_horizontal_axis_check_count) {
+				SHGRIP_ERR("shgrip_horizontal_axis, recovery start\n");
+				for(i = 0; i < 3; i++) {
+					ret = shgrip_horizontal_axis_recovery();
+					if (ret) {
+						SHGRIP_ERR("shgrip_horizontal_axis, recovery Err, retry:%d\n", i);
+					} else {
+						break;
+					}
+				}
+				if (ret) {
+					SHGRIP_ERR("shgrip_horizontal_axis, retry over\n");
+					shgrip_sys_disable_irq();
+					shgrip_sys_disable_irq_wake();
+					shgrip_seq_grip_power_off();
+				}
+				
+				shgrip_horizontal_axis_grip_force_off();
+				shgrip_horizontal_axis_counter = 0;
+				
+			} else {
+				SHGRIP_H_AXIS_LOG("shgrip_horizontal_axis_counter:%d\n", shgrip_horizontal_axis_counter);
+				shgrip_horizontal_axis_timer_start();
+			}
+			break;
+		case SHGRIP_HORIZONTAL_STATE_NONE:
+			shgrip_horizontal_axis_counter = 0;
+			shgrip_horizontal_axis_timer_start();
+			break;
+		case SHGRIP_HORIZONTAL_STATE_ACC_DISABLE:
+		default:
+			shgrip_horizontal_axis_timer_stop();
+			break;
+		}
+		break;
+	case SHGRIP_STATE_POWER_OFF:
+	case SHGRIP_STATE_SENSOR_OFF:
+	case SHGRIP_STATE_FW_DL:
+	case SHGRIP_STATE_HALT_MODE:
+	default:
+		SHGRIP_WARN("state is changed state:%d\n", shgrip_status); 
+		shgrip_horizontal_axis_timer_stop();
+		break;
+	}
+	
+shgrip_work_func_done:
+	mutex_unlock(&shgrip_mutex_lock);
+	return;
+}
+#endif /* SHGRIP_ENABLE_CHECK_HORIZONTAL_AXIS */
+
+
 /* ========================================================================= */
 /* SHGRIP Input Event Function                                               */
 /* ========================================================================= */
@@ -3046,6 +3317,18 @@ recovery_done:
 	input_sync(shgrip_input);
 	
 	SHGRIP_DBG("input_event sync code:0x%04X, onoff:%d\n", code, ch_state.state_grip);
+	
+#if defined(SHGRIP_ENABLE_CHECK_HORIZONTAL_AXIS)
+	if (ch_state.state_grip == SHGRIP_ON) {
+		if (shgrip_horizontal_axis_check_flg) {
+			SHGRIP_H_AXIS_LOG("shgrip_horizontal_axis_timer_start\n");
+			shgrip_horizontal_axis_timer_start();
+		}
+	} else {
+		SHGRIP_H_AXIS_LOG("shgrip_horizontal_axis_timer_stop\n");
+		shgrip_horizontal_axis_timer_stop();
+	}
+#endif /* SHGRIP_ENABLE_CHECK_HORIZONTAL_AXIS */
 	
 #ifndef SHGRIP_FACTORY_MODE_ENABLE
 	if ((ch_state.state_grip == SHGRIP_ON) 
@@ -3283,9 +3566,11 @@ static int shgrip_open(struct inode *inode, struct file *file)
 	int ret = 0;
 	
 	mutex_lock(&shgrip_mutex_lock);
+	wake_lock(&shgrip_io_wake_lock);
 	
 	if (!shgrip_dev_connect) {
 		SHGRIP_ERR("Grip Sensor Device not connected\n");
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_mutex_lock);
 		return -1;
 	}
@@ -3309,6 +3594,7 @@ static int shgrip_open(struct inode *inode, struct file *file)
 		break;
 	}
 	
+	wake_unlock(&shgrip_io_wake_lock);
 	mutex_unlock(&shgrip_mutex_lock);
 	return ret;
 }
@@ -3321,9 +3607,11 @@ static int shgrip_close(struct inode *inode, struct file *file)
 	int ret = 0;
 
 	mutex_lock(&shgrip_mutex_lock);
+	wake_lock(&shgrip_io_wake_lock);
 	
 	if (!shgrip_dev_connect) {
 		SHGRIP_ERR("Grip Sensor Device not connected\n");
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_mutex_lock);
 		return -1;
 	}
@@ -3355,6 +3643,7 @@ static int shgrip_close(struct inode *inode, struct file *file)
 	msm_tps_set_grip_state(SHGRIP_OFF);
 #endif /* SHGRIP_FACTORY_MODE_ENABLE */
 	
+	wake_unlock(&shgrip_io_wake_lock);
 	mutex_unlock(&shgrip_mutex_lock);
 	return 0;
 }
@@ -3389,11 +3678,13 @@ static long shgrip_ioctl(struct file *file, unsigned int cmd,
 	void __user *argp = (void __user*)arg;
 	
 	mutex_lock(&shgrip_mutex_lock);
+	wake_lock(&shgrip_io_wake_lock);
 	
 	SHGRIP_INFO("start, cmd:%d\n", (cmd & 0x000000FF));
 	
 	if (!shgrip_dev_connect) {
 		SHGRIP_ERR("Grip Sensor Device not connected\n");
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_mutex_lock);
 		return GRIP_RESULT_FAILURE;
 	}
@@ -3452,6 +3743,7 @@ static long shgrip_ioctl(struct file *file, unsigned int cmd,
 	
 	SHGRIP_INFO("end, cmd:%d, ret=%d\n", (cmd & 0x000000FF), ret);
 	
+	wake_unlock(&shgrip_io_wake_lock);
 	mutex_unlock(&shgrip_mutex_lock);
 	return ret;
 }
@@ -3787,6 +4079,9 @@ static int shgrip_drv_init(void)
 	shgrip_work_queue = create_singlethread_workqueue("shgrip_workqueue");
 	if (shgrip_work_queue) {
 		INIT_WORK(&shgrip_work_data, shgrip_work_func);
+#if defined( SHGRIP_ENABLE_CHECK_HORIZONTAL_AXIS )
+		INIT_DELAYED_WORK(&shgrip_horizontal_axis_check_work, shgrip_horizontal_axis_check_func);
+#endif /* SHGRIP_ENABLE_CHECK_HORIZONTAL_AXIS */
 #ifdef CONFIG_ANDROID_ENGINEERING
 		INIT_WORK(&th_work_data, shgrip_th_dump_func);
 #endif /* CONFIG_ANDROID_ENGINEERING */
@@ -3800,6 +4095,7 @@ static int shgrip_drv_init(void)
 	mutex_init(&shgrip_mutex_lock);
 	spin_lock_init(&shgrip_spinlock);
 	wake_lock_init(&shgrip_wake_lock, WAKE_LOCK_SUSPEND, "shgrip_wake_lock");
+	wake_lock_init(&shgrip_io_wake_lock, WAKE_LOCK_SUSPEND, "shgrip_io_wake_lock");
 #ifdef CONFIG_ANDROID_ENGINEERING
 	wake_lock_init(&shgrip_dump_wake_lock, WAKE_LOCK_SUSPEND, "shgrip_dump_wake_lock");
 #endif /* CONFIG_ANDROID_ENGINEERING */
@@ -3913,6 +4209,9 @@ static void __exit shgrip_exit(void)
 	shgrip_drv_exit();
 	
 	pm_qos_remove_request(&shgrip_qos_cpu_dma_latency);
+	
+	wake_unlock(&shgrip_io_wake_lock);
+	wake_lock_destroy(&shgrip_io_wake_lock);
 	
 	wake_unlock(&shgrip_wake_lock);
 	wake_lock_destroy(&shgrip_wake_lock);

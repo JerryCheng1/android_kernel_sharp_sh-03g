@@ -600,6 +600,18 @@ module_param(dbg_level, int, 0600);
 #define APP_PEDOMETER2_2            0x12            // SHMDS_HUB_1201_02 add
 #define APP_PEDOMETER_N             (0x81)			// SHMDS_HUB_0204_02 add
 
+/* SHMDS_HUB_1302_01 add S */
+#define SHUB_FACE_CHECK_X_MIN        (-50)
+#define SHUB_FACE_CHECK_X_MAX        (50)
+#define SHUB_FACE_CHECK_Y_MIN        (-50)
+#define SHUB_FACE_CHECK_Y_MAX        (50)
+#define SHUB_FACE_CHECK_Z_MIN_DOWN   (-1100)
+#define SHUB_FACE_CHECK_Z_MAX_DOWN   (-900)
+#define SHUB_FACE_CHECK_Z_MIN_UP     (900)
+#define SHUB_FACE_CHECK_Z_MAX_UP     (1100)
+/* SHMDS_HUB_1302_01 add E */
+
+
 ///////////////////////////////////////
 // union
 ///////////////////////////////////////
@@ -985,13 +997,13 @@ int shub_api_get_face_down_info(struct shub_face_acc_info *info)
         return SHUB_RC_ERR;
     }
     
-    if((iCurrentSensorEnable & (SHUB_ACTIVE_ACC | SHUB_ACTIVE_SHEX_ACC)) == 0){
+    if(((iCurrentSensorEnable & (SHUB_ACTIVE_ACC | SHUB_ACTIVE_SHEX_ACC)) == 0) || s_is_suspend){ /* SHMDS_HUB_1301_02 add */
         info->nJudge = 0;
         info->nStat = 0;
         info->nX = 0;
         info->nY = 0;
         info->nZ = 0;
-        DBG(DBG_LV_DATA, "get_face_info( Judge=0, stat=0(0x%x), XYZ=0 )\n", iCurrentSensorEnable);
+        DBG(DBG_LV_DATA, "get_face_info( Judge=0, stat=0(0x%x), XYZ=0, is_suspend=%d )\n", iCurrentSensorEnable, s_is_suspend);
         return SHUB_RC_OK;
     }
     
@@ -999,9 +1011,9 @@ int shub_api_get_face_down_info(struct shub_face_acc_info *info)
     Y = s_tLatestAccData.nY;
     Z = s_tLatestAccData.nZ;
     
-    if((-50 < X) && (X < 50)
-    && (-50 < Y) && (Y < 50)
-    && (-1100 < Z) && (Z < -900)){
+    if((SHUB_FACE_CHECK_X_MIN < X) && (X < SHUB_FACE_CHECK_X_MAX)
+    && (SHUB_FACE_CHECK_Y_MIN < Y) && (Y < SHUB_FACE_CHECK_Y_MAX)
+    && (SHUB_FACE_CHECK_Z_MIN_DOWN < Z) && (Z < SHUB_FACE_CHECK_Z_MAX_DOWN)){
         judge = 1;
     }
     
@@ -1014,6 +1026,54 @@ int shub_api_get_face_down_info(struct shub_face_acc_info *info)
     return SHUB_RC_OK;
 }
 // SHMDS_HUB_1301_01 add E
+
+/* SHMDS_HUB_1302_01 add S */
+int shub_api_get_face_check_info(struct shub_face_acc_info *info)
+{
+    int judge = 0;
+    int32_t X,Y,Z;
+    int32_t iCurrentSensorEnable = atomic_read(&g_CurrentSensorEnable);
+    
+    if(info == NULL){
+        DBG(DBG_LV_ERROR, "get_face_check Parameter Null Error!!\n");
+        return SHUB_RC_ERR;
+    }
+    
+    if(((iCurrentSensorEnable & (SHUB_ACTIVE_ACC | SHUB_ACTIVE_SHEX_ACC)) == 0) || s_is_suspend){
+        info->nJudge = 0;
+        info->nStat = 0;
+        info->nX = 0;
+        info->nY = 0;
+        info->nZ = 0;
+        DBG(DBG_LV_DATA, "get_face_check( Judge=0, stat=0(0x%x), XYZ=0, is_suspend=%d )\n", iCurrentSensorEnable, s_is_suspend);
+        return SHUB_RC_OK;
+    }
+    
+    X = s_tLatestAccData.nX;
+    Y = s_tLatestAccData.nY;
+    Z = s_tLatestAccData.nZ;
+    
+    if((SHUB_FACE_CHECK_X_MIN < X) && (X < SHUB_FACE_CHECK_X_MAX)
+    && (SHUB_FACE_CHECK_Y_MIN < Y) && (Y < SHUB_FACE_CHECK_Y_MAX)
+    && (SHUB_FACE_CHECK_Z_MIN_DOWN < Z) && (Z < SHUB_FACE_CHECK_Z_MAX_DOWN)){
+        judge = 1;
+    }
+    
+    if((SHUB_FACE_CHECK_X_MIN < X) && (X < SHUB_FACE_CHECK_X_MAX)
+    && (SHUB_FACE_CHECK_Y_MIN < Y) && (Y < SHUB_FACE_CHECK_Y_MAX)
+    && (SHUB_FACE_CHECK_Z_MIN_UP < Z) && (Z < SHUB_FACE_CHECK_Z_MAX_UP)){
+        judge = 2;
+    }
+    
+    info->nJudge = judge;
+    info->nStat = 1;
+    info->nX = X;
+    info->nY = Y;
+    info->nZ = Z;
+    DBG(DBG_LV_DATA, "get_face_check( Judge=%d, stat=1(0x%x), X[%d] Y[%d] Z[%d] )\n", judge, iCurrentSensorEnable, X,Y,Z);
+    return SHUB_RC_OK;
+}
+/* SHMDS_HUB_1302_01 add E */
 
 // SHMDS_HUB_0402_01 add S
 static void shub_wake_lock_init(void)

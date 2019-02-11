@@ -6622,8 +6622,6 @@ static int shdisp_input_subsystem_report(int val)
     input_report_abs(shdisp_input_dev, ABS_MISC, 0x00);
     input_sync(shdisp_input_dev);
 
-    wake_unlock(&shdisp_timeout_wake_lock);
-
     SHDISP_TRACE("out");
     return ret;
 }

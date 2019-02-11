@@ -374,8 +374,8 @@ module_param_string(pack_date, pack_date, sizeof(pack_date), 0644);
 static char						pack_line[] = "00";
 module_param_string(pack_line, pack_line, sizeof(pack_line), 0644);
 
-static uint16_t					pack_manu_num;
-module_param(pack_manu_num, ushort, 0644);
+static char						pack_manu_num[] = "0000";
+module_param_string(pack_manu_num, pack_manu_num, sizeof(pack_manu_num), 0644);
 
 #endif /* CONFIG_PM_SUPPORT_BATT_TRACEABILITY */
 
