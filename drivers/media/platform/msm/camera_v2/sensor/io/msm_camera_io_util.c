@@ -23,7 +23,13 @@
 #define BUFF_SIZE_128 128
 
 #undef CDBG
+/* SHLOCAL_CAMERA_DRIVERS-> */
+#if 0
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
+#else
+#define CDBG(fmt, args...) do { } while (0)
+#endif
+/* SHLOCAL_CAMERA_DRIVERS<- */
 
 void msm_camera_io_w(u32 data, void __iomem *addr)
 {

@@ -12,18 +12,23 @@ country 00:
 	(5250 - 5330 @ 80), (3, 20), PASSIVE-SCAN, NO-IBSS
 	(5490 - 5710 @ 80), (3, 20), PASSIVE-SCAN, NO-IBSS
 	# NB: 5260 MHz - 5700 MHz requies DFS
-	# Channel 149 - 165
-	(5735 - 5835 @ 80), (3, 20), PASSIVE-SCAN, NO-IBSS
-	# IEEE 802.11ad (60GHz), channels 1..3
-	(57240 - 63720 @ 2160), (N/A, 0)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## Channel 149 - 165
+	#(5735 - 5835 @ 80), (3, 20), PASSIVE-SCAN, NO-IBSS
+	## IEEE 802.11ad (60GHz), channels 1..3
+	#(57240 - 63720 @ 2160), (N/A, 0)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 
 country AE:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country AF: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -59,31 +64,42 @@ country AR:
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
 	(5490 - 5590 @ 80), (6, 24), DFS
-	(5650 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5650 - 5730 @ 80), (6, 24), DFS
+	(5650 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country AS:
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5850 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5850 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country AT: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country AU:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
 	(5490 - 5590 @ 80), (6, 24), DFS
-	(5650 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5650 - 5730 @ 80), (6, 24), DFS
+	(5650 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country AW:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -101,47 +117,62 @@ country BA: DFS-ETSI
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country BB:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (3, 23)
 	(5250 - 5330 @ 80), (3, 23), DFS
-	(5735 - 5835 @ 80), (3, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (3, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country BD:
 	(2402 - 2482 @ 40), (N/A, 20)
-	(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country BE: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country BF:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (3, 24)
 	(5250 - 5330 @ 80), (3, 24), DFS
-	(5490 - 5730 @ 80), (3, 24), DFS
-	(5735 - 5835 @ 80), (3, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (3, 24), DFS
+	(5490 - 5710 @ 80), (3, 24), DFS
+	#(5735 - 5835 @ 80), (3, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country BG: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country BH:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 20), (N/A, 20)
 	(5250 - 5330 @ 20), (N/A, 20), DFS
-	(5735 - 5835 @ 20), (N/A, 20)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 20), (N/A, 20)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country BL:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -153,33 +184,46 @@ country BM:
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country BN:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
-	(5735 - 5835 @ 80), (N/A, 20)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 20)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country BO:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 30), DFS
-	(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country BR:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country BS:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country BT: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -195,22 +239,30 @@ country BY:
 
 country BZ:
 	(2402 - 2482 @ 40), (N/A, 30)
-	(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country CA:
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
 	(5490 - 5590 @ 80), (6, 24), DFS
-	(5650 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5650 - 5730 @ 80), (6, 24), DFS
+	(5650 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country CF:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 40), (6, 24)
 	(5250 - 5330 @ 40), (6, 24), DFS
-	(5490 - 5730 @ 40), (6, 24), DFS
-	(5735 - 5835 @ 40), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 40), (6, 24), DFS
+	(5490 - 5710 @ 40), (6, 24), DFS
+	#(5735 - 5835 @ 40), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country CH:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -222,54 +274,72 @@ country CI:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country CL:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
-	(5735 - 5835 @ 80), (N/A, 20)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 20)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country CN:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 23)
 	(5250 - 5330 @ 80), (6, 23), DFS
-	(5735 - 5835 @ 80), (6, 30)
-	# 60 gHz band channels 1,4: 28dBm, channels 2,3: 44dBm
-	# ref: http://www.miit.gov.cn/n11293472/n11505629/n11506593/n11960250/n11960606/n11960700/n12330791.files/n12330790.pdf
-	(57240 - 59400 @ 2160), (N/A, 28)
-	(59400 - 63720 @ 2160), (N/A, 44)
-	(63720 - 65880 @ 2160), (N/A, 28)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (6, 30)
+	## 60 gHz band channels 1,4: 28dBm, channels 2,3: 44dBm
+	## ref: http://www.miit.gov.cn/n11293472/n11505629/n11506593/n11960250/n11960606/n11960700/n12330791.files/n12330790.pdf
+	#(57240 - 59400 @ 2160), (N/A, 28)
+	#(59400 - 63720 @ 2160), (N/A, 44)
+	#(63720 - 65880 @ 2160), (N/A, 28)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country CO:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country CR:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 20), (6, 24)
 	(5250 - 5330 @ 20), (6, 24), DFS
-	(5490 - 5730 @ 20), (6, 24), DFS
-	(5735 - 5835 @ 20), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 20), (6, 24), DFS
+	(5490 - 5710 @ 20), (6, 24), DFS
+	#(5735 - 5835 @ 20), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country CX:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country CY: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 # Data from http://www.ctu.eu/164/download/VOR/VOR-12-08-2005-34.pdf
 # and http://www.ctu.eu/164/download/VOR/VOR-12-05-2007-6-AN.pdf
@@ -280,8 +350,10 @@ country CZ: DFS-ETSI
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 # Data from "Frequenznutzungsplan" (as published in April 2008), downloaded from
 # http://www.bundesnetzagentur.de/cae/servlet/contentblob/38448/publicationFile/2659/Frequenznutzungsplan2008_Id17448pdf.pdf
@@ -301,28 +373,36 @@ country DE: DFS-ETSI
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country DK: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country DM:
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 17)
 	(5250 - 5330 @ 80), (6, 23), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country DO:
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 17)
 	(5250 - 5330 @ 80), (6, 23), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country DZ:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -334,16 +414,21 @@ country EC:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 20), (6, 24)
 	(5250 - 5330 @ 20), (6, 24), DFS
-	(5490 - 5730 @ 20), (6, 24), DFS
-	(5735 - 5835 @ 20), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 20), (6, 24), DFS
+	(5490 - 5710 @ 20), (6, 24), DFS
+	#(5735 - 5835 @ 20), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country EE: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country EG:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -351,12 +436,14 @@ country EG:
 	(5250 - 5330 @ 40), (N/A, 20), DFS
 
 country ES: DFS-ETSI
-	(2402 - 2482 @ 40),(N/A, 20)
-	(5170 - 5250 @ 80),(N/A, 20)
-	(5250 - 5330 @ 80),(N/A, 20), DFS
-	(5490 - 5710 @ 80),(N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	(2402 - 2482 @ 40), (N/A, 20)
+	(5170 - 5250 @ 80), (N/A, 20)
+	(5250 - 5330 @ 80), (N/A, 20), DFS
+	(5490 - 5710 @ 80), (N/A, 27), DFS
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country ET: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -369,45 +456,59 @@ country FI: DFS-ETSI
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country FM:
 	(2402 - 2472 @ 40), (3, 30)
 	(5170 - 5250 @ 80), (3, 24)
 	(5250 - 5330 @ 80), (3, 24), DFS
-	(5490 - 5730 @ 80), (3, 24), DFS
-	(5735 - 5835 @ 80), (3, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (3, 24), DFS
+	(5490 - 5710 @ 80), (3, 24), DFS
+	#(5735 - 5835 @ 80), (3, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country FR: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country GB: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country GD:
 	(2402 - 2472 @ 40), (3, 30)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country GE:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 18)
 	(5250 - 5330 @ 80), (N/A, 18), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country GF:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -419,8 +520,11 @@ country GH:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country GL: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -439,8 +543,10 @@ country GR: DFS-ETSI
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country GT:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -452,62 +558,84 @@ country GU:
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5170 - 5250 @ 20), (6, 24)
 	(5250 - 5330 @ 20), (6, 24), DFS
-	(5490 - 5730 @ 20), (6, 24), DFS
-	(5735 - 5835 @ 20), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 20), (6, 24), DFS
+	(5490 - 5710 @ 20), (6, 24), DFS
+	#(5735 - 5835 @ 20), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country GY:
 	(2402 - 2482 @ 40), (N/A, 30)
-	(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country HK:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country HN:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country HR: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country HT:
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country HU: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country ID:
 	# ref: http://www.postel.go.id/content/ID/regulasi/standardisasi/kepdir/bwa%205,8%20ghz.pdf
-	(2402 - 2482 @ 40), (N/A, 30)
-	(5735 - 5815 @ 80), (N/A, 30)
+	(2402 - 2482 @ 20), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5815 @ 20), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country IE: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country IL:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -518,54 +646,73 @@ country IN:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
-	(5735 - 5835 @ 80), (N/A, 20)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 20)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country IR:
 	(2402 - 2482 @ 40), (N/A, 20)
-	(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country IS: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country IT: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country JM:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country JO:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 23)
-	(5735 - 5835 @ 80), (N/A, 23)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 23)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country JP:
 	(2402 - 2482 @ 40), (N/A, 20)
-	#[WLAN][SHARP] 2015.07.16 Disable 14ch Start
+	#[WLAN][SHARP] Customize Start
+	#              2015.07.16 Disable 14ch
+	#              2016.01.28 Modify the Japan regulatory rules
 	#	(2474 - 2494 @ 20), (N/A, 20), NO-OFDM
-	#[WLAN][SHARP] 2015.07.16 Disable 14ch End
+	#(5170 - 5250 @ 80), (N/A, 20), NO-OUTDOOR
+	#(5250 - 5330 @ 80), (N/A, 20), NO-OUTDOOR, DFS
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
+	#[WLAN][SHARP] Customize End
 	(5490 - 5710 @ 80), (N/A, 20), DFS
 
 country KE:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 23)
 	(5490 - 5570 @ 80), (N/A, 30), DFS
-	(5735 - 5775 @ 40), (N/A, 23)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5775 @ 40), (N/A, 23)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country KH:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -578,14 +725,18 @@ country KN:
 	(5170 - 5250 @ 80), (6, 20)
 	(5250 - 5330 @ 80), (6, 20), DFS
 	(5490 - 5710 @ 80), (6, 30), DFS
-	(5735 - 5815 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5815 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country KR:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 20)
 	(5250 - 5330 @ 80), (6, 20), DFS
 	(5490 - 5630 @ 80), (6, 30), DFS
-	(5735 - 5815 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5815 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country KW:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -596,8 +747,11 @@ country KY:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country KZ:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -606,15 +760,20 @@ country LB:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country LC:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 20)
 	(5250 - 5330 @ 80), (6, 20), DFS
 	(5490 - 5710 @ 80), (6, 30), DFS
-	(5735 - 5815 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5815 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country LI: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -626,8 +785,11 @@ country LK:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 20), (6, 24)
 	(5250 - 5330 @ 20), (6, 24), DFS
-	(5490 - 5730 @ 20), (6, 24), DFS
-	(5735 - 5835 @ 20), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 20), (6, 24), DFS
+	(5490 - 5710 @ 20), (6, 24), DFS
+	#(5735 - 5835 @ 20), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country LS: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -640,24 +802,30 @@ country LT: DFS-ETSI
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country LU: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country LV: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country MA:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -692,34 +860,47 @@ country MH: DFS-FCC
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country MK: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country MN:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6,	30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6,	30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country MO:
 	(2402 - 2482 @ 40), (N/A, 20)
-	(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country MP:
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6,	24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6,	24), DFS
+	(5490 - 5710 @ 80), (6,	24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country MQ: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -738,21 +919,28 @@ country MT: DFS-ETSI
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country MU:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country MV:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
-	(5735 - 5835 @ 80), (N/A, 20)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 20)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country MW:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -764,55 +952,74 @@ country MX:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country MY:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 17)
 	(5250 - 5330 @ 80), (6, 23), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country NG:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 30), DFS
-	(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country NI:
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6,	24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6,	24), DFS
+	(5490 - 5710 @ 80), (6,	24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country NL: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country NO: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country NP:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
-	(5735 - 5835 @ 80), (N/A, 20)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 20)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country NZ:
 	(2402 - 2482 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country OM:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -824,14 +1031,19 @@ country PA:
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 17)
 	(5250 - 5330 @ 80), (6, 23), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country PE:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country PF:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -843,27 +1055,37 @@ country PG:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country PH:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country PK:
 	(2402 - 2482 @ 40), (N/A, 20)
-	(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country PL: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country PM: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -875,41 +1097,56 @@ country PR:
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 # Public Safety FCCA, FCC4
 #  27dBm [4.9GHz 1/4 rate], 30dBm [1/2 rate], 33dBm [full rate], and 5GHz same as FCC1
 #  db.txt cannot express the limitation on 5G so disable all 5G channels for FCC4
 country PS:
 	(2402 - 2472 @ 40), (N/A, 30)
-	(4940 - 4990 @ 40), (6, 33)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(4940 - 4990 @ 40), (6, 33)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country PT: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country PW:
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country PY:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country QA:
 	(2402 - 2482 @ 40), (N/A, 20)
-	(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country RE:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -922,8 +1159,10 @@ country RO: DFS-ETSI
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 # Source:
 # http://www.ratel.rs/upload/documents/Plan_namene/Plan_namene-sl_glasnik.pdf
@@ -932,22 +1171,29 @@ country RS:
 	(5170 - 5250 @ 80), (N/A, 20)
         (5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (3, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country RU:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 40), (N/A, 20)
 	(5250 - 5330 @ 40), (N/A, 20), DFS
 	(5650 - 5710 @ 40), (N/A, 30), DFS
-	(5735 - 5835 @ 40), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 40), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country RW:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country SA:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -960,38 +1206,50 @@ country SE: DFS-ETSI
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country SG:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country SI: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country SK: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country SN:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country SR: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -1003,7 +1261,9 @@ country SV:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 20), (3, 17)
 	(5250 - 5330 @ 20), (3, 23), DFS
-	(5735 - 5835 @ 20), (3, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 20), (3, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country SY:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -1012,8 +1272,11 @@ country TC:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country TD:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -1031,8 +1294,11 @@ country TH:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country TN:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -1044,26 +1310,36 @@ country TR: DFS-ETSI
 	(5170 - 5250 @ 80), (N/A, 20)
 	(5250 - 5330 @ 80), (N/A, 20), DFS
 	(5490 - 5710 @ 80), (N/A, 27), DFS
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country TT:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country TW:
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5270 - 5330 @ 40), (6, 17)
 	(5490 - 5590 @ 80), (6, 17), DFS
-	(5650 - 5730 @ 80), (6, 30), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5650 - 5730 @ 80), (6, 30), DFS
+	(5650 - 5710 @ 80), (6, 30), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country TZ:
 	(2402 - 2482 @ 40), (N/A, 20)
-	(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (N/A, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 # Source:
 # #914 / 06 Sep 2007: http://www.ucrf.gov.ua/uk/doc/nkrz/1196068874
@@ -1077,34 +1353,45 @@ country UA:
 	(5170 - 5250 @ 40), (N/A, 20)
 	(5250 - 5330 @ 40), (N/A, 20), DFS
 	(5490 - 5670 @ 40), (N/A, 30), DFS
-	(5735 - 5835 @ 40), (N/A, 30)
-	# 60 gHz band channels 1-4, ref: Etsi En 302 567
-	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 40), (N/A, 30)
+	## 60 gHz band channels 1-4, ref: Etsi En 302 567
+	#(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country UG:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-        (5490 - 5730 @ 80), (6, 24), DFS
-        (5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+    #    (5490 - 5730 @ 80), (6, 24), DFS
+        (5490 - 5710 @ 80), (6, 24), DFS
+    #    (5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country US: DFS-FCC
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
-	# 60g band
-	# reference: http://cfr.regstoday.com/47cfr15.aspx#47_CFR_15p255
-	# channels 1,2,3, EIRP=40dBm(43dBm peak)
-	(57240 - 63720 @ 2160), (N/A, 40)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	## 60g band
+	## reference: http://cfr.regstoday.com/47cfr15.aspx#47_CFR_15p255
+	## channels 1,2,3, EIRP=40dBm(43dBm peak)
+	#(57240 - 63720 @ 2160), (N/A, 40)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country UY:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country UZ:
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -1121,28 +1408,39 @@ country VE:
 	(2402 - 2482 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 23)
         (5250 - 5330 @ 80), (6, 23), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country VI:
 	(2402 - 2472 @ 40), (N/A, 30)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country VN:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country VU:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-	(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+	#(5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country WF: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -1169,8 +1467,11 @@ country ZA:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(5170 - 5250 @ 80), (6, 24)
 	(5250 - 5330 @ 80), (6, 24), DFS
-	(5490 - 5730 @ 80), (6, 24), DFS
-        (5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels Start
+	#(5490 - 5730 @ 80), (6, 24), DFS
+	(5490 - 5710 @ 80), (6, 24), DFS
+    #    (5735 - 5835 @ 80), (6, 30)
+	#[WLAN][SHARP] 2015.08.31 Disable unsupported channels End
 
 country ZW:
 	(2402 - 2482 @ 40), (N/A, 20)

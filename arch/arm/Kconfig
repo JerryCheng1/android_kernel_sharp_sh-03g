@@ -2333,6 +2333,13 @@ config NEON
 	  Say Y to include support code for NEON, the ARMv7 Advanced SIMD
 	  Extension.
 
+config KERNEL_MODE_NEON
+	bool "Support for NEON in kernel mode"
+	default n
+	depends on NEON
+	help
+	  Say Y to include support for NEON in kernel mode.
+
 endmenu
 
 menu "Userspace binary formats"
@@ -2381,3 +2388,16 @@ source "crypto/Kconfig"
 source "lib/Kconfig"
 
 source "arch/arm/kvm/Kconfig"
+
+config SHSYS_CUST
+       bool "SHARP SYSTEM CUSTOMIZE"
+       default n
+
+config SHSYS_CUST_DEBUG
+       depends on SHSYS_CUST
+       default y
+       bool "SHARP SYSTEM CUSTOMIZE DEBUG"
+
+config SH_SLEEP_LOG
+       bool "SHARP CUSTOMIZE SLEEP LOG"
+       default y

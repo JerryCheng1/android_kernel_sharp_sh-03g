@@ -118,12 +118,6 @@ enum {
 };
 
 enum {
-    SHDISP_IRQ_NO_MASK,
-    SHDISP_IRQ_MASK,
-    NUM_SHDISP_IRQ_SWITCH
-};
-
-enum {
     SHDISP_PIERCE_STATE_REMOVE = 0,
     SHDISP_PIERCE_STATE_INSERT
 };
@@ -180,240 +174,12 @@ int shdisp_api_get_main_disp_status(void);
 void shdisp_api_get_boot_context(void);
 int shdisp_api_get_boot_disp_status(void);
 
-
-#ifdef CONFIG_USES_SHLCDC
-/* ------------------------------------------------------------------------- */
-/* MACROS                                                                    */
-/* ------------------------------------------------------------------------- */
-#define SHDISP_LCDDR_GAMMA_STATUS_OK            0x96
-#define SHDISP_LCDDR_GAMMA_STATUS_OK_2          0x97
-
-enum {
-     SHDISP_PANEL_POWER_NORMAL_ON,
-     SHDISP_PANEL_POWER_RECOVERY_ON
-};
-
-enum {
-     SHDISP_PANEL_POWER_NORMAL_OFF,
-     SHDISP_PANEL_POWER_RECOVERY_OFF,
-     SHDISP_PANEL_POWER_SHUTDOWN_OFF
-};
-
-enum {
-    SHDISP_LCDC_TRV_REQ_STOP,
-    SHDISP_LCDC_TRV_REQ_START,
-    SHDISP_LCDC_TRV_REQ_SET_PARAM,
-    NUM_SHDISP_LCDC_TRV_REQ
-};
-enum {
-    SHDISP_LCDC_TRV_STRENGTH_00,
-    SHDISP_LCDC_TRV_STRENGTH_01,
-    SHDISP_LCDC_TRV_STRENGTH_02,
-    NUM_SHDISP_LCDC_TRV_STRENGTH
-};
-enum {
-    SHDISP_LCDC_TRV_ADJUST_00,
-    SHDISP_LCDC_TRV_ADJUST_01,
-    SHDISP_LCDC_TRV_ADJUST_02,
-    SHDISP_LCDC_TRV_ADJUST_03,
-    SHDISP_LCDC_TRV_ADJUST_04,
-    SHDISP_LCDC_TRV_ADJUST_05,
-    SHDISP_LCDC_TRV_ADJUST_06,
-    SHDISP_LCDC_TRV_ADJUST_07,
-    SHDISP_LCDC_TRV_ADJUST_08,
-    SHDISP_LCDC_TRV_ADJUST_09,
-    SHDISP_LCDC_TRV_ADJUST_10,
-    SHDISP_LCDC_TRV_ADJUST_11,
-    SHDISP_LCDC_TRV_ADJUST_12,
-    NUM_SHDISP_LCDC_TRV_ADJUST
-};
-
-enum {
-    SHDISP_LCDC_FLICKER_TRV_OFF,
-    SHDISP_LCDC_FLICKER_TRV_ON,
-    NUM_SHDISP_LCDC_FLICKER_TRV_REQUEST
-};
-enum {
-    SHDISP_LCDC_FLICKER_TRV_COLUMN,
-    SHDISP_LCDC_FLICKER_TRV_DOT1H,
-    SHDISP_LCDC_FLICKER_TRV_DOT2H,
-    NUM_SHDISP_LCDC_FLICKER_TRV_TYPE,
-};
-
-enum {
-    SHDISP_MAIN_DISP_DBC_MODE_OFF,
-    SHDISP_MAIN_DISP_DBC_MODE_DBC,
-    NUM_SHDISP_MAIN_DISP_DBC_MODE
-};
-
-enum {
-    SHDISP_MAIN_DISP_DBC_AUTO_MODE_OFF,
-    SHDISP_MAIN_DISP_DBC_AUTO_MODE_ON,
-    NUM_SHDISP_MAIN_DISP_DBC_AUTO_MODE
-};
-
-enum {
-    SHDISP_MAIN_DISP_AE_TIME_DAYTIME,
-    SHDISP_MAIN_DISP_AE_TIME_MIDNIGHT,
-    SHDISP_MAIN_DISP_AE_TIME_MORNING,
-    NUM_SHDISP_MAIN_DISP_AE_TIME
-};
-
-enum {
-    SHDISP_LCDC_PIC_ADJ_AP_NORMAL,
-    SHDISP_LCDC_PIC_ADJ_AP_1SEG,
-    SHDISP_LCDC_PIC_ADJ_AP_ONLINE_MOVIE,
-    SHDISP_LCDC_PIC_ADJ_AP_HOME,
-    SHDISP_LCDC_PIC_ADJ_AP_CAM,
-    NUM_SHDISP_LCDC_PIC_ADJ_AP
-};
-
-enum {
-    SHDISP_PANEL_INIT_SUCCESS,
-    SHDISP_PANEL_INIT_FAILURE,
-    SHDISP_PANEL_INIT_NOINIT,
-};
-
-/* ------------------------------------------------------------------------- */
-/* TYPES                                                                     */
-/* ------------------------------------------------------------------------- */
-enum {
-    SHDISP_IRQ_TYPE_PALS,
-    SHDISP_IRQ_TYPE_PS,
-    SHDISP_IRQ_TYPE_DET,
-    NUM_SHDISP_IRQ_TYPE
-};
-
-enum {
-    SHDISP_LEDC_PWR_STATUS_OFF,
-    SHDISP_LEDC_PWR_STATUS_ON,
-    NUM_SHDISP_LEDC_PWR_STATUS
-};
-
-enum {
-    SHDISP_MAIN_BKL_CHG_OFF,
-    SHDISP_MAIN_BKL_CHG_ON,
-    SHDISP_MAIN_BKL_CHG_ON_BRIGHT,
-    NUM_SHDISP_MAIN_BKL_CHG
-};
-
-enum {
-    SHDISP_BDIC_DISABLE,
-    SHDISP_BDIC_ENABLE,
-    NUM_SHDISP_BDIC
-};
-
-enum {
-    SHDISP_LCDC_DISABLE,
-    SHDISP_LCDC_ENABLE,
-    NUM_SHDISP_LCDC
-};
-
-enum {
-    SHDISP_BLACKSCREEN_TYPE_T10,
-    SHDISP_BLACKSCREEN_TYPE_T30,
-    NUM_SHDISP_BLACKSCREEN_TYPE
-};
-
-struct shdisp_diag_fw_cmd {
-    unsigned short  cmd;
-    unsigned short  write_count;
-    unsigned char   write_val[512];
-    unsigned short  read_count;
-    unsigned char   read_val[16];
-};
-
-struct shdisp_main_update {
-    void *buf;
-    unsigned short src_width;
-    unsigned short src_xps;
-    unsigned short src_yps;
-    unsigned short upd_xsz;
-    unsigned short upd_ysz;
-    unsigned short dst_xps;
-    unsigned short dst_yps;
-};
-
-struct shdisp_main_clear {
-    unsigned long color;
-    unsigned short start_xps;
-    unsigned short start_yps;
-    unsigned short end_xps;
-    unsigned short end_yps;
-};
-
-#if defined(CONFIG_SHDISP_PANEL_GEMINI)
-    #define SHDISP_TRV_DATA_MAX    (100 * 1024)
-#else
-    #define SHDISP_TRV_DATA_MAX    (100 * 1024)
-#endif
-
-struct shdisp_clmr_trv_info {
-    int            status;
-    int            strength;
-    int            adjust;
-    unsigned int   data_size;
-    unsigned short hw;
-    unsigned short y_size;
-    unsigned char  data[SHDISP_TRV_DATA_MAX];
-};
-struct shdisp_trv_data_header {
-    unsigned int   data_size;
-    unsigned short hw;
-    unsigned short y_size;
-    unsigned int   reserve[2];
-};
-
-struct shdisp_main_pic_adj {
-    int mode;
-};
-
-struct shdisp_trv_param {
-    int            request;
-    int            strength;
-    int            adjust;
-    unsigned char  *data;
-};
-
-struct shdisp_main_ae {
-    unsigned char time;
-};
-
-struct shdisp_flicker_trv {
-    int request;
-    unsigned char level;
-    unsigned char type;
-};
-
-struct shdisp_main_drive_freq {
-    int freq;
-};
-
-struct shdisp_check_cabc_val {
-    int old_mode;
-    int old_lut;
-    int mode;
-    int lut;
-    int change;
-};
-
-/* ------------------------------------------------------------------------- */
-/* PROTOTYPES                                                                */
-/* ------------------------------------------------------------------------- */
-int shdisp_api_main_pll_ctl(int ctl);
-
-#else /* CONFIG_USES_SHLCDC */
-enum {
-    SHDISP_MAIN_BKL_CHG_OFF,
-    SHDISP_MAIN_BKL_CHG_ON,
-    NUM_SHDISP_MAIN_BKL_CHG
-};
-
 enum {
     SHDISP_IRQ_TYPE_ALS,
     SHDISP_IRQ_TYPE_PS,
     SHDISP_IRQ_TYPE_DET,
     SHDISP_IRQ_TYPE_I2CERR,
+    SHDISP_IRQ_TYPE_ALS_REQ,
     NUM_SHDISP_IRQ_TYPE
 };
 
@@ -430,8 +196,8 @@ int shdisp_api_do_mipi_dsi_det_recovery(void);
 int shdisp_api_insert_sp_pierce(void);
 int shdisp_api_remove_sp_pierce(void);
 int shdisp_api_tri_led_set_color(struct shdisp_tri_led *tri_led);
-
-#endif /* CONFIG_USES_SHLCDC */
+void shdisp_api_pre_blank_notify(void);
+int shdisp_api_set_freq_param(struct shdisp_freq_params *freq);
 
 int shdisp_API_get_usb_info(void);
 

@@ -198,6 +198,8 @@ static ssize_t shproc_sysfs_store( struct kobject *kobj, struct attribute *attr,
             IS_ERR(p->files->fdt)                       ||
             p->files->fdt->fd[i] == NULL                ||
             IS_ERR(p->files->fdt->fd[i])                ||
+            &(p->files->fdt->fd[i]->f_path) == NULL     ||
+            IS_ERR(&(p->files->fdt->fd[i]->f_path))     ||
             p->files->fdt->fd[i]->f_path.dentry == NULL ||
             IS_ERR(p->files->fdt->fd[i]->f_path.dentry) ){
             continue;

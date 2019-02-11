@@ -37,60 +37,10 @@ config MMC_EMMC_CUST_SH
 	depends on MMC_CUST_SH
 	default n
 
-config ERR_DETECT_EMMC_CUST_SH
-	bool "SHARP eMMC error detect customized"
+config FFU_EMMC_CUST_SH
+	bool "SHARP eMMC customization for ffu"
 	depends on MMC_EMMC_CUST_SH
 	default n
-
-config RW_PROTECT_EMMC_CUST_SH
-	bool "SHARP eMMC read/write protect customized"
-	depends on MMC_EMMC_CUST_SH
-	default n
-
-config TIMEOUTCTRL_EMMC_CUST_SH
-	bool "SHARP eMMC timeout control customized"
-	depends on MMC_EMMC_CUST_SH
-	default n
-
-config HS200_TUNING_EMMC_CUST_SH
-	bool "SHARP eMMC HS200 tuning customized"
-	depends on MMC_EMMC_CUST_SH
-	default n
-
-config PM_EMMC_CUST_SH
-	bool "SHARP eMMC power management customized"
-	depends on MMC_EMMC_CUST_SH
-	default n
-
-config PROTECT_MULTIPLE_CLOCK_OFF_EMMC_CUST_SH
-	bool "SHARP eMMC customization for duplication of clock off sequence"
-	depends on PM_EMMC_CUST_SH
-	default n
-
-config DISCARD_EMMC_CUST_SH
-	bool "SHARP eMMC discard customized"
-	depends on MMC_EMMC_CUST_SH
-	default n
-
-config CLKGATE_TIME_EMMC_CUST_SH
-	bool "SHARP eMMC clkgate time customized"
-	depends on MMC_EMMC_CUST_SH
-	default n
-
-config KEEP_CLK_SCALING_PARAM_EMMC_CUST_SH
-	bool "SHARP eMMC keep parameters of clk scaling customized"
-	depends on MMC_EMMC_CUST_SH
-	default n
-
-config INVALIDATE_CACHE_CTRL_EMMC_CUST_SH
-	bool "SHARP eMMC customization for invalidating cache control"
-	depends on MMC_EMMC_CUST_SH
-	default n
-
-config MAX_PACKED_SECTORS_EMMC_CUST_SH
-	int "SHARP eMMC customization for maximum sectors in a packed request"
-	depends on MMC_EMMC_CUST_SH
-	default 8192
 
 config DRIVESTRENGTH_EMMC_CUST_SH
 	bool "SHARP eMMC customization for drive strength"
@@ -115,18 +65,96 @@ config HS_DRIVER_TYPE_EMMC_CUST_SH
 	range 0 4
 	default 0
 
-config HS400_TUNING_EMMC_CUST_SH
-	bool "SHARP eMMC customization for HS400 tuning"
-	depends on MMC_EMMC_CUST_SH
-	default n
-
 config MMC_BUG_FIX_CUST_SH
 	bool "SHARP eMMC customization for bug fix"
 	depends on MMC_EMMC_CUST_SH
 	default n
 
-config FFU_EMMC_CUST_SH
-	bool "SHARP eMMC customization for ffu"
+config TIMEOUTCTRL_EMMC_CUST_SH
+	bool "SHARP eMMC customization for timeout control"
+	depends on MMC_EMMC_CUST_SH
+	default n
+
+config HS200_TUNING_EMMC_CUST_SH
+	bool "SHARP eMMC customization for HS200 tuning"
+	depends on MMC_EMMC_CUST_SH
+	default n
+
+config HS200_TUNING_RETRY_EMMC_CUST_SH
+	bool "SHARP eMMC customization for retry in HS200 tuning"
+	depends on HS200_TUNING_EMMC_CUST_SH
+	default n
+
+config HS200_ALL_PHASE_PASS_EMMC_CUST_SH
+	bool "SHARP eMMC customization for all phase pass in tuning"
+	depends on HS200_TUNING_EMMC_CUST_SH
+	default n
+
+config DEFAULT_PHASE_TYPE_EMMC_CUST_SH
+	int "SHARP eMMC customization for default phase type"
+	depends on HS200_ALL_PHASE_PASS_EMMC_CUST_SH
+	range 0 15
+	default 10
+
+config HS400_TUNING_EMMC_CUST_SH
+	bool "SHARP eMMC customization for HS400 tuning"
+	depends on HS200_TUNING_EMMC_CUST_SH
+	default n
+	help
+	 Do not set 'Y' if the host or device don't support HS400
+
+config KEEP_CLK_SCALING_PARAM_EMMC_CUST_SH
+	bool "SHARP eMMC customization for keep parameters of clk scaling"
+	depends on MMC_EMMC_CUST_SH
+	default n
+
+config MAX_PACKED_SECTORS_EMMC_CUST_SH
+	int "SHARP eMMC customization for maximum sectors in a packed request"
+	depends on MMC_EMMC_CUST_SH
+	default 8192
+
+config DISCARD_EMMC_CUST_SH
+	bool "SHARP eMMC customization for discard"
+	depends on MMC_EMMC_CUST_SH
+	default n
+
+config CLKGATE_TIME_EMMC_CUST_SH
+	bool "SHARP eMMC customization for clkgate time"
+	depends on MMC_EMMC_CUST_SH
+	default n
+
+config INVALIDATE_CACHE_CTRL_EMMC_CUST_SH
+	bool "SHARP eMMC customization for invalidating cache control"
+	depends on MMC_EMMC_CUST_SH
+	default n
+
+config ERR_DETECT_EMMC_CUST_SH
+	bool "SHARP eMMC customization for error detect"
+	depends on MMC_EMMC_CUST_SH
+	default n
+
+config PM_EMMC_CUST_SH
+	bool "SHARP eMMC customization for power management"
+	depends on MMC_EMMC_CUST_SH
+	default n
+
+config PROTECT_MULTIPLE_CLOCK_OFF_EMMC_CUST_SH
+	bool "SHARP eMMC customization for duplication of clock off sequence"
+	depends on PM_EMMC_CUST_SH
+	default n
+
+config RW_PROTECT_EMMC_CUST_SH
+	bool "SHARP eMMC customization for read/write protect"
+	depends on MMC_EMMC_CUST_SH
+	default n
+
+config RW_PROTECT_TYPE_EMMC_CUST_SH
+	bool "SHARP eMMC customization for change read/write protect type"
+	depends on RW_PROTECT_EMMC_CUST_SH
+	default n
+
+config HS_STATUS_EMMC_CUST_SH
+	bool "SHARP eMMC customization for shdiag command to tuning"
 	depends on MMC_EMMC_CUST_SH
 	default n
 
@@ -135,13 +163,13 @@ config MMC_SD_CUST_SH
 	depends on MMC_CUST_SH
 	default n
 
-config MMC_SD_EXPAND_RAS_CUST_SH
-	bool "SHARP SD driver customized for expand a read ahead size"
+config MMC_SD_DISABLE_UHS1_CUST_SH
+	bool "SHARP SD driver customized for disable UHS-1 mode"
 	depends on MMC_SD_CUST_SH
 	default n
 
-config MMC_SD_DISABLE_UHS1_CUST_SH
-	bool "SHARP SD driver customized for disable UHS-I"
+config MMC_SD_ENABLE_ONLY_DDR50_CUST_SH
+	bool "SHARP SD driver customized for enable DDR50 mode"
 	depends on MMC_SD_CUST_SH
 	default n
 
@@ -160,13 +188,13 @@ config MMC_SD_BATTLOG_CUST_SH
 	depends on MMC_SD_CUST_SH
 	default n
 
-config ERR_RETRY_MMC_CUST_SH
-	bool "SHARP MMC error retry customized"
+config CLOCKTIME_MMC_CUST_SH
+	bool "SHARP MMC clocktime customized"
 	depends on MMC_CUST_SH
 	default n
 
-config CLOCKTIME_MMC_CUST_SH
-	bool "SHARP MMC clocktime customized"
+config ERR_RETRY_MMC_CUST_SH
+	bool "SHARP MMC error retry customized"
 	depends on MMC_CUST_SH
 	default n
 

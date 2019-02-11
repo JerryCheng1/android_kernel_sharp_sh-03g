@@ -367,30 +367,19 @@ static struct rcg_clk blsp1_qup1_i2c_apps_clk_src = {
 
 static struct clk_freq_tbl ftbl_blspqup_spi_apps_clk_src_v2[] = {
 	F(    960000,         gcc_xo,   10,    1,     2),
-#if defined( CONFIG_SHUB_ML630Q790 ) || defined( CONFIG_SENSOR_SHGRIP ) || defined( CONFIG_SHTPS_SY3X00_DEV )
+#if defined( CONFIG_SHUB_ML630Q790_1ST )
 	F(   1100000, gpll0_out_main,    5,    1,   109),
 	F(   1920000,         gcc_xo,   10,    1,     0),
 	F(   2000000, gpll0_out_main,   10,    1,    30),
 	F(   2400000,         gcc_xo,    8,    1,     0),
-#endif	/* #if defined( CONFIG_SHUB_ML630Q790 ) || defined( CONFIG_SENSOR_SHGRIP ) || defined( CONFIG_SHTPS_SY3X00_DEV ) */
-#if defined( CONFIG_SENSORS_FPRINT_VFS61XX )
-	F(   2500000, gpll0_out_main,   12,    1,    20),
-#endif  /* #if defined( CONFIG_SENSORS_FPRINT_VFS61XX )  */
-#if defined( CONFIG_SHUB_ML630Q790 ) || defined( CONFIG_SENSOR_SHGRIP ) || defined( CONFIG_SHTPS_SY3X00_DEV )
 	F(   3000000, gpll0_out_main,   10,    1,    20),
 	F(   3200000,         gcc_xo,    2,    1,     3),
 	F(   3400000, gpll0_out_main,    8,    1,    22),
 	F(   3750000, gpll0_out_main,   10,    1,    16),
 	F(   4000000, gpll0_out_main,   10,    1,    15),
-#endif	/* #if defined( CONFIG_SHUB_ML630Q790 ) || defined( CONFIG_SENSOR_SHGRIP ) || defined( CONFIG_SHTPS_SY3X00_DEV ) */
+#endif	/* #if defined( CONFIG_SHUB_ML630Q790_1ST ) */	
 	F(   4800000,         gcc_xo,    4,    0,     0),
-#if defined( CONFIG_SENSORS_FPRINT_VFS61XX ) 
-	F(   8000000, gpll0_out_main,    5,    1,    15),
-#endif  /* #if defined( CONFIG_SENSORS_FPRINT_VFS61XX )  */
 	F(   9600000,         gcc_xo,    2,    0,     0),
-#if defined( CONFIG_SENSORS_FPRINT_VFS61XX ) 
-	F(  12000000, gpll0_out_main, 12.5,    1,     4),
-#endif  /* #if defined( CONFIG_SENSORS_FPRINT_VFS61XX )  */
 	F(  15000000, gpll0_out_main,   10,    1,     4),
 	F(  19200000,         gcc_xo,    1,    0,     0),
 	F(  24000000, gpll0_out_main, 12.5,    1,     2),
@@ -505,17 +494,8 @@ static struct rcg_clk blsp1_qup3_i2c_apps_clk_src = {
 
 static struct clk_freq_tbl ftbl_blsp1_qup3_spi_apps_clk_src[] = {
 	F(    960000,         gcc_xo,   10,    1,     2),
-#if defined( CONFIG_SENSORS_FPRINT_VFS61XX )
-	F(   2500000, gpll0_out_main,   12,    1,    20),
-#endif  /* #if defined( CONFIG_SENSORS_FPRINT_VFS61XX )  */
 	F(   4800000,         gcc_xo,    4,    0,     0),
-#if defined( CONFIG_SENSORS_FPRINT_VFS61XX )
-	F(   8000000, gpll0_out_main,    5,    1,    15),
-#endif  /* #if defined( CONFIG_SENSORS_FPRINT_VFS61XX )  */
 	F(   9600000,         gcc_xo,    2,    0,     0),
-#if defined( CONFIG_SENSORS_FPRINT_VFS61XX )
-	F(  12000000, gpll0_out_main, 12.5,    1,     4),
-#endif  /* #if defined( CONFIG_SENSORS_FPRINT_VFS61XX )  */
 	F(  15000000, gpll0_out_main,   10,    1,     4),
 	F(  19200000,         gcc_xo,    1,    0,     0),
 	F(  24000000, gpll0_out_main, 12.5,    1,     2),
@@ -917,7 +897,7 @@ static struct rcg_clk blsp2_qup4_i2c_apps_clk_src = {
 
 static struct clk_freq_tbl ftbl_blsp2_qup4_spi_apps_clk_src[] = {
 	F(    960000,         gcc_xo,   10,    1,     2),
-#if defined( CONFIG_SHUB_ML630Q790 )
+#if defined( CONFIG_SHUB_ML630Q790_1ST )
 	F(   1100000, gpll0_out_main,    5,    1,   109),
 	F(   1920000,         gcc_xo,   10,    1,     0),
 	F(   2000000, gpll0_out_main,   10,    1,    30),
@@ -927,7 +907,7 @@ static struct clk_freq_tbl ftbl_blsp2_qup4_spi_apps_clk_src[] = {
 	F(   3400000, gpll0_out_main,    8,    1,    22),
 	F(   3750000, gpll0_out_main,   10,    1,    16),
 	F(   4000000, gpll0_out_main,   10,    1,    15),
-#endif	/* #if defined( CONFIG_SHUB_ML630Q790 ) */
+#endif	/* #if defined( CONFIG_SHUB_ML630Q790_1ST ) */	
 	F(   4800000,         gcc_xo,    4,    0,     0),
 	F(   9600000,         gcc_xo,    2,    0,     0),
 	F(  15000000, gpll0_out_main,   10,    1,     4),

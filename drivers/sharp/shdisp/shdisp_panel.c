@@ -69,6 +69,8 @@
 #include "shdisp_carin.h"
 #elif defined(CONFIG_SHDISP_PANEL_ANDY)
 #include "shdisp_andy.h"
+#elif defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+#include "shdisp_hayabusa.h"
 #elif defined(CONFIG_SHDISP_PANEL_ARIA)
 #include "shdisp_aria.h"
 #else   /* defined(CONFIG_SHDISP_PANEL_CARIN) */
@@ -81,6 +83,9 @@
 static struct shdisp_panel_operations *shdisp_panel_fops = NULL;
 
 static struct shdisp_panel_operations shdisp_def_fops = {
+    NULL,
+    NULL,
+    NULL,
     NULL,
     NULL,
     NULL,
@@ -222,7 +227,7 @@ static void shdisp_panel_dsi_rlog(char addr, char *rbuf, int len)
     }
 
     *pbuf = '\0';
-    SHDISP_DEBUG("%s", buf);
+    SHDISP_DSI_LOG("%s", buf);
 #endif /* SHDISP_LOG_ENABLE */
 }
 
@@ -240,6 +245,8 @@ void shdisp_panel_API_create(void)
     shdisp_panel_fops = shdisp_carin_API_create();
 #elif defined(CONFIG_SHDISP_PANEL_ANDY)
     shdisp_panel_fops = shdisp_andy_API_create();
+#elif defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+    shdisp_panel_fops = shdisp_hayabusa_API_create();
 #elif defined(CONFIG_SHDISP_PANEL_ARIA)
     shdisp_panel_fops = shdisp_aria_API_create();
 #else   /* defined(CONFIG_SHDISP_PANEL_CARIN) */
@@ -401,6 +408,7 @@ int shdisp_panel_API_mipi_diag_write_reg(char dtype, unsigned char addr, char *w
     memcpy(&cmd_buf[1], write_data, size);
 
     cmd[0].dtype = dtype;
+    cmd[0].mode = 0;
     cmd[0].wait = 0x00;
     cmd[0].dlen = size + 1;
     cmd[0].payload = cmd_buf;
@@ -446,6 +454,7 @@ int shdisp_panel_API_mipi_diag_read_reg(char dtype, unsigned char addr, unsigned
 
     cmd[0].dtype = dtype;
     cmd[0].wait     = 0x00;
+    cmd[0].mode = 0;
     cmd[0].dlen     = 1;
     cmd[0].payload  = cmd_buf;
 
@@ -475,6 +484,126 @@ int shdisp_panel_API_mipi_diag_read_reg(char dtype, unsigned char addr, unsigned
     }
     SHDISP_DEBUG(" ");
 #endif  /* SHDISP_LOG_ENABLE */
+
+    SHDISP_TRACE("out SHDISP_RESULT_SUCCESS");
+    return SHDISP_RESULT_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_panel_API_dsi_write_reg                                            */
+/* ------------------------------------------------------------------------- */
+int shdisp_panel_API_dsi_write_reg(struct shdisp_dsi_cmd_req *req)
+{
+    int retry = 5;
+    int ret;
+    char dtype;
+    struct shdisp_dsi_cmd_desc cmd[1];
+    char cmd_buf[MIPI_SHARP_RW_MAX_SIZE + 1];
+
+    if (req->size > MIPI_SHARP_RW_MAX_SIZE) {
+        SHDISP_ERR("size over, -EINVAL");
+        return SHDISP_RESULT_FAILURE;
+    }
+
+    memset(cmd_buf, 0x00, sizeof(cmd_buf));
+    cmd_buf[0] = req->addr;
+    cmd_buf[1] = 0x00;
+    memcpy(&cmd_buf[1], req->data, req->size);
+
+    if (req->dtype != SHDISP_DTYPE_GEN_WRITE) {
+        if (req->size == 0) { /* 0 parameters */
+            dtype = SHDISP_DTYPE_DCS_WRITE;
+        } else if (req->size == 1) { /* 1 parameter */
+            dtype = SHDISP_DTYPE_DCS_WRITE1;
+        } else { /* Many parameters */
+            dtype = SHDISP_DTYPE_DCS_LWRITE;
+        }
+    } else {
+        if (req->size == 0) { /* 0 parameters */
+            dtype = SHDISP_DTYPE_GEN_WRITE;
+        } else if (req->size == 1) { /* 1 parameter */
+            dtype = SHDISP_DTYPE_GEN_WRITE1;
+        } else if (req->size == 2) { /* 2 parameters */
+            dtype = SHDISP_DTYPE_GEN_WRITE2;
+        } else { /* Many parameters */
+            dtype = SHDISP_DTYPE_GEN_LWRITE;
+        }
+    }
+
+    cmd[0].dtype = dtype;
+    cmd[0].mode = req->mode;
+    cmd[0].wait = 0x00;
+    cmd[0].dlen = req->size + 1;
+    cmd[0].payload = cmd_buf;
+
+    for (; retry >= 0; retry--) {
+        ret = shdisp_panel_API_mipi_dsi_cmds_tx(1, cmd, ARRAY_SIZE(cmd));
+        if (ret == SHDISP_RESULT_SUCCESS) {
+            break;
+        } else {
+            SHDISP_WARN("shdisp_panel_API_mipi_dsi_cmds_tx() failure. ret=%d retry=%d", ret, retry);
+        }
+    }
+
+    if (ret != SHDISP_RESULT_SUCCESS) {
+        SHDISP_ERR("mipi_dsi_cmds_tx error");
+        return SHDISP_RESULT_FAILURE; 
+    }
+
+    return SHDISP_RESULT_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_panel_API_dsi_read_reg                                             */
+/* ------------------------------------------------------------------------- */
+int shdisp_panel_API_dsi_read_reg(struct shdisp_dsi_cmd_req *req)
+{
+    int retry = 5;
+
+    int ret;
+    char dtype;
+    struct shdisp_dsi_cmd_desc cmd[1];
+    char cmd_buf[2 + 1];
+
+    SHDISP_TRACE("in address:%02X, buf:%p, size:%d", req->addr, req->data, req->size);
+    if ((req->size > MIPI_SHARP_RW_MAX_SIZE) || (req->size == 0)) {
+        SHDISP_ERR("size over, -EINVAL");
+        return SHDISP_RESULT_FAILURE;
+    }
+
+    cmd_buf[0] = req->addr;
+    cmd_buf[1] = 0x00;
+
+    if (req->dtype != SHDISP_DTYPE_GEN_READ) {
+        dtype = SHDISP_DTYPE_DCS_READ;
+    } else {
+        if (req->size == 1) { /* 0 parameters */
+            dtype = SHDISP_DTYPE_GEN_READ;
+        } else if (req->size == 2) { /* 1 parameter */
+            dtype = SHDISP_DTYPE_GEN_READ1;
+        } else { /* 2 paramters */
+            dtype = SHDISP_DTYPE_GEN_READ2;
+        }
+    }
+    cmd[0].dtype    = dtype;
+    cmd[0].mode     = req->mode;
+    cmd[0].wait     = 0x00;
+    cmd[0].dlen     = 1;
+    cmd[0].payload  = cmd_buf;
+
+    for (; retry >= 0; retry--) {
+        ret = shdisp_panel_API_mipi_dsi_cmds_rx(req->data, cmd, req->size);
+        if (ret == SHDISP_RESULT_SUCCESS) {
+            break;
+        } else {
+            SHDISP_WARN("shdisp_panel_API_mipi_dsi_cmds_rx() failure. ret=%d retry=%d", ret, retry);
+        }
+    }
+
+    if (ret != SHDISP_RESULT_SUCCESS) {
+        SHDISP_ERR("mipi_dsi_cmds_rx error");
+        return SHDISP_RESULT_FAILURE;
+    }
 
     SHDISP_TRACE("out SHDISP_RESULT_SUCCESS");
     return SHDISP_RESULT_SUCCESS;
@@ -524,34 +653,34 @@ int shdisp_panel_API_check_recovery(void)
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_panel_API_diag_set_gammatable_and_voltage                          */
+/* shdisp_panel_API_diag_set_gmmtable_and_voltage                            */
 /* ------------------------------------------------------------------------- */
-int shdisp_panel_API_diag_set_gammatable_and_voltage(struct shdisp_diag_gamma_info *gamma_info)
+int shdisp_panel_API_diag_set_gmmtable_and_voltage(struct shdisp_diag_gamma_info *gmm_info)
 {
-    if (shdisp_panel_fops->set_gammatable_and_voltage) {
-        return shdisp_panel_fops->set_gammatable_and_voltage(gamma_info);
+    if (shdisp_panel_fops->set_gmmtable_and_voltage) {
+        return shdisp_panel_fops->set_gmmtable_and_voltage(gmm_info);
     }
     return SHDISP_RESULT_SUCCESS;
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_panel_API_diag_get_gammatable_and_voltage                          */
+/* shdisp_panel_API_diag_get_gmmtable_and_voltage                            */
 /* ------------------------------------------------------------------------- */
-int shdisp_panel_API_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_info *gamma_info)
+int shdisp_panel_API_diag_get_gmmtable_and_voltage(struct shdisp_diag_gamma_info *gmm_info)
 {
-    if (shdisp_panel_fops->get_gammatable_and_voltage) {
-        return shdisp_panel_fops->get_gammatable_and_voltage(gamma_info);
+    if (shdisp_panel_fops->get_gmmtable_and_voltage) {
+        return shdisp_panel_fops->get_gmmtable_and_voltage(gmm_info);
     }
     return SHDISP_RESULT_SUCCESS;
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_panel_API_diag_set_gamma                                           */
+/* shdisp_panel_API_diag_set_gmm                                             */
 /* ------------------------------------------------------------------------- */
-int shdisp_panel_API_diag_set_gamma(struct shdisp_diag_gamma *gamma)
+int shdisp_panel_API_diag_set_gmm(struct shdisp_diag_gamma *gmm)
 {
-    if (shdisp_panel_fops->set_gamma) {
-        return shdisp_panel_fops->set_gamma(gamma);
+    if (shdisp_panel_fops->set_gmm) {
+        return shdisp_panel_fops->set_gmm(gmm);
     }
     return SHDISP_RESULT_SUCCESS;
 }
@@ -601,6 +730,45 @@ int shdisp_panel_API_set_irq(int enable)
         return ret;
     }
 
+    SHDISP_TRACE("out");
+    return SHDISP_RESULT_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_panel_API_mfr                                                      */
+/* ------------------------------------------------------------------------- */
+int shdisp_panel_API_mfr(int mfr)
+{
+    SHDISP_TRACE("in");
+    if (shdisp_panel_fops->set_mfr) {
+        return shdisp_panel_fops->set_mfr(mfr);
+    }
+    SHDISP_TRACE("out");
+    return SHDISP_RESULT_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_panel_API_chg_mode                                                 */
+/* ------------------------------------------------------------------------- */
+int shdisp_panel_API_chg_mode(struct shdisp_panel_mode p_mode)
+{
+    SHDISP_TRACE("in");
+    if (shdisp_panel_fops->chg_mode) {
+        return shdisp_panel_fops->chg_mode(p_mode);
+    }
+    SHDISP_TRACE("out");
+    return SHDISP_RESULT_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_panel_API_set_freq_param                                           */
+/* ------------------------------------------------------------------------- */
+int shdisp_panel_API_set_freq_param(struct shdisp_freq_params *freq)
+{
+    SHDISP_TRACE("in");
+    if (shdisp_panel_fops->set_freq_param) {
+        return shdisp_panel_fops->set_freq_param(freq);
+    }
     SHDISP_TRACE("out");
     return SHDISP_RESULT_SUCCESS;
 }

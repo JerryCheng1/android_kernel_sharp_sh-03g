@@ -30,7 +30,13 @@
 #include <media/videobuf2-msm-mem.h>
 #include <media/msmb_camera.h>
 
+/* SHLOCAL_CAMERA_DRIVERS-> */
+#if 0
 #define MSM_POST_EVT_TIMEOUT 5000
+#else
+#define MSM_POST_EVT_TIMEOUT 10000
+#endif
+/* SHLOCAL_CAMERA_DRIVERS<- */
 #define MSM_POST_EVT_NOTIMEOUT 0xFFFFFFFF
 #define MSM_CAMERA_STREAM_CNT_BITS  32
 

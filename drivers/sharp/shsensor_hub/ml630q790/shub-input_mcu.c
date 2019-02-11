@@ -54,7 +54,10 @@ static void shub_get_param_type_log( int32_t type, int32_t *dt, uint8_t *logbuff
 //  memset(logbuff, 0x00, sizeof(logbuff));
     switch(type) {
     case 1: // APP_PEDOMETER
-        sprintf(logbuff, "type=PED, data=%x,%x,%x,%x,%x,%x,%x,%x, %x,%x,%x,%x", *dt, *(dt+1), *(dt+2), *(dt+3), *(dt+4), *(dt+5), *(dt+6), *(dt+7), *(dt+8), *(dt+9), *(dt+10), *(dt+11));
+/* SHMDS_HUB_0204_14 mod S */
+//      sprintf(logbuff, "type=PED, data=%x,%x,%x,%x,%x,%x,%x,%x, %x,%x,%x,%x", *dt, *(dt+1), *(dt+2), *(dt+3), *(dt+4), *(dt+5), *(dt+6), *(dt+7), *(dt+8), *(dt+9), *(dt+10), *(dt+11));
+        sprintf(logbuff, "type=PED, data=%x,%x,%x,%x,%x,%x,%x,%x, %x,%x,%x,%x,%x", *dt, *(dt+1), *(dt+2), *(dt+3), *(dt+4), *(dt+5), *(dt+6), *(dt+7), *(dt+8), *(dt+9), *(dt+10), *(dt+11), *(dt+12));
+/* SHMDS_HUB_0204_14 mod E */
         break;
     case 2: // APP_CALORIE_FACTOR
         sprintf(logbuff, "type=CAL, data=%x,%x,%x,%x,%x,%x", *dt, *(dt+1), *(dt+2), *(dt+3), *(dt+4), *(dt+5));
@@ -83,6 +86,11 @@ static void shub_get_param_type_log( int32_t type, int32_t *dt, uint8_t *logbuff
     case 14: // APP_VEICHLE_DETECTION2
         sprintf(logbuff, "type=VEI2, data=%x,%x,%x,%x,%x,%x,%x,%x,%x", *dt, *(dt+1), *(dt+2), *(dt+3), *(dt+4), *(dt+5), *(dt+6), *(dt+7), *(dt+8));    // SHMDS_HUB_0209_02 mod
         break;
+/* SHMDS_HUB_1701_01 add S */
+    case 19: // APP_PICKUP
+        sprintf(logbuff, "type=PICKUP, data=%x", *dt);
+        break;
+/* SHMDS_HUB_1701_01 add E */
     default:
         sprintf(logbuff, "type=%d, data=...", type);
         break;
@@ -123,6 +131,7 @@ static long shub_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, i
             {
                 DBG_MCU_IO("ioctl(cmd = Initialize)\n"); // SHMDS_HUB_0701_01 add
                 mutex_lock(&shub_lock);
+                shub_set_exif_md_mode_flg(0);           /* SHMDS_HUB_0211_01 add */
                 shub_initialize();
                 mutex_unlock(&shub_lock);
             }
@@ -295,6 +304,7 @@ static long shub_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, i
                 DBG_MCU_IO("ioctl(cmd = Set_Param) : %s\n", logbuff); 				// SHMDS_HUB_0701_01 add
 #endif
                 mutex_lock(&shub_lock);
+                shub_set_exif_md_mode_flg(param.m_iParam[31]);                      /* SHMDS_HUB_0211_01 add */
                 ret = shub_set_param(param.m_iType, param.m_iParam);
                 mutex_unlock(&shub_lock);
                 if(ret) {
@@ -327,6 +337,7 @@ static long shub_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, i
                 mutex_lock(&shub_lock);
                 ret = shub_get_param(param.m_iType, param.m_iParam);
                 shub_get_param_check_exif(param.m_iType, param.m_iParam);           // SHMDS_HUB_0206_07 add
+                param.m_iParam[31] = shub_get_exif_md_mode_flg();                   /* SHMDS_HUB_0211_01 add */
                 mutex_unlock(&shub_lock);
                 if(ret) {
                     printk( "error(shub_get_param) : shub_ioctl(cmd = SHUBIO_MCU_GET_PARAM)\n" );
@@ -590,10 +601,13 @@ static long shub_ioctl(struct file *filp, unsigned int cmd, unsigned long arg, i
 // SHMDS_HUB_1101_01 add S
 static long shub_ioctl_wrapper(struct file *filp, unsigned int cmd, unsigned long arg)
 {
+    SHUB_DBG_TIME_INIT     /* SHMDS_HUB_1801_01 add */
     long ret = 0;
 
     shub_qos_start();
+    SHUB_DBG_TIME_START    /* SHMDS_HUB_1801_01 add */
     ret = shub_ioctl(filp, cmd , arg, 64);                          // SHMDS_HUB_0305_01 mod
+    SHUB_DBG_TIME_END(cmd) /* SHMDS_HUB_1801_01 add */
     shub_qos_end();
 
     return ret;
@@ -603,10 +617,13 @@ static long shub_ioctl_wrapper(struct file *filp, unsigned int cmd, unsigned lon
 #ifdef CONFIG_COMPAT
 static long shub_ioctl_wrapper32(struct file *filp, unsigned int cmd, unsigned long arg)
 {
+    SHUB_DBG_TIME_INIT     /* SHMDS_HUB_1801_01 add */
     long ret = 0;
 
     shub_qos_start();
+    SHUB_DBG_TIME_START    /* SHMDS_HUB_1801_01 add */
     ret = shub_ioctl(filp, cmd , arg, 32);
+    SHUB_DBG_TIME_END(cmd) /* SHMDS_HUB_1801_01 add */
     shub_qos_end();
 
     return ret;

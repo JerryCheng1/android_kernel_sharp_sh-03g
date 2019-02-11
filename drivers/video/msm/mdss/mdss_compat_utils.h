@@ -168,6 +168,12 @@ struct mdp_pa_cfg_data32 {
 	struct mdp_pa_cfg32 pa_data;
 };
 
+struct mdp_rgb_lut_data32 {
+	uint32_t flags;
+	uint32_t lut_type;
+	struct fb_cmap32 cmap;
+};
+
 struct mdp_igc_lut_data32 {
 	uint32_t block;
 	uint32_t len, ops;
@@ -205,6 +211,7 @@ struct mdp_lut_cfg_data32 {
 		struct mdp_igc_lut_data32 igc_lut_data;
 		struct mdp_pgc_lut_data32 pgc_lut_data;
 		struct mdp_hist_lut_data32 hist_lut_data;
+		struct mdp_rgb_lut_data32 rgb_lut_data;
 	} data;
 };
 
@@ -343,7 +350,7 @@ struct mdp_sharp_cfg32 {
 
 struct mdp_overlay_pp_params32 {
 	uint32_t config_ops;
-#ifdef CONFIG_SHDISP /* CUST_ID_00062 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00040 */
 	uint32_t csc_cfg_ops;
 #endif /* CONFIG_SHDISP */
 	struct mdp_csc_cfg32 csc_cfg;

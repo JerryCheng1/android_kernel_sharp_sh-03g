@@ -466,7 +466,7 @@ clean:
 	}
 
 	if (queue)
-		queue_work_on(0, uether_wq, &dev->rx_work);
+		queue_work(uether_wq, &dev->rx_work);
 }
 
 static int prealloc(struct list_head *list,
@@ -1332,6 +1332,8 @@ static int eth_stop(struct net_device *net)
 static u8 host_ethaddr[ETH_ALEN];
 #endif /* CONFIG_USB_ANDROID_SH_CUST */
 
+static u8 host_ethaddr[ETH_ALEN];
+
 /* initial value, changed by "ifconfig usb0 hw ether xx:xx:xx:xx:xx:xx" */
 static char *dev_addr;
 module_param(dev_addr, charp, S_IRUGO);
@@ -1363,7 +1365,8 @@ static int get_ether_addr(const char *str, u8 *dev_addr)
 	return 1;
 }
 
-#ifdef CONFIG_USB_ANDROID_SH_CUST
+static int ether_ioctl(struct net_device *, struct ifreq *, int);
+
 static int get_host_ether_addr(u8 *str, u8 *dev_addr)
 {
 	memcpy(dev_addr, str, ETH_ALEN);
@@ -1374,9 +1377,6 @@ static int get_host_ether_addr(u8 *str, u8 *dev_addr)
 	memcpy(str, dev_addr, ETH_ALEN);
 	return 1;
 }
-#endif /* CONFIG_USB_ANDROID_SH_CUST */
-
-static int ether_ioctl(struct net_device *, struct ifreq *, int);
 
 static const struct net_device_ops eth_netdev_ops = {
 	.ndo_open		= eth_open,
@@ -1628,16 +1628,12 @@ struct eth_dev *gether_setup_name(struct usb_gadget *g, u8 ethaddr[ETH_ALEN],
 	if (get_ether_addr(dev_addr, net->dev_addr))
 		dev_warn(&g->dev,
 			"using random %s ethernet address\n", "self");
-#ifdef CONFIG_USB_ANDROID_SH_CUST
+
 	if (get_host_ether_addr(host_ethaddr, dev->host_mac))
 		dev_warn(&g->dev, "using random %s ethernet address\n", "host");
 	else
 		dev_warn(&g->dev, "using previous %s ethernet address\n", "host");
-#else /* CONFIG_USB_ANDROID_SH_CUST */
-	if (get_ether_addr(host_addr, dev->host_mac))
-		dev_warn(&g->dev,
-			"using random %s ethernet address\n", "host");
-#endif /* CONFIG_USB_ANDROID_SH_CUST */
+
 	if (ethaddr)
 		memcpy(ethaddr, dev->host_mac, ETH_ALEN);
 
@@ -2038,7 +2034,7 @@ static void uether_debugfs_exit(struct eth_dev *dev)
 
 static int __init gether_init(void)
 {
-	uether_wq = alloc_workqueue("uether", WQ_CPU_INTENSIVE, 1);
+	uether_wq  = create_singlethread_workqueue("uether");
 	if (!uether_wq) {
 		pr_err("%s: Unable to create workqueue: uether\n", __func__);
 		return -ENOMEM;

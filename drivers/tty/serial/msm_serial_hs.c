@@ -140,47 +140,47 @@ static int sh_debug_uart = 2;
 module_param_named(sh_debug_uart, sh_debug_uart,
 		   int, S_IRUGO | S_IWUSR | S_IWGRP);
 
-#define HSDB_ERR(x, ...) do {\
+#define HSDB_ERR(fmt, ...) do {\
 	if (sh_debug_uart & SH_DEBUG_ERROR) {\
-		printk("[BSP-UART]:%s() "x, __func__, ##__VA_ARGS__);\
+		dev_err(msm_uport->uport.dev,"[BSP]:%s() " fmt,__func__, ##__VA_ARGS__);\
 	}\
 } while (0)
 
-#define HSDB_INFO(x, ...) do {\
+#define HSDB_INFO(fmt, ...) do {\
 	if (sh_debug_uart & SH_DEBUG_NORMAL) {\
-		printk("[BSP-UART]:%s() "x, __func__, ##__VA_ARGS__);\
+		dev_info(msm_uport->uport.dev,"[BSP]:%s() " fmt,__func__, ##__VA_ARGS__);\
 	}\
 } while (0)
 
-#define HSDB_SUSRESU(x, ...) do {\
+#define HSDB_SUSRESU(fmt, ...) do {\
 	if (sh_debug_uart & SH_DEBUG_SUSRESU) {\
-		printk("[BSP-UART]:%s() "x, __func__, ##__VA_ARGS__);\
+		dev_info(msm_uport->uport.dev,"[BSP]:%s() " fmt,__func__, ##__VA_ARGS__);\
 	}\
 } while (0)
 
-#define HSDB_COM(x, ...) do {\
+#define HSDB_COM(fmt, ...) do {\
 	if (sh_debug_uart & SH_DEBUG_COM) {\
-		printk("[BSP-UART]:%s() "x, __func__, ##__VA_ARGS__);\
+		dev_info(msm_uport->uport.dev,"[BSP]:%s() " fmt,__func__, ##__VA_ARGS__);\
 	}\
 } while (0)
 
-#define HSDB_GPIO(x, ...) do {\
+#define HSDB_GPIO(fmt, ...) do {\
 	if (sh_debug_uart & SH_DEBUG_GPIO) {\
-		printk("[BSP-UART]:%s() "x, __func__, ##__VA_ARGS__);\
+		dev_info(msm_uport->uport.dev,"[BSP]:%s() " fmt,__func__, ##__VA_ARGS__);\
 	}\
 } while (0)
-#define HSDB_IRQ(x, ...) do {\
+#define HSDB_IRQ(fmt, ...) do {\
 	if (sh_debug_uart & SH_DEBUG_IRQ) {\
-		printk("[BSP-UART]:%s() "x, __func__, ##__VA_ARGS__);\
+		dev_info(msm_uport->uport.dev,"[BSP]:%s() " fmt,__func__, ##__VA_ARGS__);\
 	}\
 } while (0)
 #else	/* CONFIG_SERIAL_EXPAND_DEBUG_FUNCTION_SH */
-#define HSDB_ERR(x, ...)
-#define HSDB_INFO(x, ...)
-#define HSDB_SUSRESU(x, ...)
-#define HSDB_COM(x, ...)
-#define HSDB_GPIO(x, ...)
-#define HSDB_IRQ(x, ...)
+#define HSDB_ERR(fmt, ...)
+#define HSDB_INFO(fmt, ...)
+#define HSDB_SUSRESU(fmt, ...)
+#define HSDB_COM(fmt, ...)
+#define HSDB_GPIO(fmt, ...)
+#define HSDB_IRQ(fmt, ...)
 #endif	/* defined(CONFIG_SERIAL_EXPAND_DEBUG_FUNCTION_SH) */
 
 /*
@@ -278,6 +278,7 @@ struct msm_hs_port {
 	struct msm_hs_rx rx;
 	atomic_t clk_count;
 	struct msm_hs_wakeup wakeup;
+	struct wakeup_source ws;
 
 	struct dentry *loopback_dir;
 	struct work_struct clock_off_w; /* work for actual clock off */
@@ -358,15 +359,15 @@ static int msm_hs_ioctl(struct uart_port *uport, unsigned int cmd,
 
 	switch (cmd) {
 	case MSM_ENABLE_UART_CLOCK: {
-		MSM_HS_DBG("%s():ENABLE UART CLOCK: cmd=%d, ioc %d\n", __func__,
-			cmd, ioctl_count);
+		MSM_HS_INFO("%s():ENABLE UART CLOCK: cmd=%d, ioc %d\n",
+			__func__, cmd, ioctl_count);
 		atomic_inc(&msm_uport->ioctl_count);
 		msm_hs_request_clock_on(&msm_uport->uport);
 		break;
 	}
 	case MSM_DISABLE_UART_CLOCK: {
-		MSM_HS_DBG("%s():DISABLE UART CLOCK: cmd=%d ioc %d\n", __func__,
-			cmd, ioctl_count);
+		MSM_HS_INFO("%s():DISABLE UART CLOCK: cmd=%d ioc %d\n",
+			__func__, cmd, ioctl_count);
 		if (ioctl_count <= 0) {
 			MSM_HS_WARN("%s():ioctl count -ve, client check voting",
 				__func__);
@@ -383,7 +384,7 @@ static int msm_hs_ioctl(struct uart_port *uport, unsigned int cmd,
 		if (msm_uport->pm_state != MSM_HS_PM_ACTIVE)
 			state = 0;
 		ret = state;
-		MSM_HS_DBG("%s():GET UART CLOCK STATUS: cmd=%d state=%d\n",
+		MSM_HS_INFO("%s():GET UART CLOCK STATUS: cmd=%d state=%d\n",
 			__func__, cmd, state);
 		break;
 	}
@@ -1283,12 +1284,6 @@ static void msm_hs_stop_tx_locked(struct uart_port *uport)
 	struct msm_hs_tx *tx = &msm_uport->tx;
 
 	tx->flush = FLUSH_STOP;
-
-/* COORDINATOR KK_AC120 BUILDERR MODIFY start */
-#if 0
-	HSDB_INFO("No problem(txvote=%d)\n",tx->txvote);
-#endif /* #if 0 */
-/* COORDINATOR KK_AC120 BUILDERR MODIFY end */
 }
 
 static int disconnect_rx_endpoint(struct msm_hs_port *msm_uport)
@@ -1354,6 +1349,9 @@ static int sps_tx_disconnect(struct msm_hs_port *msm_uport)
 static void msm_hs_disable_rx(struct uart_port *uport)
 {
 	unsigned int data;
+#if defined(CONFIG_SERIAL_EXPAND_DEBUG_FUNCTION_SH)
+	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(uport);
+#endif	/* CONFIG_SERIAL_EXPAND_DEBUG_FUNCTION_SH */
 
 	data = msm_hs_read(uport, UART_DM_DMEN);
 	data &= ~UARTDM_RX_BAM_ENABLE_BMSK;
@@ -1434,11 +1432,10 @@ static void msm_hs_submit_tx_locked(struct uart_port *uport)
 	HSDB_INFO("start\n");
 
 	if (uart_circ_empty(tx_buf) || uport->state->port.tty->stopped) {
+		tx->dma_in_flight = false;
 		msm_hs_stop_tx_locked(uport);
 		return;
 	}
-
-	tx->dma_in_flight = true;
 
 	tx_count = uart_circ_chars_pending(tx_buf);
 
@@ -1884,10 +1881,10 @@ static void msm_hs_sps_tx_callback(struct sps_event_notify *notify)
 	msm_uport->notify = *notify;
 
    HSDB_INFO("ev_id=%d, addr=0x%x, size=0x%x, flags=0x%x, line=%d\n",
-   				notify->event_id, notify->data.transfer.iovec.addr,
-   				notify->data.transfer.iovec.size,
-   				notify->data.transfer.iovec.flags,
-   				msm_uport->uport.line);
+				notify->event_id, notify->data.transfer.iovec.addr,
+				notify->data.transfer.iovec.size,
+				notify->data.transfer.iovec.flags,
+				msm_uport->uport.line);
 
 	MSM_HS_DBG("%s: ev_id=%d, addr=0x%x, size=0x%x, flags=0x%x, line=%d\n",
 		 __func__, notify->event_id,
@@ -1933,7 +1930,6 @@ static void msm_serial_hs_tx_work(struct kthread_work *work)
 	else
 		MSM_HS_DBG("%s:circ buffer is empty\n", __func__);
 
-	tx->dma_in_flight = false;
 	wake_up(&msm_uport->tx.wait);
 
 	uport->icount.tx += tx->tx_count;
@@ -2343,6 +2339,7 @@ void msm_hs_request_clock_off(struct uart_port *uport)
 	if (msm_uport->obs)
 		atomic_set(&msm_uport->client_req_state, 1);
 	msm_hs_resource_unvote(msm_uport);
+	__pm_relax(&msm_uport->ws);
 }
 EXPORT_SYMBOL(msm_hs_request_clock_off);
 
@@ -2351,6 +2348,7 @@ void msm_hs_request_clock_on(struct uart_port *uport)
 	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(uport);
 	msm_hs_resource_vote(UARTDM_TO_MSM(uport));
 
+	__pm_stay_awake(&msm_uport->ws);
 	if (msm_uport->pm_state != MSM_HS_PM_ACTIVE) {
 		MSM_HS_WARN("%s(): %p runtime PM callback not invoked",
 			__func__, uport->dev);
@@ -2418,6 +2416,9 @@ static void msm_hs_unconfig_uart_gpios(struct uart_port *uport)
 	struct platform_device *pdev = to_platform_device(uport->dev);
 	const struct msm_serial_hs_platform_data *pdata =
 					pdev->dev.platform_data;
+#if defined(CONFIG_SERIAL_EXPAND_DEBUG_FUNCTION_SH)
+	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(uport);
+#endif	/* CONFIG_SERIAL_EXPAND_DEBUG_FUNCTION_SH */
 
 	if (pdata) {
 #ifdef CONFIG_SERIAL_BLUETOOTH
@@ -2426,7 +2427,7 @@ static void msm_hs_unconfig_uart_gpios(struct uart_port *uport)
 				int ret = 0;
 				ret = gpio_request(pdata->uart_rfr_gpio,
 								"UART_RFR_GPIO");
-				HSDB_INFO("gpio_request(rfr_gpio=%d) call ret=%d\n"
+				MSM_HS_INFO("gpio_request(rfr_gpio=%d) call ret=%d\n"
 								, pdata->uart_rfr_gpio, ret);
 				if (unlikely(ret)) {
 					MSM_HS_ERR("gpio request failed for:%d\n",
@@ -2474,7 +2475,7 @@ static int msm_hs_config_uart_gpios(struct uart_port *uport)
 				if (gpio_is_valid(pdata->uart_rfr_gpio)) {
 					ret = gpio_request(pdata->uart_rfr_gpio,
 									"UART_RFR_GPIO");
-					HSDB_INFO("gpio_request(rfr_gpio=%d) call ret=%d\n"
+					MSM_HS_INFO("gpio_request(rfr_gpio=%d) call ret=%d\n"
 									, pdata->uart_rfr_gpio, ret);
 					if (unlikely(ret)) {
 						MSM_HS_ERR("gpio request failed for:%d\n",
@@ -2627,6 +2628,7 @@ static int msm_hs_startup(struct uart_port *uport)
 	struct msm_hs_rx *rx = &msm_uport->rx;
 	struct sps_pipe *sps_pipe_handle_tx = tx->cons.pipe_handle;
 	struct sps_pipe *sps_pipe_handle_rx = rx->prod.pipe_handle;
+	struct tty_struct *tty = msm_uport->uport.state->port.tty;
 
 	HSDB_INFO("start\n");
 
@@ -2646,9 +2648,9 @@ static int msm_hs_startup(struct uart_port *uport)
 					IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 					"msm_hs_wakeup", msm_uport);
 		if (unlikely(ret)) {
-			MSM_HS_ERR("%s():Err getting uart wakeup_irq\n",
-				  __func__);
-			goto free_uart_irq;
+			MSM_HS_ERR("%s():Err getting uart wakeup_irq %d\n",
+				  __func__, ret);
+			goto unvote_exit;
 		}
 
 		msm_uport->wakeup.freed = false;
@@ -2662,11 +2664,11 @@ static int msm_hs_startup(struct uart_port *uport)
 		}
 	}
 
-
+	wakeup_source_init(&msm_uport->ws, tty->name);
 	ret = msm_hs_config_uart_gpios(uport);
 	if (ret) {
 		MSM_HS_ERR("Uart GPIO request failed\n");
-		goto deinit_uart_clk;
+		goto deinit_ws;
 	}
 
 	msm_hs_write(uport, UART_DM_DMEN, 0);
@@ -2772,9 +2774,11 @@ sps_disconnect_tx:
 	sps_disconnect(sps_pipe_handle_tx);
 unconfig_uart_gpios:
 	msm_hs_unconfig_uart_gpios(uport);
+deinit_ws:
+	wakeup_source_trash(&msm_uport->ws);
 free_uart_irq:
 	free_irq(uport->irq, msm_uport);
-deinit_uart_clk:
+unvote_exit:
 	msm_hs_resource_unvote(msm_uport);
 	MSM_HS_ERR("%s(): Error return\n", __func__);
 	return ret;
@@ -3554,8 +3558,6 @@ static int __init msm_serial_hs_init(void)
 {
 	int ret;
 
-	HSDB_INFO("start\n");
-
 	ipc_msm_hs_log_ctxt = ipc_log_context_create(IPC_MSM_HS_LOG_PAGES,
 							"msm_serial_hs", 0);
 	if (!ipc_msm_hs_log_ctxt)
@@ -3577,8 +3579,6 @@ static int __init msm_serial_hs_init(void)
 		uart_unregister_driver(&msm_hs_driver);
 		return ret;
 	}
-
-	HSDB_INFO("No problem(end) ret=%d\n",ret);
 
 	MSM_HS_INFO("msm_serial_hs module loaded\n");
 	return ret;
@@ -3604,6 +3604,7 @@ static void msm_hs_shutdown(struct uart_port *uport)
 	else
 		disable_irq(uport->irq);
 
+	wakeup_source_trash(&msm_uport->ws);
 	msm_uport->wakeup.enabled = false;
 	/* make sure tx lh finishes */
 	flush_kthread_worker(&msm_uport->tx.kworker);

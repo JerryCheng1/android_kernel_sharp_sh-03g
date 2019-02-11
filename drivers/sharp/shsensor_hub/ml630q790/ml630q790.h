@@ -41,6 +41,7 @@
 //#define SHUB_SW_GPIO_PMIC           	/* SHMDS_HUB_0104_03 add */
 #define SHUB_SW_PINCTRL             	/* SHMDS_HUB_1501_01 add */
 #define SHUB_SW_INPUT_SYNC_MOD      	/* SHMDS_HUB_1501_01 add */
+//#define SHUB_SW_TIME_API            	/* SHMDS_HUB_1801_01 add */
 
 #define SENOSR_HUB_I2C_SLAVE_ADDRESS (0x2f)
 #define SENOSR_HUB_DRIVER_NAME    "sensorhub"
@@ -73,6 +74,7 @@
 #define SHUB_ACTIVE_GDEC                  (0x08000000)
 #define SHUB_ACTIVE_MOTIONDEC             (0x10000000)
 #define SHUB_ACTIVE_PEDODEC_NO_NOTIFY     (0x20000000)
+#define SHUB_ACTIVE_PICKUP                (0x40000000) /* SHMDS_HUB_1701_01 add */
 
 #define SHUB_ACTIVE_ERROR                 (0x80000000)
 
@@ -94,6 +96,7 @@
         SHUB_ACTIVE_GYROUNC               | \
         SHUB_ACTIVE_MAGUNC                | \
         SHUB_ACTIVE_MOTIONDEC             | \
+        SHUB_ACTIVE_PICKUP                | \
         SHUB_ACTIVE_GDEC                  | \
         SHUB_ACTIVE_PEDODEC_NO_NOTIFY     | \
         SHUB_ACTIVE_EXT_PEDOM             | \
@@ -105,6 +108,7 @@
         SHUB_ACTIVE_PEDOM_NO_NOTIFY       | \
         SHUB_ACTIVE_SIGNIFICANT           | \
         SHUB_ACTIVE_MOTIONDEC             | \
+        SHUB_ACTIVE_PICKUP                | \
         SHUB_ACTIVE_EXT_PEDOM             | \
         SHUB_ACTIVE_PEDODEC_NO_NOTIFY     | \
         SHUB_ACTIVE_PEDODEC)
@@ -169,6 +173,13 @@
 
 #define TIMER_RESO 5
 
+/* SHMDS_HUB_0604_01 add S */
+#define ACC_CMN_MAX               8192
+#define ACC_CMN_MIN              -8192
+#define MAG_CMN_MAX              20000
+#define MAG_CMN_MIN             -20000
+/* SHMDS_HUB_0604_01 add E */
+
 // SHMDS_HUB_0601_01 add S
 enum{
     SHUB_INPUT_ACC,                 // [----] Accelerometer
@@ -214,12 +225,44 @@ enum{
 };
 /* SHMDS_HUB_0311_01 add E */
 
+/* SHMDS_HUB_1701_03 add S */
+#ifdef CONFIG_PICKUP_PROX
+#define SHUB_PICKUP_ENABLE_PARAM     7
+#else
+#define SHUB_PICKUP_ENABLE_PARAM     4
+#endif
+/* SHMDS_HUB_1701_03 add E */
+
+/* SHMDS_HUB_1801_01 add S */
+#ifdef SHUB_SW_TIME_API
+void shub_dbg_timer_start(struct timespec *tv);
+void shub_dbg_timer_end(struct timespec tv, unsigned int cmd);
+#define SHUB_DBG_TIME_INIT      struct timespec shub_timeval;
+#define SHUB_DBG_TIME_START     shub_dbg_timer_start(&shub_timeval);
+#define SHUB_DBG_TIME_END(cmd)  shub_dbg_timer_end(shub_timeval, cmd);
+#else
+#define SHUB_DBG_TIME_INIT
+#define SHUB_DBG_TIME_START
+#define SHUB_DBG_TIME_END(cmd)
+#endif
+/* SHMDS_HUB_1801_01 add E */
+
 /* SHMDS_HUB_0308_01 add S */
 static inline void shub_input_set_value(struct input_dev *dev, unsigned code, int value)
 {
-    dev->absinfo[code].value = value;
+/* SHMDS_HUB_0603_02 add S */
+	if(value == 0){
+		dev->absinfo[code].value = 1;
+	}else{
+		dev->absinfo[code].value = 0;
+	}	
+/* SHMDS_HUB_0603_02 add E */
 }
 /* SHMDS_HUB_0308_01 end E */
+
+/* SHMDS_HUB_0603_01 add S */
+#define SHUB_INPUT_VAL_CLEAR(dev, val ,value)      shub_input_set_value(dev, val, value)  /* SHMDS_HUB_0603_02 add (value) */
+/* SHMDS_HUB_0603_01 add S */
 
 /* SHMDS_HUB_0602_01 add S */
 static inline void shub_input_sync_init(struct input_dev *dev)
@@ -347,11 +390,14 @@ bool shub_connect_check(void);
 /* SHMDS_HUB_0201_01 add S */
 void shub_input_report_exif_grav_det(bool send);
 void shub_input_report_exif_ride_pause_det(bool send, int32_t info);    // SHMDS_HUB_0209_02 add
+void shub_input_report_exif_pickup_det(void);                           /* SHMDS_HUB_1701_01 */
 void shub_input_report_exif_mot_det(unsigned char det_info);
 void shub_input_report_exif_shex_acc(int32_t *data);
 void shub_input_report_exif_judge(void);
+int shub_vibe_notify_check(int kind);                   /* SHMDS_HUB_0213_01 add */
 int shub_set_default_parameter(void);
 /* SHMDS_HUB_0201_01 add E */
+int shub_set_default_ped_parameter(void);               /* SHMDS_HUB_0204_19 add */
 /* SHMDS_HUB_0202_01 add S */
 void shub_set_already_md_flg(int data);
 void shub_clr_already_md_flg(int data);
@@ -372,6 +418,11 @@ void shub_get_param_check_exif(int type, int *data);    // SHMDS_HUB_0207_01 add
 void shub_set_enable_ped_exif_flg(int en);              // SHMDS_HUB_0207_01 add
 int shub_get_mcu_ped_enable(void);                      // SHMDS_HUB_0206_06 add
 void shub_exif_input_val_init(void);                    // SHMDS_HUB_0304_01 add
+/* SHMDS_HUB_0211_01 add S */
+void shub_set_param_exif_md_mode(int32_t *param);
+void shub_set_exif_md_mode_flg(int32_t mode);
+int32_t shub_get_exif_md_mode_flg(void);
+/* SHMDS_HUB_0211_01 add E */
 
 void shub_suspend_acc(void);
 void shub_suspend_mag(void);

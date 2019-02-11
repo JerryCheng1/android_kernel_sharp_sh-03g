@@ -26,11 +26,13 @@ int shdisp_API_do_lcd_det_recovery(void);
 int shdisp_API_is_lcd_det_recovering(void);
 void shdisp_API_psals_recovery_subscribe( void );
 void shdisp_API_psals_recovery_unsubscribe(void);
+int shdisp_API_check_upper_unit(void);
+void shdisp_API_semaphore_start(void);
+void shdisp_API_semaphore_end(void);
 
 /* ------------------------------------------------------------------------- */
 /* MACROS                                                                    */
 /* ------------------------------------------------------------------------- */
-#define SHDISP_LCDDR_GAMMA_STATUS_OK            (0x96)
 
 /* ------------------------------------------------------------------------- */
 /* STRUCTURE                                                                 */
@@ -71,19 +73,20 @@ enum {
     SHDISP_DEBUG_RGB_LED = 25,
     SHDISP_DEBUG_LED_REG_DUMP = 26,
     SHDISP_DEBUG_BDIC_RESTART = 27,
-#ifdef SHDISP_TRI_LED2
     SHDISP_DEBUG_PIERCE_INOUT = 28,
-#endif  /* SHDISP_TRI_LED2 */
     SHDISP_DEBUG_LCD_POWER_CHG = 30,
     SHDISP_DEBUG_MIPI_TX_FREQ_CHG = 40,
     SHDISP_DEBUG_FPS_LED = 41,
     SHDISP_DEBUG_DISPLAYLOG_ERROR_LOG_TEST = 45,
     SHDISP_DEBUG_DISPLAYLOG_SUMMARY_TEST = 46,
     SHDISP_DEBUG_CHARGE_BLK_MODE = 51,
+    SHDISP_DEBUG_LOW_BLK_MODE = 52,
     SHDISP_DEBUG_EMG_BLK_MODE = 53,
     SHDISP_DEBUG_RECOVERY_NG = 60,
-    SHDISP_DEBUG_DSI_WRITE = 90,
-    SHDISP_DEBUG_DSI_READ = 91,
+    SHDISP_DEBUG_DSI_DCS_WRITE = 90,
+    SHDISP_DEBUG_DSI_DCS_READ = 91,
+    SHDISP_DEBUG_DSI_GEN_WRITE = 92,
+    SHDISP_DEBUG_DSI_GEN_READ = 93,
     SHDISP_DEBUG_SET_IRQ = 98,
     SHDISP_DEBUG_DO_RECOVERY = 99,
 };

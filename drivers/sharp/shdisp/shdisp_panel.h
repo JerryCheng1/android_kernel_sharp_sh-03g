@@ -28,6 +28,8 @@
 /* ------------------------------------------------------------------------- */
 /* MACROS                                                                    */
 /* ------------------------------------------------------------------------- */
+#define SHDISP_LCDDR_GMM_STATUS_OK          (0x96)
+#define SHDISP_LCDDR_GMM_STATUS_NOT_SET     (0x00)
 
 /* ------------------------------------------------------------------------- */
 /* TYPES                                                                     */
@@ -58,13 +60,8 @@ struct shdisp_panel_context {
     unsigned short vcom;
     unsigned short vcom_low;
     unsigned short vcom_nvram;
-    struct shdisp_lcddr_phy_gamma_reg lcddr_phy_gamma;
+    struct shdisp_lcddr_phy_gmm_reg lcddr_phy_gmm;
 };
-
-#define SHDISP_REG_WRITE        (0x01)
-#define SHDISP_SAVE_VALUE       (0x02)
-#define SHDISP_SAVE_VALUE_LOW   (0x04)
-#define SHDISP_RESET_VALUE      (0x08)
 
 /* ------------------------------------------------------------------------- */
 /* VARIABLES                                                                 */
@@ -89,22 +86,38 @@ int shdisp_panel_API_diag_set_flicker_param(struct shdisp_diag_flicker_param vco
 int shdisp_panel_API_diag_get_flicker_param(struct shdisp_diag_flicker_param *vcom);
 int shdisp_panel_API_diag_get_flicker_low_param(struct shdisp_diag_flicker_param *vcom);
 int shdisp_panel_API_check_recovery(void);
-int shdisp_panel_API_diag_set_gammatable_and_voltage(struct shdisp_diag_gamma_info *gamma_info);
-int shdisp_panel_API_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_info *gamma_info);
-int shdisp_panel_API_diag_set_gamma(struct shdisp_diag_gamma *gamma);
+int shdisp_panel_API_diag_set_gmmtable_and_voltage(struct shdisp_diag_gamma_info *gmm_info);
+int shdisp_panel_API_diag_get_gmmtable_and_voltage(struct shdisp_diag_gamma_info *gmm_info);
+int shdisp_panel_API_diag_set_gmm(struct shdisp_diag_gamma *gmm);
+int shdisp_panel_API_set_freq_param(struct shdisp_freq_params *freq);
+
+struct shdisp_panel_mode {
+#if defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+    int bkl_mode;
+    int bkl_param;
+#ifdef SHDISP_TRV_NM2
+    int trv_mode;
+#endif /* SHDISP_TRV_NM2 */
+#endif /* CONFIG_SHDISP_PANEL_HAYABUSA */
+    int dummy;
+};
+
 int shdisp_panel_API_shutdown(void);
 #if defined(CONFIG_ANDROID_ENGINEERING)
 void shdisp_panel_API_dump(int type);
 #endif /* CONFIG_ANDROID_ENGINEERING */
 int shdisp_panel_API_set_irq(int enable);
+int shdisp_panel_API_mfr(int mfr);
+int shdisp_panel_API_chg_mode(struct shdisp_panel_mode p_mode);
 
 int shdisp_panel_API_mipi_dsi_cmds_tx(int commit, struct shdisp_dsi_cmd_desc *cmds, int cnt);
 int shdisp_panel_API_mipi_dsi_cmds_rx(unsigned char *rbuf, struct shdisp_dsi_cmd_desc *cmds, unsigned char size);
 int shdisp_panel_API_mipi_diag_write_reg(char dtype, unsigned char addr, char *write_data, unsigned char size);
 int shdisp_panel_API_mipi_diag_read_reg(char dtype, unsigned char addr, unsigned char *read_data, unsigned char size);
+int shdisp_panel_API_dsi_write_reg(struct shdisp_dsi_cmd_req *req);
+int shdisp_panel_API_dsi_read_reg(struct shdisp_dsi_cmd_req *req);
 
 #if defined(CONFIG_SHDISP_PANEL_ANDY)
-int shdisp_andy_API_set_freq_param(void *freq);
 int shdisp_andy_API_vcom_tracking(int tracking);
 int shdisp_andy_API_vcom_is_adjusted(void);
 #elif defined(CONFIG_SHDISP_PANEL_ARIA)
@@ -129,12 +142,15 @@ struct shdisp_panel_operations {
     int (*get_flicker)(struct shdisp_diag_flicker_param *vcom);
     int (*get_flicker_low)(struct shdisp_diag_flicker_param *vcom);
     int (*check_recovery)(void);
-    int (*set_gammatable_and_voltage)(struct shdisp_diag_gamma_info *gamma_info);
-    int (*get_gammatable_and_voltage)(struct shdisp_diag_gamma_info *gamma_info);
-    int (*set_gamma)(struct shdisp_diag_gamma *gamma);
+    int (*set_gmmtable_and_voltage)(struct shdisp_diag_gamma_info *gmm_info);
+    int (*get_gmmtable_and_voltage)(struct shdisp_diag_gamma_info *gmm_info);
+    int (*set_gmm)(struct shdisp_diag_gamma *gmm);
     int (*shutdown)(void);
     void (*dump)(int param);
     int (*set_irq)(int enable);
+    int (*set_mfr)(int mfr);
+    int (*chg_mode)(struct shdisp_panel_mode p_mode);
+    int (*set_freq_param)(struct shdisp_freq_params *freq);
 };
 #endif /* SHDISP_PANEL_API_H */
 

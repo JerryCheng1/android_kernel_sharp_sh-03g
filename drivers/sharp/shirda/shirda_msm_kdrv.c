@@ -49,7 +49,7 @@
 
 
 
-#define	SHIRDA_KERNEL_DRIVER_VERSION	"1.54.00"
+#define	SHIRDA_KERNEL_DRIVER_VERSION	"1.55.00"
 #define	SHIRDA_KERNEL_DRIVER_NAME	SHIRDA_DEVFILE_NAME
 
 #define SHIRDA_CORE_CLK_FREQ	(7372800)
@@ -546,6 +546,10 @@ static int shirda_release(struct inode *inode, struct file *fp)
 static char* node =  SHIRDA_BLSP_NODE;
 module_param( node, charp, S_IRUGO );
 MODULE_PARM_DESC( node, "BLSP node name of tty device");
+
+static char* ver = SHIRDA_KERNEL_DRIVER_MASTER_VERSION;
+module_param( ver, charp, S_IRUGO );
+MODULE_PARM_DESC( ver, "sharp irda kernel driver version");
 
 static int shirda_driver_init(struct platform_device *pdev)
 {

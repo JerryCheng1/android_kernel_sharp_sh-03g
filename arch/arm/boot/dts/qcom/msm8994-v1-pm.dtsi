@@ -437,9 +437,6 @@
 			<0xff 102>,  /* osmmu_CIrpt[1] */
 			<0xff 105>, /* iommu_pmon_nonsecure_irq */
 			<0xff 109>,  /* ocmem_dm_nonsec_irq */
-/* CONFIG_SHSYS_CUST Add Start */
-			<0xff 115>,
-/* CONFIG_SHSYS_CUST Add End */
 			<0xff 126>,  /* bam_irq[0] */
 			<0xff 155>,  /* sdcc_irq[0] */
 			<0xff 163>,  /* usb30_ee1_irq */

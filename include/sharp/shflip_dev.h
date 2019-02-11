@@ -1,6 +1,6 @@
 /* kernel/include/sharp/shflip_dev.h  (Flip Driver)
  *
- * Copyright (C) 2014 SHARP CORPORATION
+ * Copyright (C) 2015 SHARP CORPORATION
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and

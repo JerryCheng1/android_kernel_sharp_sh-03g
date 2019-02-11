@@ -45,6 +45,7 @@ int mdss_pll_resource_enable(struct mdss_pll_resources *pll_res, bool enable)
 		return rc;
 	}
 
+	mutex_lock(&pll_res->res_lock);
 	if (enable) {
 		if (pll_res->resource_ref_cnt == 0)
 			changed++;
@@ -67,6 +68,7 @@ int mdss_pll_resource_enable(struct mdss_pll_resources *pll_res, bool enable)
 			pll_res->resource_enable = enable;
 	}
 
+	mutex_unlock(&pll_res->res_lock);
 	return rc;
 }
 
@@ -142,11 +144,16 @@ static int mdss_pll_resource_parse(struct platform_device *pdev,
 	} else if (!strcmp(compatible_stream, "qcom,mdss_dsi_pll_8994")) {
 		pll_res->pll_interface_type = MDSS_DSI_PLL_20NM;
 		pll_res->target_id = MDSS_PLL_TARGET_8994;
+	} else if (!strcmp(compatible_stream, "qcom,mdss_dsi_pll_8992")) {
+		pll_res->pll_interface_type = MDSS_DSI_PLL_20NM;
+		pll_res->target_id = MDSS_PLL_TARGET_8992;
 	} else if (!strcmp(compatible_stream, "qcom,mdss_edp_pll")) {
 		pll_res->pll_interface_type = MDSS_EDP_PLL;
 	} else if (!strcmp(compatible_stream, "qcom,mdss_hdmi_pll")) {
 		pll_res->pll_interface_type = MDSS_HDMI_PLL;
 	} else if (!strcmp(compatible_stream, "qcom,mdss_hdmi_pll_8994")) {
+		pll_res->pll_interface_type = MDSS_HDMI_PLL_20NM;
+	} else if (!strcmp(compatible_stream, "qcom,mdss_hdmi_pll_8992")) {
 		pll_res->pll_interface_type = MDSS_HDMI_PLL_20NM;
 	} else {
 		goto err;
@@ -392,6 +399,8 @@ static const struct of_device_id mdss_pll_dt_match[] = {
 	{.compatible = "qcom,mdss_dsi_pll_8974"},
 	{.compatible = "qcom,mdss_dsi_pll_8994"},
 	{.compatible = "qcom,mdss_hdmi_pll_8994"},
+	{.compatible = "qcom,mdss_dsi_pll_8992"},
+	{.compatible = "qcom,mdss_hdmi_pll_8992"},
 	{.compatible = "qcom,mdss_dsi_pll_8916"},
 	{.compatible = "qcom,mdss_dsi_pll_8939"},
 	{.compatible = "qcom,mdss_dsi_pll_8909"},

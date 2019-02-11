@@ -24,7 +24,13 @@
 #define FLASH_NAME "camera-led-flash"
 
 #undef CDBG
+/* SHLOCAL_CAMERA_DRIVERS-> */
+#if 0
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
+#else
+#define CDBG(fmt, args...) do { } while (0)
+#endif
+/* SHLOCAL_CAMERA_DRIVERS<- */
 
 /* SHLOCAL_CAMERA_DRIVERS-> */
 extern int shcamled_pmic_set_torch_led_1_current(unsigned mA);

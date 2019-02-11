@@ -20,4 +20,8 @@ config SH_AUDIO_SMARTAMP
 	tristate "SHARP Smart AMP SSM4329"
 	default n
 
+config SH_SMARTPHONE_PIERCE
+	tristate "SHARP Smartphone Pierce customized"
+	default n
+
 endmenu

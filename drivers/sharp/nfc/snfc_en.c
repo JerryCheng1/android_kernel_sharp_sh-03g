@@ -1,6 +1,6 @@
-/* drivers/sharp/nfc/snfc_en.c (NFC driver)
+/* drivers/sharp/nfc/snfc_en.c
  *
- * Copyright (C) 2014 SHARP CORPORATION
+ * Copyright (C) 2015 SHARP CORPORATION
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -13,6 +13,7 @@
  *
  */
 
+/* INCLUDE FILES */
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/mutex.h>
@@ -31,215 +32,72 @@
 #include <linux/device.h>
 #include <linux/qpnp/pin.h>
 #include <asm/uaccess.h>
-#include <sharp/snfc_en.h>
+#include <linux/platform_device.h>
+#include <linux/miscdevice.h>
 #include <linux/regulator/consumer.h>
-#include "nfc.h"
-
 #include <linux/pinctrl/consumer.h>
 #include <linux/pinctrl/pinconf-generic.h>
-/* snfc_en */
+#include <linux/of_gpio.h>
+#include <linux/of_device.h>
+#include <linux/regulator/consumer.h>
+
+#include <sharp/snfc_en.h>
+#include "nfc.h"
+#include "GPIO/nfc_gpio_drv.h"
+#include "I2C/nfc_i2c_drv.h"
+
+/* MACROS */
 #define D_SNFC_EN_DEVS 			(1)
 #define D_SNFC_EN_DEV_NAME 		("snfc_en")
 
-/* NFC enable/disable */
-#define D_SNFC_DISABLE	 		(0)
-#define D_SNFC_ENABLE 			(1)
-
-/* GPIO number */
-#define D_UART_TX_GPIO_NO		(27)
-#define D_UART_RX_GPIO_NO		(28)
-#define D_UART_CTS_GPIO_NO		(29)
-#define D_UART_RTS_GPIO_NO		(30)
-#define D_VFEL_GPIO_NO			g_vfel_gpio_no
-
-/* VEN */
-#define D_VEN_DEV_LOW 			(0)
-#define D_VEN_DEV_HIGH 			(1)
-
-/* FIRM */
-#define D_FIRM_DEV_LOW 			(0)
-#define D_FIRM_DEV_HIGH			(1)
-
-/* VFEL */
 #define D_VFEL_DEV_LOW 			(0)
 #define D_VFEL_DEV_HIGH 		(1)
-#define D_VFEL_LOW_SLEEP_USEC	100000
+#define D_VFEL_SLEEP_USEC		(100000)
 
-/* VREG(power) enable/disable */
 #define D_VREG_DISABLE 			(0)
 #define D_VREG_ENABLE 			(1)
 
+/* VARIABLES */
+struct snfc_en_platform_data {
+	unsigned int hvdd;
+};
 
-#define D_SEC_INTERVAL_USEC	1000
-#define D_SH_INTERVAL_USEC	1000
+struct snfc_en_info {
+	struct miscdevice miscdev;
+	struct mutex mutex;
+	struct device *dev;
+	struct snfc_en_platform_data *pdata;
+};
 
-
-#define SEC_NFC_VEN_WAIT_TIME 100
-
-#define D_POWCTRL_FLG_TRUE		(1)
-#define D_POWCTRL_FLG_FALSE		(0)
-
-/*
- * prototype
- */
-static __init int snfc_en_init(void);
-static __exit void snfc_en_exit(void);
-static int snfc_pvdd_vreg_enable(int enable);
-static int snfc_avdd_vreg_enable(int enable);
-static int snfc_tvdd_vreg_enable(int enable);
-
-/*
- * global variable
- */
-static struct class *snfc_en_class = NULL;
-static struct cdev snfc_en_cdev;
 static struct device *snfc_en_dev = NULL;
 
-static char g_snfc_en_state = D_SNFC_DISABLE;
+/* FUNCTION */
 
-static int g_snfc_powctrl_flg = D_POWCTRL_FLG_TRUE;
-
-/*
- * function_snfc_en
- */
-
-void snfc_change_wakeup_mode(state)
+static int snfc_en_open(struct inode *inode, struct file *file)
 {
+	struct snfc_en_info *info = container_of(file->private_data, struct snfc_en_info, miscdev);
 
-	NFC_DRV_DBG_LOG("START state=%d",state);
-
-	if (state == D_WAKEUP_STATE_UP) {
-		pin_config_set("fd510000.pinctrl", "gp-29", PIN_CONFIG_BIAS_PULL_UP);
-		NFC_DRV_DBG_LOG("WAKE UP = PULL UP");
-	} else {
-		pin_config_set("fd510000.pinctrl", "gp-29", PIN_CONFIG_BIAS_PULL_DOWN);
-		NFC_DRV_DBG_LOG("WAKE UP = PULL DOWN");
-	}
-
-	NFC_DRV_DBG_LOG("END");
-}
-
-int snfc_get_powctrl_flg(void)
-{
-	return g_snfc_powctrl_flg;
-}
-
-
-static void snfc_output_disable(int sw)
-{
 	int ret = 0;
 
 	NFC_DRV_DBG_LOG("START");
 
-	/* UART */
+	file->private_data = &info->miscdev;
 
-	/* WAKEUP */
-	if(sec_nfc_gpio_state(SEC_NFC_GPIO_STATE_STANDBY, SEC_NFC_GPIO_NO_IRQ)){
-		NFC_DRV_ERR_LOG("sec_nfc_gpio_state(push)");
-	}
-
-	/* FIRMWARE */
-	ret = sec_nfc_gpio_value(SEC_NFC_GPIO_VALUE_SET, SEC_NFC_GPIO_NO_FIRM, 0);
-	if(ret){
-		NFC_DRV_ERR_LOG("sec_nfc_gpio_value(FIRM)");
-	}
-
-	if(sw){
-		/* UART */
-		sec_nfc_uart_setting();
-
-		usleep(D_SH_INTERVAL_USEC);
-
-		/* TVDD */
-		snfc_tvdd_vreg_enable(D_VREG_DISABLE);
-
-		usleep(D_SH_INTERVAL_USEC);
-
-		/* PVDD */
-		snfc_pvdd_vreg_enable(D_VREG_DISABLE);
-
-		usleep(D_SEC_INTERVAL_USEC);
-
-		/* VEN */
-		ret = sec_nfc_gpio_value(SEC_NFC_GPIO_VALUE_SET, SEC_NFC_GPIO_NO_VEN, 0);
-		if(ret){
-			NFC_DRV_ERR_LOG("sec_nfc_gpio_value(VEN)");
-		}
-	
-		usleep(D_SH_INTERVAL_USEC);
-
-		/* AVDD */
-		snfc_avdd_vreg_enable(D_VREG_DISABLE);
-	}
-
-	g_snfc_en_state = D_SNFC_DISABLE;
-	g_snfc_powctrl_flg = D_POWCTRL_FLG_FALSE;
-
-	NFC_DRV_DBG_LOG("END");
+	NFC_DRV_DBG_LOG("END ret=%d", ret);
+	return ret;
 }
 
-static void snfc_output_enable(void)
+static int snfc_en_close(struct inode *inode, struct file *file)
 {
-	int ret = 0;
+//	struct snfc_en_info *info = container_of(file->private_data, struct snfc_en_info, miscdev);
 
 	NFC_DRV_DBG_LOG("START");
 
-	/* WAKEUP */
-	ret = sec_nfc_gpio_state(SEC_NFC_GPIO_STATE_ACTIVE, SEC_NFC_GPIO_NO_IRQ);
-	if(sec_nfc_gpio_direction(SEC_NFC_GPIO_DIRECTION_INPUT,SEC_NFC_GPIO_NO_IRQ,0)){
-		NFC_DRV_ERR_LOG("failed to direction gpio PUSH");
-	}
-
-	if (ret) {
-		NFC_DRV_ERR_LOG("WAKEUP_GPIO ret=%d", ret);
-	}
-
-	snfc_change_wakeup_mode(D_WAKEUP_STATE_UP);
-
-	/* AVDD */
-	snfc_avdd_vreg_enable(D_VREG_ENABLE);
-
-	usleep(D_SEC_INTERVAL_USEC);
-
-	/* PVDD */
-	snfc_pvdd_vreg_enable(D_VREG_ENABLE);
-
-	usleep(D_SEC_INTERVAL_USEC);
-
-	/* TVDD */
-	snfc_tvdd_vreg_enable(D_VREG_ENABLE);
-
-
-	g_snfc_en_state = D_SNFC_ENABLE;
-	g_snfc_powctrl_flg = D_POWCTRL_FLG_TRUE;
-
 	NFC_DRV_DBG_LOG("END");
+	return 0;
 }
 
-static void snfc_chip_reset(void)
-{
-	NFC_DRV_DBG_LOG("START");
-
-	if(sec_nfc_gpio_state(SEC_NFC_GPIO_STATE_ACTIVE, SEC_NFC_GPIO_NO_VFEL)) {
-		NFC_DRV_ERR_LOG("gpio_request(VFEL)");
-	}
-	if(sec_nfc_gpio_value(SEC_NFC_GPIO_VALUE_SET, SEC_NFC_GPIO_NO_VFEL, D_VFEL_DEV_HIGH)){
-		NFC_DRV_ERR_LOG("sec_nfc_gpio_value(VFEL)");
-	}
-
-	usleep(D_VFEL_LOW_SLEEP_USEC);
-
-	if(sec_nfc_gpio_value(SEC_NFC_GPIO_VALUE_SET, SEC_NFC_GPIO_NO_VFEL, D_VFEL_DEV_LOW)){
-		NFC_DRV_ERR_LOG("sec_nfc_gpio_value(VFEL)");
-	}
-
-	if(sec_nfc_gpio_state(SEC_NFC_GPIO_STATE_STANDBY, SEC_NFC_GPIO_NO_VFEL)){
-		NFC_DRV_ERR_LOG("gpio_free(VFEL)");
-	}
-	NFC_DRV_DBG_LOG("END");
-}
-
-static int snfc_pvdd_vreg_enable(int enable)
+static int snfc_hvdd_vreg_enable(int enable)
 {
 	struct regulator *reg;
 	struct device *dev = snfc_en_dev;
@@ -255,33 +113,21 @@ static int snfc_pvdd_vreg_enable(int enable)
 		return -1;
 	}
 
-	if (enable == 1) {
-	    regulator_set_voltage(reg, min_uV, max_uV);
-
+	if (enable) {
+		regulator_set_voltage(reg, min_uV, max_uV);
 		if (!regulator_is_enabled(reg)) {
 			ret = regulator_enable(reg);
 			if(ret != 0){
 				NFC_DRV_ERR_LOG("regulator_enable ret:%d",ret);
 			}
 		}
-	} else if (enable == 0) {
+	}else{
 		if (regulator_is_enabled(reg)) {
 			ret = regulator_disable(reg);
 			if(ret != 0){
 				NFC_DRV_ERR_LOG("regulator_disable ret:%d",ret);
 			}
 		}
-	} else if (enable == 2) {
-		ret = regulator_set_mode(reg,REGULATOR_MODE_IDLE);
-		if(ret != 0){
-			NFC_DRV_ERR_LOG("regulator_set_mode LPM ret:%d",ret);
-		}
-	} else if (enable == 3) {
-		ret = regulator_set_mode(reg,REGULATOR_MODE_NORMAL);
-		if(ret != 0){
-			NFC_DRV_ERR_LOG("regulator_set_mode NPM ret:%d",ret);
-		}
-
 	}
 
 	regulator_put(reg);
@@ -291,143 +137,119 @@ static int snfc_pvdd_vreg_enable(int enable)
 	return 0;
 }
 
-static int snfc_avdd_vreg_enable(int enable)
+static void snfc_output_disable(void)
 {
-	struct regulator *reg;
-	struct device *dev = snfc_en_dev;
-	const char *id = "pm8994_l14";
-	int min_uV = 1800000, max_uV = 1800000;
-	int ret = 0;
-
-	NFC_DRV_DBG_LOG("START enable=%d", enable);
-
-	reg = regulator_get(dev, id);
-	if (IS_ERR(reg)) {
-		NFC_DRV_ERR_LOG("Unable to get %s regulator", id);
-		return -1;
-	}
-
-	if (enable == 1) {
-	    regulator_set_voltage(reg, min_uV, max_uV);
-
-		if (!regulator_is_enabled(reg)) {
-			ret = regulator_enable(reg);
-			if(ret != 0){
-				NFC_DRV_ERR_LOG("regulator_enable ret:%d",ret);
-			}
-
-		}
-	} else if(enable == 0) {
-		if (regulator_is_enabled(reg)) {
-			ret = regulator_disable(reg);
-			if(ret != 0){
-				NFC_DRV_ERR_LOG("regulator_disable ret:%d",ret);
-			}
-		}
-	} else if (enable == 2) {
-		ret = regulator_set_mode(reg,REGULATOR_MODE_IDLE);
-		if(ret != 0){
-			NFC_DRV_ERR_LOG("regulator_set_mode LPM ret:%d",ret);
-		}
-	} else if (enable == 3) {
-		ret = regulator_set_mode(reg,REGULATOR_MODE_NORMAL);
-		if(ret != 0){
-			NFC_DRV_ERR_LOG("regulator_set_mode NPM ret:%d",ret);
-		}
-
-	}
-
-	regulator_put(reg);
-
+	NFC_DRV_DBG_LOG("START");
+	nfc_gpio_pon_low();
 	NFC_DRV_DBG_LOG("END");
 
-	return 0;
+	return;
 }
 
-static int snfc_tvdd_vreg_enable(int enable)
+static void snfc_output_enable(void)
 {
-	struct regulator *reg;
-	struct device *dev = snfc_en_dev;
-	const char *id = "pm8994_l29";
-	int min_uV = 2800000, max_uV = 2800000;
-	int ret = 0;
+	int ret;
 
-	NFC_DRV_DBG_LOG("START enable=%d", enable);
+	NFC_DRV_DBG_LOG("START");
 
-	reg = regulator_get(dev, id);
-	if (IS_ERR(reg)) {
-		NFC_DRV_ERR_LOG("Unable to get %s regulator", id);
-		return -1;
+	snfc_hvdd_vreg_enable(D_VREG_ENABLE);
+	ret = nfc_i2c_nint_active();
+	if(ret){
+		NFC_DRV_ERR_LOG("nfc_gpio_nint_active()");
 	}
-
-	if (enable == 1) {
-	    regulator_set_voltage(reg, min_uV, max_uV);
-
-		if (!regulator_is_enabled(reg)) {
-			ret = regulator_enable(reg);
-			if(ret != 0){
-				NFC_DRV_ERR_LOG("regulator_enable ret:%d",ret);
-			}
-		}
-	} else if (enable == 0) {
-		if (regulator_is_enabled(reg)) {
-			ret = regulator_disable(reg);
-			if(ret != 0){
-				NFC_DRV_ERR_LOG("regulator_disable ret:%d",ret);
-			}
-		}
-	} else if (enable == 2) {
-		ret = regulator_set_mode(reg,REGULATOR_MODE_IDLE);
-		if(ret != 0){
-			NFC_DRV_ERR_LOG("regulator_set_mode LPM ret:%d",ret);
-		}
-	} else if (enable == 3) {
-		ret = regulator_set_mode(reg,REGULATOR_MODE_NORMAL);
-		if(ret != 0){
-			NFC_DRV_ERR_LOG("regulator_set_mode NPM ret:%d",ret);
-		}
-
+	ret = nfc_gpio_status_active();
+	if(ret){
+		NFC_DRV_ERR_LOG("nfc_gpio_status_active()");
 	}
-
-	regulator_put(reg);
 
 	NFC_DRV_DBG_LOG("END");
 
-	return 0;
+	return;
+}
+
+static void snfc_hvdd_disable(void)
+{
+	int ret;
+
+	NFC_DRV_DBG_LOG("START");
+
+	ret = nfc_i2c_nint_suspend();
+	if(ret){
+		NFC_DRV_ERR_LOG("nfc_gpio_nint_suspend()");
+	}
+	ret = nfc_gpio_status_suspend();
+	if(ret){
+		NFC_DRV_ERR_LOG("nfc_gpio_status_suspend()");
+	}
+	snfc_hvdd_vreg_enable(D_VREG_DISABLE);
+
+	NFC_DRV_DBG_LOG("END");
+
+	return;
+}
+
+static void snfc_hvdd_enable(void)
+{
+	int ret;
+
+	NFC_DRV_DBG_LOG("START");
+
+	snfc_hvdd_vreg_enable(D_VREG_ENABLE);
+	ret = nfc_i2c_nint_active();
+	if(ret){
+		NFC_DRV_ERR_LOG("nfc_gpio_nint_active()");
+	}
+	ret = nfc_gpio_status_active();
+	if(ret){
+		NFC_DRV_ERR_LOG("nfc_gpio_status_active()");
+	}
+
+	NFC_DRV_DBG_LOG("END");
+
+	return;
+}
+
+
+static long snfc_en_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	struct snfc_en_info *info = container_of(file->private_data, struct snfc_en_info, miscdev);
+	int ret = 0;
+
+	NFC_DRV_DBG_LOG("START");
+
+	mutex_lock(&info->mutex);
+
+	switch (cmd) {
+	case NFC_SNFC_EN_IOCTL_HVDD_H:
+		snfc_hvdd_enable();
+		break;
+	case NFC_SNFC_EN_IOCTL_HVDD_L:
+		snfc_hvdd_disable();
+		break;
+	default:
+		NFC_DRV_DBG_LOG("Unknow ioctl 0x%x", cmd);
+		ret = -ENOIOCTLCMD;
+		break;
+	}
+
+	mutex_unlock(&info->mutex);
+
+	NFC_DRV_DBG_LOG("END");
+
+	return ret;
 }
 
 static ssize_t snfc_en_read(struct file *filp, char __user *buf, size_t len, loff_t *ppos)
 {
-	char on[2];
-
 	NFC_DRV_DBG_LOG("START");
-
-	/* length check */
-	if (len < 1) {
-		NFC_DRV_ERR_LOG("length check len = %d", (int)len);
-		return -EIO;
-	}
-
-	on[0] = g_snfc_en_state;
-	on[1] = 0x00;
-
-	if (len > 2) {
-		len = 2;
-	}
-
-	if (copy_to_user(buf, on, len)) {
-		NFC_DRV_ERR_LOG("copy_to_user");
-		return -EFAULT;
-	}
-
-	NFC_DRV_DBG_LOG("END on=%d, len=%d", on[0], (int)len);
-
-	return len;
+	NFC_DRV_DBG_LOG("END");
+	return 0;
 }
 
 ssize_t snfc_en_write(struct file *file, const char __user *data, size_t len, loff_t *ppos)
 {
-	char on;
+	char sw;
+	ssize_t ret = len;
 
 	NFC_DRV_DBG_LOG("START");
 
@@ -437,180 +259,27 @@ ssize_t snfc_en_write(struct file *file, const char __user *data, size_t len, lo
 		return -EIO;
 	}
 
-	if (copy_from_user(&on, data, 1)) {
+	if (copy_from_user(&sw, data, 1)) {
 		NFC_DRV_ERR_LOG("copy_from_user");
 		return -EFAULT;
 	}
 
-	if (on == g_snfc_en_state) {
-		NFC_DRV_DBG_LOG("g_snfc_en_state equals to on, do nothing");
-	} else if (on == D_SNFC_ENABLE) {
+	switch(sw){
+	case SNFC_OFF_SEQUENCE_NFC:
+		NFC_DRV_DBG_LOG("off sequence_nfc");
+		snfc_output_disable();
+		break;
+	case SNFC_ON_SEQUENCE:
+		NFC_DRV_DBG_LOG("on sequence");
 		snfc_output_enable();
-	} else if (on == D_SNFC_DISABLE) {
-		snfc_output_disable(0);
-	} else if (on == 2) {
-		snfc_output_disable(1);
-	} else if (on == 3) {
-		snfc_pvdd_vreg_enable(0);
-	} else if (on == 4) {
-		snfc_pvdd_vreg_enable(1);
-	} else if (on == 5) {
-		snfc_avdd_vreg_enable(0);
-	} else if (on == 6) {
-		snfc_avdd_vreg_enable(1);
-	} else if (on == 7) {
-		snfc_tvdd_vreg_enable(0);
-	} else if (on == 8) {
-		snfc_tvdd_vreg_enable(1);
-	} else if (on == 9) {
-		snfc_pvdd_vreg_enable(2);
-	} else if (on == 10) {
-		snfc_pvdd_vreg_enable(3);
-	} else if (on == 11) {
-		snfc_avdd_vreg_enable(2);
-	} else if (on == 12) {
-		snfc_avdd_vreg_enable(3);
-	} else if (on == 13) {
-		snfc_tvdd_vreg_enable(2);
-	} else if (on == 14) {
-		snfc_tvdd_vreg_enable(3);
-	} else if (on == 15) {
-		sec_nfc_uart_setting();
-	} else {
-		NFC_DRV_ERR_LOG("on=%d", on);
-		return -EFAULT;
-	}
-
-	NFC_DRV_DBG_LOG("END on=%d, g_snfc_en_state=%d", on, g_snfc_en_state);
-
-	return len;
-}
-
-static long snfc_en_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
-{
-	int ret = 0;
-	NFC_DRV_DBG_LOG("START cmd=%u", cmd);
-
-	switch (cmd) {
-	case SHSNFC_EN_REQ_CHIPRESET:
-		snfc_chip_reset();
 		break;
-	case SHSNFC_EN_REQ_PVDD_ENABLE:
-		snfc_pvdd_vreg_enable((int)arg);
+	case SNFC_OFF_SEQUENCE_SIM:
+		NFC_DRV_DBG_LOG("off sequence_sim");
 		break;
-	case SHSNFC_EN_REQ_AVDD_ENABLE:
-		snfc_avdd_vreg_enable((int)arg);
-		break;
-	case SHSNFC_EN_REQ_TVDD_ENABLE:
-		snfc_tvdd_vreg_enable((int)arg);
-		break;
-	case SHSNFC_EN_REQ_VEN_ENABLE:
-		if (arg) {
-			ret = sec_nfc_gpio_value(SEC_NFC_GPIO_VALUE_SET, SEC_NFC_GPIO_NO_VEN, D_VEN_DEV_HIGH);
-			if(ret){
-				NFC_DRV_ERR_LOG("sec_nfc_gpio_value(VEN)");
-			}
-
-		} else {
-			ret = sec_nfc_gpio_value(SEC_NFC_GPIO_VALUE_SET, SEC_NFC_GPIO_NO_VEN, D_VEN_DEV_LOW);
-			if(ret){
-				NFC_DRV_ERR_LOG("sec_nfc_gpio_value(VEN)");
-			}
-
-		}
-		break;
-	case SHSNFC_EN_REQ_FIRM_ENABLE:
-		if (arg) {
-
-			ret = sec_nfc_gpio_value(SEC_NFC_GPIO_VALUE_SET, SEC_NFC_GPIO_NO_FIRM, D_FIRM_DEV_HIGH);
-			if(ret){
-				NFC_DRV_ERR_LOG("sec_nfc_gpio_value(FIRM)");
-			}
-		} else {
-			ret = sec_nfc_gpio_value(SEC_NFC_GPIO_VALUE_SET, SEC_NFC_GPIO_NO_FIRM, D_FIRM_DEV_LOW);
-			if(ret){
-				NFC_DRV_ERR_LOG("sec_nfc_gpio_value(FIRM)");
-			}
-		}
-		break;
-	case SHSNFC_EN_GET_CHIP_STATE:
-		ret = sec_nfc_gpio_value(SEC_NFC_GPIO_VALUE_GET, SEC_NFC_GPIO_NO_UART_RX, 0);
-
-		return ret;
 	default:
-		NFC_DRV_ERR_LOG("cmd unhandled");
-		return -EINVAL;
-	}
-
-	NFC_DRV_DBG_LOG("END");
-
-	return 0;
-}
-
-static int snfc_en_open(struct inode *inode, struct file *file)
-{
-	NFC_DRV_DBG_LOG("");
-	return 0;
-}
-
-static int snfc_en_release(struct inode *inode, struct file *file)
-{
-	NFC_DRV_DBG_LOG("");
-	return 0;
-}
-
-static const struct file_operations snfc_en_fileops = {
-	.owner          = THIS_MODULE,
-	.read           = snfc_en_read,
-	.write          = snfc_en_write,
-	.unlocked_ioctl = snfc_en_ioctl,
-#ifdef CONFIG_COMPAT
-	.compat_ioctl   = snfc_en_ioctl,
-#endif //CONFIG_COMPAT
-	.open           = snfc_en_open,
-	.release        = snfc_en_release,
-};
-
-/*
- * snfc_en_init
- */
-static __init int snfc_en_init(void)
-{
-	int ret = 0;
-	dev_t dev = MKDEV(MISC_MAJOR, 0);
-
-	NFC_DRV_DBG_LOG("START");
-
-	snfc_en_class = class_create(THIS_MODULE, "snfc_en");
-	if (IS_ERR(snfc_en_class)) {
-		ret = PTR_ERR(snfc_en_class);
-		NFC_DRV_ERR_LOG("class_create ret=%d", ret);
-		return ret;
-	}
-
-	ret = alloc_chrdev_region(&dev, 0, D_SNFC_EN_DEVS, D_SNFC_EN_DEV_NAME);
-	if (ret) {
-		NFC_DRV_ERR_LOG("alloc_chrdev_region ret=%d", ret);
-		return ret;
-	}
-
-	cdev_init(&snfc_en_cdev, &snfc_en_fileops);
-	snfc_en_cdev.owner = THIS_MODULE;
-
-	ret = cdev_add(&snfc_en_cdev, dev, D_SNFC_EN_DEVS);
-	if (ret) {
-		unregister_chrdev_region(dev, D_SNFC_EN_DEVS);
-		NFC_DRV_ERR_LOG("cdev_add ret=%d", ret);
-		return ret;
-	}
-
-	snfc_en_dev = device_create(snfc_en_class, NULL, dev, NULL, D_SNFC_EN_DEV_NAME);
-	if (IS_ERR(snfc_en_dev)) {
-		cdev_del(&snfc_en_cdev);
-		unregister_chrdev_region(dev, D_SNFC_EN_DEVS);
-		ret = PTR_ERR(snfc_en_dev);
-		NFC_DRV_ERR_LOG("device_create ret=%d", ret);
-		return ret;
+		NFC_DRV_ERR_LOG("write data = %d", sw);
+		ret = -EFAULT;
+		break;
 	}
 
 	NFC_DRV_DBG_LOG("END");
@@ -618,24 +287,134 @@ static __init int snfc_en_init(void)
 	return ret;
 }
 
-/*
- * snfc_en_exit
- */
-static __exit void snfc_en_exit(void)
+
+static const struct file_operations snfc_en_fops = {
+	.owner			= THIS_MODULE,
+	.open			= snfc_en_open,
+	.read			= snfc_en_read,
+	.write			= snfc_en_write,
+	.release		= snfc_en_close,
+	.unlocked_ioctl	= snfc_en_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl	= snfc_en_ioctl
+#endif //CONFIG_COMPAT
+};
+
+static int snfc_en_probe(struct platform_device *pdev)
 {
-	dev_t dev = MKDEV(MISC_MAJOR, 0);
+	struct device *dev = &pdev->dev;
+	struct snfc_en_info *info = NULL;
+	struct snfc_en_platform_data *pdata = NULL;
+	int ret = 0;
 
 	NFC_DRV_DBG_LOG("START");
 
-	cdev_del(&snfc_en_cdev);
-	unregister_chrdev_region(dev, D_SNFC_EN_DEVS);
-	class_destroy(snfc_en_class);
+	if(dev) {
+		NFC_DRV_DBG_LOG("alloc for platform data");
+		pdata = kzalloc(sizeof(struct snfc_en_platform_data), GFP_KERNEL);
+		if (!pdata) {
+			NFC_DRV_ERR_LOG("No platform data");
+			ret = -ENOMEM;
+			goto err_pdata;
+		}
+	} else {
+		NFC_DRV_ERR_LOG("failed alloc platform data");
+		ret = -ENOMEM;
+		goto err_pdata;
+	}
+
+	info = kzalloc(sizeof(struct snfc_en_info), GFP_KERNEL);
+	if (!info) {
+		NFC_DRV_ERR_LOG("failed to allocate memory for snfc_en_info");
+		ret = -ENOMEM;
+		kfree(pdata);
+		goto err_info_alloc;
+	}
+
+	info->dev = dev;
+	info->pdata = pdata;
+
+	mutex_init(&info->mutex);
+	dev_set_drvdata(dev, info);
+
+	info->miscdev.minor = MISC_DYNAMIC_MINOR;
+	info->miscdev.name = D_SNFC_EN_DEV_NAME;
+	info->miscdev.fops = &snfc_en_fops;
+	info->miscdev.parent = dev;
+	ret = misc_register(&info->miscdev);
+	if (ret < 0) {
+		NFC_DRV_ERR_LOG("failed to register Device");
+		goto err_dev_reg;
+	}
+
+	snfc_en_dev = dev;
 
 	NFC_DRV_DBG_LOG("END");
+
+	return 0;
+
+err_dev_reg:
+err_info_alloc:
+	kfree(info);
+err_pdata:
+	return ret;
 }
 
+static int snfc_en_remove(struct platform_device *pdev)
+{
+	struct snfc_en_info *info = dev_get_drvdata(&pdev->dev);
+
+	misc_deregister(&info->miscdev);
+
+	kfree(info);
+
+	return 0;
+}
+
+
+/* entry point */
+#ifdef CONFIG_PM
+static int snfc_en_suspend(struct device *dev)
+{
+	NFC_DRV_DBG_LOG("START");
+	NFC_DRV_DBG_LOG("END");
+	return 0;
+}
+
+static int snfc_en_resume(struct device *dev)
+{
+	NFC_DRV_DBG_LOG("START");
+	NFC_DRV_DBG_LOG("END");
+	return 0;
+}
+
+static SIMPLE_DEV_PM_OPS(snfc_en_pm_ops, snfc_en_suspend, snfc_en_resume);
+#endif
+
+static struct platform_device_id snfc_en_id_table[] = {
+	{ D_SNFC_EN_DEV_NAME, 0 },
+	{ }
+};
+
+static struct of_device_id snfc_en_match_table[] = {
+	{ .compatible = D_SNFC_EN_DEV_NAME, },
+	{},
+};
+
+MODULE_DEVICE_TABLE(platform, snfc_en_id_table);
+static struct platform_driver snfc_en_driver = {
+	.probe = snfc_en_probe,
+	.id_table = snfc_en_id_table,
+	.remove = snfc_en_remove,
+	.driver = {
+		.name = D_SNFC_EN_DEV_NAME,
+#ifdef CONFIG_PM
+		.pm = &snfc_en_pm_ops,
+#endif //CONFIG_PM
+		.of_match_table = snfc_en_match_table,
+	},
+};
+
+module_platform_driver(snfc_en_driver);
+
 MODULE_LICENSE("GPL v2");
-
-module_init(snfc_en_init);
-module_exit(snfc_en_exit);
-

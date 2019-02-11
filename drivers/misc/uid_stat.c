@@ -176,7 +176,7 @@ char *sh_write_buffer_uid_stat(char *buffer) {
 		}
 		entry->last_tcp_rcv = rcv;
 
-		snd = (unsigned int) (atomic_read(&entry->tcp_rcv) + INT_MIN);
+		snd = (unsigned int) (atomic_read(&entry->tcp_snd) + INT_MIN);
 		if(snd > entry->last_tcp_snd) {
 			diff_snd = snd - entry->last_tcp_snd;
 		} else {

@@ -25,6 +25,205 @@
 #include "shdisp_context_def.h"
 
 /* ------------------------------------------------------------------------- */
+/* MACROS                                                                    */
+/* ------------------------------------------------------------------------- */
+enum {
+    SHDISP_PHOTO_SENSOR_TYPE_APP,
+    SHDISP_PHOTO_SENSOR_TYPE_LUX,
+    SHDISP_PHOTO_SENSOR_TYPE_CAMERA,
+    SHDISP_PHOTO_SENSOR_TYPE_KEYLED,
+    SHDISP_PHOTO_SENSOR_TYPE_DIAG,
+    SHDISP_PHOTO_SENSOR_TYPE_SENSORHUB,
+    NUM_SHDISP_PHOTO_SENSOR_TYPE
+};
+
+enum {
+    SHDISP_DIAG_COG_ID_NONE,
+    SHDISP_DIAG_COG_ID_MASTER,
+    SHDISP_DIAG_COG_ID_SLAVE,
+    SHDISP_DIAG_COG_ID_BOTH,
+    NUM_SHDISP_DIAG_COG_ID
+};
+
+enum {
+    SHDISP_MAIN_BKL_AUTO_OFF,
+    SHDISP_MAIN_BKL_AUTO_ON,
+    SHDISP_MAIN_BKL_AUTO_ECO_ON,
+    NUM_SHDISP_MAIN_BKL_AUTO
+};
+
+enum {
+    SHDISP_MAIN_BKL_DTV_OFF,
+    SHDISP_MAIN_BKL_DTV_ON,
+    NUM_SHDISP_MAIN_BKL_DTV
+};
+
+enum {
+    SHDISP_MAIN_BKL_EMG_OFF,
+    SHDISP_MAIN_BKL_EMG_ON_LEVEL0,
+    SHDISP_MAIN_BKL_EMG_ON_LEVEL1,
+    NUM_SHDISP_MAIN_BKL_EMG
+};
+
+enum {
+    SHDISP_MAIN_BKL_LOWBKL_MODE_OFF,
+    SHDISP_MAIN_BKL_LOWBKL_MODE_ON,
+    NUM_SHDISP_MAIN_BKL_LOWBKL_MODE
+};
+
+
+enum {
+    SHDISP_MAIN_DISP_DRIVE_FREQ_DEFAULT,
+    SHDISP_MAIN_DISP_DRIVE_FREQ_TYPE_A,
+    SHDISP_MAIN_DISP_DRIVE_FREQ_TYPE_B,
+    SHDISP_MAIN_DISP_DRIVE_FREQ_TYPE_C,
+    NUM_SHDISP_MAIN_DISP_DRIVE_FREQ_TYPE
+};
+
+#if defined(CONFIG_SHDISP_PANEL_HAYABUSA) || defined(USER_CONFIG_SHDISP_PANEL_HAYABUSA)
+enum {
+    SHDISP_MAIN_DISP_INTERNAL_OSC_TYPE_A,
+    SHDISP_MAIN_DISP_INTERNAL_OSC_TYPE_B,
+    NUM_SHDISP_MAIN_DISP_INTERNAL_OSC_TYPE
+};
+#endif  /* defined(CONFIG_SHDISP_PANEL_HAYABUSA) || defined(USER_CONFIG_SHDISP_PANEL_HAYABUSA) */
+
+enum {
+    SHDISP_PHOTO_SENSOR_DISABLE,
+    SHDISP_PHOTO_SENSOR_ENABLE,
+    NUM_SHDISP_PHOTO_SENSOR
+};
+
+enum {
+    SHDISP_IRQ_NO_MASK,
+    SHDISP_IRQ_MASK,
+    NUM_SHDISP_IRQ_SWITCH
+};
+
+enum {
+    SHDISP_MAIN_BKL_CHG_OFF,
+    SHDISP_MAIN_BKL_CHG_ON,
+    SHDISP_MAIN_BKL_CHG_ON_BRIGHT,
+    NUM_SHDISP_MAIN_BKL_CHG
+};
+
+#define SHDISP_OPT_CHANGE_INT_1             (0x01)
+#define SHDISP_OPT_CHANGE_INT_2             (0x02)
+
+#define SHDISP_REG_WRITE        (0x01)
+#define SHDISP_SAVE_VALUE       (0x02)
+#define SHDISP_SAVE_VALUE_LOW   (0x04)
+#define SHDISP_RESET_VALUE      (0x08)
+
+#define SHDISP_LCDDR_BUF_MAX    (64)
+
+enum {
+    SHDISP_TRV_PARAM_OFF,
+    SHDISP_TRV_PARAM_ON
+};
+
+enum {
+    ILLUMI_FRAME_FIRST = 0,
+    ILLUMI_FRAME_SECOND,
+    ILLUMI_FRAME_THIRD,
+    ILLUMI_FRAME_MAX
+};
+
+/* ------------------------------------------------------------------------- */
+/* TYPES                                                                     */
+/* ------------------------------------------------------------------------- */
+struct shdisp_diag_bdic_reg {
+    unsigned char reg;
+    unsigned char val;
+};
+
+struct shdisp_diag_bdic_reg_multi {
+    unsigned char reg;
+    unsigned char val[8];
+    unsigned char size;
+};
+
+struct shdisp_photo_sensor_val {
+    unsigned short value;
+    unsigned int   lux;
+    int mode;
+    int result;
+};
+
+struct shdisp_photo_sensor_power_ctl {
+    int type;
+    int power;
+};
+
+struct shdisp_lcddr_reg {
+    unsigned char address;
+    unsigned char size;
+    unsigned char buf[SHDISP_LCDDR_BUF_MAX];
+    int      cog;
+};
+
+struct shdisp_main_bkl_auto {
+    int mode;
+    int param;
+};
+
+struct shdisp_ave_ado {
+    unsigned char  als_range;
+    unsigned short ave_als0;
+    unsigned short ave_als1;
+    unsigned short ave_ado;
+};
+
+struct shdisp_photo_sensor_raw_val {
+    unsigned short clear;
+    unsigned short ir;
+    int result;
+};
+
+struct shdisp_photo_sensor_trigger {
+    unsigned short level;
+    unsigned short side;
+    unsigned short en_hi_edge;
+    unsigned short en_lo_edge;
+    unsigned short enable;
+};
+
+struct shdisp_photo_sensor_int_trigger {
+    struct shdisp_photo_sensor_trigger trigger1;
+    struct shdisp_photo_sensor_trigger trigger2;
+    int type;
+    int result;
+};
+
+struct shdisp_light_info {
+    unsigned int lux;
+    unsigned short level;
+    unsigned int clear_ir_rate;
+    int result;
+};
+
+struct shdisp_led_auto_low_mode_param {
+    int enable;
+};
+
+struct shdisp_trv_param {
+    int            request;
+    int            strength;
+    int            adjust;
+};
+
+struct shdisp_rgb {
+    unsigned int red;
+    unsigned int green;
+    unsigned int blue;
+};
+
+struct shdisp_illumi_triple_color {
+    struct shdisp_rgb colors[ILLUMI_FRAME_MAX];
+    int count;
+};
+
+/* ------------------------------------------------------------------------- */
 /* IOCTL                                                                     */
 /* ------------------------------------------------------------------------- */
 #define SHDISP_IOC_MAGIC 's'
@@ -42,12 +241,13 @@
 #define SHDISP_IOCTL_BDIC_MULTI_READ_REG                _IOWR (SHDISP_IOC_MAGIC, 14, struct shdisp_diag_bdic_reg_multi)
 #define SHDISP_IOCTL_BKL_SET_DTV_MODE                   _IOW  (SHDISP_IOC_MAGIC, 15, int)
 #define SHDISP_IOCTL_BKL_SET_EMG_MODE                   _IOW  (SHDISP_IOC_MAGIC, 16, int)
+#define SHDISP_IOCTL_BKL_SET_LOWBKL_MODE                _IOW  (SHDISP_IOC_MAGIC, 24, int)
 #define SHDISP_IOCTL_BKL_SET_CHG_MODE                   _IOW  (SHDISP_IOC_MAGIC, 26, int)
 #define SHDISP_IOCTL_GET_FLICKER_LOW_PARAM              _IOWR (SHDISP_IOC_MAGIC, 27, struct shdisp_diag_flicker_param)
 #define SHDISP_IOCTL_LCDC_SET_DRIVE_FREQ                _IOW  (SHDISP_IOC_MAGIC, 28, struct shdisp_main_drive_freq)
-#define SHDISP_IOCTL_SET_GAMMATABLE_AND_VOLTAGE         _IOW  (SHDISP_IOC_MAGIC, 29, struct shdisp_diag_gamma_info)
-#define SHDISP_IOCTL_GET_GAMMATABLE_AND_VOLTAGE         _IOWR (SHDISP_IOC_MAGIC, 30, struct shdisp_diag_gamma_info)
-#define SHDISP_IOCTL_SET_GAMMA                          _IOW  (SHDISP_IOC_MAGIC, 31, struct shdisp_diag_gamma)
+#define SHDISP_IOCTL_SET_GMMTABLE_AND_VOLTAGE           _IOW  (SHDISP_IOC_MAGIC, 29, struct shdisp_diag_gamma_info)
+#define SHDISP_IOCTL_GET_GMMTABLE_AND_VOLTAGE           _IOWR (SHDISP_IOC_MAGIC, 30, struct shdisp_diag_gamma_info)
+#define SHDISP_IOCTL_SET_GMM                            _IOW  (SHDISP_IOC_MAGIC, 31, struct shdisp_diag_gamma)
 #define SHDISP_IOCTL_GET_AVE_ADO                        _IOWR (SHDISP_IOC_MAGIC, 32, struct shdisp_ave_ado)
 #define SHDISP_IOCTL_GET_ALS                            _IOWR (SHDISP_IOC_MAGIC, 35, struct shdisp_photo_sensor_raw_val)
 #define SHDISP_IOCTL_TRI_LED_SET_COLOR2                 _IOW  (SHDISP_IOC_MAGIC, 36, struct shdisp_tri_led)
@@ -59,30 +259,10 @@
 #define SHDISP_IOCTL_SET_ALSINT                         _IOWR (SHDISP_IOC_MAGIC, 42, struct shdisp_photo_sensor_int_trigger)
 #define SHDISP_IOCTL_GET_ALSINT                         _IOWR (SHDISP_IOC_MAGIC, 43, struct shdisp_photo_sensor_int_trigger)
 #define SHDISP_IOCTL_GET_LIGHT_INFO                     _IOWR (SHDISP_IOC_MAGIC, 44, struct shdisp_light_info)
-
-#if defined(CONFIG_USES_SHLCDC) || defined(FEATURE_SHLCDC)
-#define SHDISP_IOCTL_LCDC_WRITE_REG                     _IOW  (SHDISP_IOC_MAGIC, 100, struct shdisp_diag_lcdc_reg)
-#define SHDISP_IOCTL_LCDC_READ_REG                      _IOR  (SHDISP_IOC_MAGIC, 101, struct shdisp_diag_lcdc_reg)
-#define SHDISP_IOCTL_LCDC_I2C_WRITE                     _IOW  (SHDISP_IOC_MAGIC, 102, struct shdisp_diag_lcdc_i2c)
-#define SHDISP_IOCTL_LCDC_I2C_READ                      _IOR  (SHDISP_IOC_MAGIC, 103, struct shdisp_diag_lcdc_i2c)
-#define SHDISP_IOCTL_LCDC_POW_CTL                       _IOW  (SHDISP_IOC_MAGIC, 104, int)
-#define SHDISP_IOCTL_BDIC_POW_CTL                       _IOW  (SHDISP_IOC_MAGIC, 105, int)
-#define SHDISP_IOCTL_SET_EWB_TBL                        _IOW  (SHDISP_IOC_MAGIC, 109, struct shdisp_diag_ewb_tbl)
-#define SHDISP_IOCTL_SET_EWB                            _IOW  (SHDISP_IOC_MAGIC, 110, struct shdisp_diag_set_ewb)
-#define SHDISP_IOCTL_READ_EWB                           _IOWR (SHDISP_IOC_MAGIC, 111, struct shdisp_diag_read_ewb)
-#define SHDISP_IOCTL_SET_EWB_TBL2                       _IOW  (SHDISP_IOC_MAGIC, 112, struct shdisp_diag_ewb_tbl)
-#define SHDISP_IOCTL_LCDC_SET_TRV_PARAM                 _IOW  (SHDISP_IOC_MAGIC, 113, struct shdisp_trv_param)
-#define SHDISP_IOCTL_LCDC_SET_DBC_PARAM                 _IOW  (SHDISP_IOC_MAGIC, 114, struct shdisp_main_dbc)
-#define SHDISP_IOCTL_LCDC_SET_FLICKER_TRV               _IOW  (SHDISP_IOC_MAGIC, 115, struct shdisp_flicker_trv)
-#define SHDISP_IOCTL_LCDC_FW_CMD_WRITE                  _IOW  (SHDISP_IOC_MAGIC, 116, struct shdisp_diag_fw_cmd)
-#define SHDISP_IOCTL_LCDC_FW_CMD_READ                   _IOR  (SHDISP_IOC_MAGIC, 117, struct shdisp_diag_fw_cmd)
-#define SHDISP_IOCTL_LCDC_SET_PIC_ADJ_PARAM             _IOW  (SHDISP_IOC_MAGIC, 118, struct shdisp_main_pic_adj)
-#define SHDISP_IOCTL_LCDC_SET_AE_PARAM                  _IOW  (SHDISP_IOC_MAGIC, 119, struct shdisp_main_ae)
-#define SHDISP_IOCTL_LCDC_SET_PIC_ADJ_AP_TYPE           _IOW  (SHDISP_IOC_MAGIC, 120, unsigned short)
-#define SHDISP_IOCTL_SET_FLICKER_PARAM_MULTI_COG        _IOW  (SHDISP_IOC_MAGIC, 122, struct shdisp_diag_flicker_param)
-#define SHDISP_IOCTL_GET_FLICKER_PARAM_MULTI_COG        _IOWR (SHDISP_IOC_MAGIC, 123, struct shdisp_diag_flicker_param)
-#define SHDISP_IOCTL_GET_FLICKER_LOW_PARAM_MULTI_COG    _IOWR (SHDISP_IOC_MAGIC, 124, struct shdisp_diag_flicker_param)
-#endif /* defined(CONFIG_USES_SHLCDC) || defined(FEATURE_SHLCDC) */
+#define SHDISP_IOCTL_SET_MFR                            _IOW  (SHDISP_IOC_MAGIC, 45, int)
+#define SHDISP_IOCTL_SET_LED_AUTO_LOW_MODE              _IOW  (SHDISP_IOC_MAGIC, 46, struct shdisp_led_auto_low_mode_param)
+#define SHDISP_IOCTL_SET_TRV_PARAM                      _IOW  (SHDISP_IOC_MAGIC, 47, struct shdisp_trv_param)
+#define SHDISP_IOCTL_SET_ILLUMI_TRI_COLOR               _IOW  (SHDISP_IOC_MAGIC, 48, struct shdisp_illumi_triple_color)
 
 #endif /* SHDISP_IOCTL_H */
 

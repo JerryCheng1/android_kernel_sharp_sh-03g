@@ -11,7 +11,32 @@ config TOUCHSCREEN_SHTPS
 	default n
 
 if TOUCHSCREEN_SHTPS
-	source "drivers/sharp/shtps/sy3000/Kconfig"
+	config SHTPS_SY3X00_DEV
+		config SHTPS_SY3X00_DEV
+		tristate "SY3x00 Device"
+		default n
+		depends on TOUCHSCREEN_SHTPS
+
+	config SHTPS_SY3000_PLG541_001_1
+		tristate "SY3000 PLG541-001-1"
+		default n
+		depends on SHTPS_SY3X00_DEV
+
+	config SHTPS_SY3000_PLG543_001_4
+		tristate "SY3000 PLG543-001-4"
+		default n
+		depends on SHTPS_SY3X00_DEV
+
+	config SHTPS_SY3000_TM3097_001
+		tristate "SY3000 TM3097-001"
+		default n
+		depends on SHTPS_SY3X00_DEV
+	
+	config SHTPS_SY3000_PLG475_001
+                tristate "SY3000 PLG475_001"
+                default n
+                depends on SHTPS_SY3X00_DEV
+	
 endif # TOUCHSCREEN_SHTPS
 
 endmenu

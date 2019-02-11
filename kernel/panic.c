@@ -159,16 +159,17 @@ void panic(const char *fmt, ...)
 		panic_blink = no_blink;
 
 	if (panic_timeout > 0) {
+#ifdef CONFIG_SHLOG_SYSTEM
+		printk(KERN_EMERG "Rebooting now.");
+		//Faster shutdown
+		touch_nmi_watchdog();
+#else
 		/*
 		 * Delay timeout seconds before rebooting the machine.
 		 * We can't use the "normal" timers since we just panicked.
 		 */
 		printk(KERN_EMERG "Rebooting in %d seconds..", panic_timeout);
 
-#ifdef CONFIG_SHLOG_SYSTEM
-	//Faster shutdown
-	touch_nmi_watchdog();
-#else
 		for (i = 0; i < panic_timeout * 1000; i += PANIC_TIMER_STEP) {
 			touch_nmi_watchdog();
 			if (i >= i_next) {

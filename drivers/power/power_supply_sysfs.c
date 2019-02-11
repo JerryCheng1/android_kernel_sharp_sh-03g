@@ -70,7 +70,7 @@ static ssize_t power_supply_show_property(struct device *dev,
 		"Unknown", "System", "Device"
 	};
 #ifdef CONFIG_BATTERY_SH
-		static char *batfet_text[] = {
+	static char *batfet_text[] = {
 		"BATFET_OFF", "BATFET_ON"
 	};
 #endif /* CONFIG_BATTERY_SH */
@@ -153,6 +153,7 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(present),
 	POWER_SUPPLY_ATTR(online),
 	POWER_SUPPLY_ATTR(authentic),
+	POWER_SUPPLY_ATTR(battery_charging_enabled),
 	POWER_SUPPLY_ATTR(charging_enabled),
 	POWER_SUPPLY_ATTR(technology),
 	POWER_SUPPLY_ATTR(cycle_count),
@@ -178,6 +179,8 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(charge_full),
 	POWER_SUPPLY_ATTR(charge_empty),
 	POWER_SUPPLY_ATTR(charge_now),
+	POWER_SUPPLY_ATTR(charge_now_raw),
+	POWER_SUPPLY_ATTR(charge_now_error),
 	POWER_SUPPLY_ATTR(charge_avg),
 	POWER_SUPPLY_ATTR(charge_counter),
 	POWER_SUPPLY_ATTR(charge_counter_shadow),
@@ -199,6 +202,7 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(capacity_alert_min),
 	POWER_SUPPLY_ATTR(capacity_alert_max),
 	POWER_SUPPLY_ATTR(capacity_level),
+	POWER_SUPPLY_ATTR(capacity_raw),
 	POWER_SUPPLY_ATTR(temp),
 	POWER_SUPPLY_ATTR(temp_alert_min),
 	POWER_SUPPLY_ATTR(temp_alert_max),
@@ -217,6 +221,7 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(resistance),
 	POWER_SUPPLY_ATTR(resistance_capacitive),
 	POWER_SUPPLY_ATTR(resistance_id),
+	POWER_SUPPLY_ATTR(resistance_now),
 #ifdef CONFIG_BATTERY_SH
 	POWER_SUPPLY_ATTR(aicl_final_limit),
 	POWER_SUPPLY_ATTR(charging_voltage),
@@ -226,8 +231,6 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(usb_id_resistance),
 	POWER_SUPPLY_ATTR(temp_cold),
 	POWER_SUPPLY_ATTR(temp_hot),
-	POWER_SUPPLY_ATTR(direct_current),
-	POWER_SUPPLY_ATTR(direct_voltage),
 #endif /* CONFIG_BATTERY_SH */
 	/* Local extensions */
 	POWER_SUPPLY_ATTR(usb_hc),
@@ -236,7 +239,12 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(flash_current_max),
 	POWER_SUPPLY_ATTR(update_now),
 	POWER_SUPPLY_ATTR(esr_count),
+	POWER_SUPPLY_ATTR(safety_timer_enabled),
 	POWER_SUPPLY_ATTR(charge_done),
+	POWER_SUPPLY_ATTR(flash_active),
+	POWER_SUPPLY_ATTR(force_tlim),
+	POWER_SUPPLY_ATTR(allow_detection),
+	POWER_SUPPLY_ATTR(cycle_count_id),
 	/* Local extensions of type int64_t */
 	POWER_SUPPLY_ATTR(charge_counter_ext),
 	/* Properties of type `const char *' */

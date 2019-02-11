@@ -229,6 +229,9 @@ extern struct bus_type cpu_subsys;
 /* Stop CPUs going up and down. */
 
 extern void get_online_cpus(void);
+#ifdef CONFIG_SHSYS_CUST
+extern int get_online_cpus_try(void);
+#endif
 extern void put_online_cpus(void);
 extern void cpu_hotplug_disable(void);
 extern void cpu_hotplug_enable(void);
@@ -257,6 +260,9 @@ static inline void cpu_hotplug_driver_unlock(void)
 #else		/* CONFIG_HOTPLUG_CPU */
 
 #define get_online_cpus()	do { } while (0)
+#ifdef CONFIG_SHSYS_CUST
+#define get_online_cpus_try()
+#endif
 #define put_online_cpus()	do { } while (0)
 #define cpu_hotplug_disable()	do { } while (0)
 #define cpu_hotplug_enable()	do { } while (0)
@@ -279,6 +285,7 @@ static inline void enable_nonboot_cpus(void) {}
 
 struct cpu_pwr_stats *get_cpu_pwr_stats(void);
 void trigger_cpu_pwr_stats_calc(void);
+int register_cpu_pwr_stats_ready_notifier(struct notifier_block *nb);
 
 enum cpuhp_state {
 	CPUHP_OFFLINE,

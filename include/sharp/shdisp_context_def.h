@@ -34,11 +34,6 @@ struct shdisp_main_bkl_ctl {
     int param;
 };
 
-struct shdisp_main_bkl_auto {
-    int mode;
-    int param;
-};
-
 struct shdisp_tri_led {
     unsigned int red;
     unsigned int green;
@@ -98,14 +93,6 @@ enum {
 };
 
 enum {
-    SHDISP_MAIN_DISP_DRIVE_FREQ_DEFAULT,
-    SHDISP_MAIN_DISP_DRIVE_FREQ_TYPE_A,
-    SHDISP_MAIN_DISP_DRIVE_FREQ_TYPE_B,
-    SHDISP_MAIN_DISP_DRIVE_FREQ_TYPE_C,
-    NUM_SHDISP_MAIN_DISP_DRIVE_FREQ_TYPE
-};
-
-enum {
     SHDISP_UPPER_UNIT_IS_NOT_CONNECTED,
     SHDISP_UPPER_UNIT_IS_CONNECTED,
     NUM_UPPER_UNIT_STATUS
@@ -121,7 +108,6 @@ enum {
     SHDISP_MAIN_BKL_MODE_OFF,
     SHDISP_MAIN_BKL_MODE_FIX,
     SHDISP_MAIN_BKL_MODE_AUTO,
-    SHDISP_MAIN_BKL_MODE_AUTO_ECO,
     SHDISP_MAIN_BKL_MODE_DTV_OFF,
     SHDISP_MAIN_BKL_MODE_DTV_FIX,
     SHDISP_MAIN_BKL_MODE_DTV_AUTO,
@@ -137,25 +123,6 @@ enum {
 #define SHDISP_MAIN_BKL_PARAM_MAX_AUTO      (255)
 
 enum {
-    SHDISP_MAIN_BKL_AUTO_OFF,
-    SHDISP_MAIN_BKL_AUTO_ON,
-    SHDISP_MAIN_BKL_AUTO_ECO_ON,
-    NUM_SHDISP_MAIN_BKL_AUTO
-};
-
-enum {
-    SHDISP_MAIN_BKL_DTV_OFF,
-    SHDISP_MAIN_BKL_DTV_ON,
-    NUM_SHDISP_MAIN_BKL_DTV
-};
-
-enum {
-    SHDISP_MAIN_BKL_EMG_OFF,
-    SHDISP_MAIN_BKL_EMG_ON,
-    NUM_SHDISP_MAIN_BKL_EMG
-};
-
-enum {
     SHDISP_MAIN_DISP_ALS_RANGE_001 = 0,
     SHDISP_MAIN_DISP_ALS_RANGE_002,
     SHDISP_MAIN_DISP_ALS_RANGE_004,
@@ -165,12 +132,6 @@ enum {
     SHDISP_MAIN_DISP_ALS_RANGE_064,
     SHDISP_MAIN_DISP_ALS_RANGE_128,
     NUM_SHDISP_MAIN_DISP_ALS_RANGE
-};
-
-enum {
-    SHDISP_PHOTO_SENSOR_DISABLE,
-    SHDISP_PHOTO_SENSOR_ENABLE,
-    NUM_SHDISP_PHOTO_SENSOR
 };
 
 enum {
@@ -194,6 +155,7 @@ enum {
     SHDISP_TRI_LED_MODE_EMOPATTERN,
     SHDISP_TRI_LED_MODE_PATTERN1,
     SHDISP_TRI_LED_MODE_PATTERN2,
+    SHDISP_TRI_LED_MODE_ILLUMI_TRIPLE_COLOR,
     NUM_SHDISP_TRI_LED_MODE
 };
 
@@ -228,16 +190,6 @@ enum {
 };
 
 enum {
-    SHDISP_PHOTO_SENSOR_TYPE_APP,
-    SHDISP_PHOTO_SENSOR_TYPE_LUX,
-    SHDISP_PHOTO_SENSOR_TYPE_CAMERA,
-    SHDISP_PHOTO_SENSOR_TYPE_KEYLED,
-    SHDISP_PHOTO_SENSOR_TYPE_DIAG,
-    SHDISP_PHOTO_SENSOR_TYPE_SENSORHUB,
-    NUM_SHDISP_PHOTO_SENSOR_TYPE
-};
-
-enum {
     SHDISP_LEDC_ONCOUNT_REPEAT,
     SHDISP_LEDC_ONCOUNT_1SHOT,
     NUM_SHDISP_LEDC_ONCOUNT
@@ -250,48 +202,9 @@ enum {
 };
 
 enum {
-    SHDISP_DIAG_COG_ID_NONE,
-    SHDISP_DIAG_COG_ID_MASTER,
-    SHDISP_DIAG_COG_ID_SLAVE,
-    SHDISP_DIAG_COG_ID_BOTH,
-    NUM_SHDISP_DIAG_COG_ID
-};
-
-struct shdisp_diag_bdic_reg {
-    unsigned char reg;
-    unsigned char val;
-};
-
-struct shdisp_diag_bdic_reg_multi {
-    unsigned char reg;
-    unsigned char val[8];
-    unsigned char size;
-};
-
-#define SHDISP_LCDDR_BUF_MAX    (64)
-struct shdisp_lcddr_reg {
-    unsigned char address;
-    unsigned char size;
-    unsigned char buf[SHDISP_LCDDR_BUF_MAX];
-    int      cog;
-};
-
-struct shdisp_photo_sensor_val {
-    unsigned short value;
-    unsigned int   lux;
-    int mode;
-    int result;
-};
-
-struct shdisp_photo_sensor_raw_val {
-    unsigned short clear;
-    unsigned short ir;
-    int result;
-};
-
-struct shdisp_photo_sensor_power_ctl {
-    int type;
-    int power;
+    SHDISP_HAYABUSA_REV_CUT10 = 1,
+    SHDISP_HAYABUSA_REV_CUT10FIB,
+    SHDISP_HAYABUSA_REV_CUT11,
 };
 
 struct shdisp_pharaoh_reg {
@@ -355,167 +268,33 @@ struct shdisp_diag_read_ewb {
     unsigned short  valB;
 };
 
-struct shdisp_ave_ado {
-    unsigned char  als_range;
-    unsigned short ave_als0;
-    unsigned short ave_als1;
-    unsigned short ave_ado;
-};
-
-#if (defined(CONFIG_USES_SHLCDC) || defined(FEATURE_SHLCDC))
-
-#if defined(CONFIG_SHDISP_PANEL_GEMINI) || defined(USER_CONFIG_SHDISP_PANEL_GEMINI)
-    #define SHDISP_PANEL_ANALOG_GAMMA_TBL_SIZE      (24)
-    #define SHDISP_PANEL_GAMMA_TBL_SIZE             (18)
-
-    #define SHDISP_LCDDR_PHY_ANALOG_GAMMA_BUF_MAX   SHDISP_PANEL_ANALOG_GAMMA_TBL_SIZE
-    #define SHDISP_LCDDR_PHY_GAMMA_BUF_MAX          (SHDISP_PANEL_GAMMA_TBL_SIZE * 3)
-    #define SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE       5
-    struct shdisp_phy_gamma_sub {
-        unsigned char analog_gamma[SHDISP_LCDDR_PHY_ANALOG_GAMMA_BUF_MAX];
-        unsigned char applied_voltage[SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE];
-    };
-#else  /* defined(CONFIG_SHDISP_PANEL_GEMINI) || defined(USER_CONFIG_SHDISP_PANEL_GEMINI) */
-    #define SHDISP_PANEL_GAMMA_TBL_SIZE             (60)
-    #define SHDISP_LCDDR_PHY_GAMMA_BUF_MAX          (SHDISP_PANEL_GAMMA_TBL_SIZE * 3)
-    #define SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE       (9)
-#endif /* defined(CONFIG_SHDISP_PANEL_GEMINI) || defined(USER_CONFIG_SHDISP_PANEL_GEMINI) */
-
-enum {
-    SHDISP_CLMR_IS_NOT_EXIST,
-    SHDISP_CLMR_IS_EXIST,
-    NUM_CLMR_EXIST_STATUS
-};
-
-struct shdisp_clmr_status {
-    int clmr_is_exist;
-    int power_status;
-    unsigned int users;
-};
-
-struct shdisp_bdic_status {
-    int power_status;
-    unsigned int users;
-};
-
-struct shdisp_psals_status {
-    int power_status;
-    int sensor_state;
-    int als_mode;
-    unsigned int users;
-};
-
-struct shdisp_lcddr_phy_gamma_reg {
-#if defined(CONFIG_SHDISP_PANEL_GEMINI) || defined(USER_CONFIG_SHDISP_PANEL_GEMINI)
-    unsigned char  status;
-    struct shdisp_phy_gamma_sub master;
-    struct shdisp_phy_gamma_sub slave;
-    unsigned short chksum;
-#else  /* defined(CONFIG_SHDISP_PANEL_GEMINI) || defined(USER_CONFIG_SHDISP_PANEL_GEMINI) */
-    unsigned char  status;
-    unsigned short buf[SHDISP_LCDDR_PHY_GAMMA_BUF_MAX];
-    unsigned char  applied_voltage[SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE];
-    unsigned int   chksum;
-#endif /* defined(CONFIG_SHDISP_PANEL_GEMINI) || defined(USER_CONFIG_SHDISP_PANEL_GEMINI) */
-};
-
-struct shdisp_clmr_ewb {
-    unsigned char  valR[SHDISP_LCDC_EWB_TBL_SIZE];
-    unsigned char  valG[SHDISP_LCDC_EWB_TBL_SIZE];
-    unsigned char  valB[SHDISP_LCDC_EWB_TBL_SIZE];
-    unsigned short red_chksum;
-    unsigned short green_chksum;
-    unsigned short blue_chksum;
-    unsigned short ewb_lut_status;
-};
-
-enum {
-    SHDISP_MAIN_BKL_ECO_OFF,
-    SHDISP_MAIN_BKL_ECO_ON,
-    NUM_SHDISP_MAIN_BKL_ECO
-};
-
-#if defined(CONFIG_SHDISP_PANEL_GEMINI) || defined(USER_CONFIG_SHDISP_PANEL_GEMINI)
-struct shdisp_diag_gamma_info_sub {
-    unsigned char   analog_gamma[SHDISP_PANEL_ANALOG_GAMMA_TBL_SIZE];
-    unsigned char   vsps_vsns;
-    unsigned char   vghs;
-    unsigned char   vgls;
-    unsigned char   vph_vpl;
-    unsigned char   vnh_vnl;
-};
-#endif /* defined(CONFIG_SHDISP_PANEL_GEMINI) || defined(USER_CONFIG_SHDISP_PANEL_GEMINI) */
-
-struct shdisp_diag_gamma_info {
-#if defined(CONFIG_SHDISP_PANEL_GEMINI) || defined(USER_CONFIG_SHDISP_PANEL_GEMINI)
-    struct shdisp_diag_gamma_info_sub   master_info;
-    struct shdisp_diag_gamma_info_sub   slave_info;
-#else  /* defined(CONFIG_SHDISP_PANEL_GEMINI) || defined(USER_CONFIG_SHDISP_PANEL_GEMINI) */
-    unsigned short  gammaR[SHDISP_PANEL_GAMMA_TBL_SIZE];
-    unsigned short  gammaG[SHDISP_PANEL_GAMMA_TBL_SIZE];
-    unsigned short  gammaB[SHDISP_PANEL_GAMMA_TBL_SIZE];
-    unsigned char   vgh;
-    unsigned char   vgl;
-    unsigned char   gvddp;
-    unsigned char   gvddn;
-    unsigned char   gvddp2;
-    unsigned char   vgho;
-    unsigned char   vglo;
-    unsigned char   avddr;
-    unsigned char   aveer;
-#endif /* defined(CONFIG_SHDISP_PANEL_GEMINI) || defined(USER_CONFIG_SHDISP_PANEL_GEMINI) */
-};
-
-struct shdisp_diag_gamma {
-#if defined(CONFIG_SHDISP_PANEL_GEMINI) || defined(USER_CONFIG_SHDISP_PANEL_GEMINI)
-    unsigned char   level;
-    unsigned char   master_gamma_p;
-    unsigned char   master_gamma_n;
-    unsigned char   slave_gamma_p;
-    unsigned char   slave_gamma_n;
-#else  /* defined(CONFIG_SHDISP_PANEL_GEMINI) || defined(USER_CONFIG_SHDISP_PANEL_GEMINI) */
-    unsigned char   level;
-    unsigned short  gammaR_p;
-    unsigned short  gammaR_n;
-    unsigned short  gammaG_p;
-    unsigned short  gammaG_n;
-    unsigned short  gammaB_p;
-    unsigned short  gammaB_n;
-#endif
-};
-
-#define CALI_LOGAREA_VAL            0x00007C68
-#define CALI_END_VAL                0x00008000
-#define SHDISP_CALI_EDRAM_DUMP_SIZE ((CALI_END_VAL - CALI_LOGAREA_VAL) * 7 * 16)
-#define SHDISP_CALI_SRAM_DUMP_COUNT (4096)
-#define SHDISP_CALI_SRAM_DUMP_SIZE  (SHDISP_CALI_SRAM_DUMP_COUNT * 4)
-
-struct shdisp_clmr_ewb_accu {
-    unsigned short valR[SHDISP_LCDC_EWB_TBL_SIZE];
-    unsigned short valG[SHDISP_LCDC_EWB_TBL_SIZE];
-    unsigned short valB[SHDISP_LCDC_EWB_TBL_SIZE];
-};
-
-#else /* (defined(CONFIG_USES_SHLCDC) || defined(FEATURE_SHLCDC)) */
-
 #if defined(CONFIG_SHDISP_PANEL_ANDY) || defined(USER_CONFIG_SHDISP_PANEL_ANDY)
-    #define SHDISP_PANEL_GAMMA_TBL_SIZE             (60)
-    #define SHDISP_LCDDR_PHY_GAMMA_BUF_MAX          (SHDISP_PANEL_GAMMA_TBL_SIZE * 3)
+    #define SHDISP_PANEL_GMM_TBL_SIZE               (60)
+    #define SHDISP_LCDDR_PHY_GMM_BUF_MAX            (SHDISP_PANEL_GMM_TBL_SIZE * 3)
     #define SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE       (9)
+#elif defined(CONFIG_SHDISP_PANEL_HAYABUSA) || defined(USER_CONFIG_SHDISP_PANEL_HAYABUSA)
+    #define SHDISP_PANEL_GMM_TBL_SIZE               (60)
+    #define SHDISP_LCDDR_PHY_GMM_BUF_MAX            (SHDISP_PANEL_GMM_TBL_SIZE * 3)
+    #define SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE       (7)
+    #define SHDISP_LCDDR_ADVANCED_GAMMA_SIZE        (30)
 #elif defined(CONFIG_SHDISP_PANEL_ARIA) || defined(USER_CONFIG_SHDISP_PANEL_ARIA)
-    #define SHDISP_PANEL_GAMMA_TBL_SIZE             (60)
-    #define SHDISP_LCDDR_PHY_GAMMA_BUF_MAX          (SHDISP_PANEL_GAMMA_TBL_SIZE * 3)
+    #define SHDISP_PANEL_GMM_TBL_SIZE               (60)
+    #define SHDISP_LCDDR_PHY_GMM_BUF_MAX            (SHDISP_PANEL_GMM_TBL_SIZE * 3)
     #define SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE       (11)
 #elif defined(CONFIG_SHDISP_PANEL_CARIN) || defined(USER_CONFIG_SHDISP_PANEL_CARIN)
-    #define SHDISP_PANEL_GAMMA_TBL_SIZE             (30)
-    #define SHDISP_LCDDR_PHY_GAMMA_BUF_MAX          SHDISP_PANEL_GAMMA_TBL_SIZE
+    #define SHDISP_PANEL_GMM_TBL_SIZE               (30)
+    #define SHDISP_LCDDR_PHY_GMM_BUF_MAX            SHDISP_PANEL_GMM_TBL_SIZE
     #define SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE       (9)
 #else   /* defined(CONFIG_SHDISP_PANEL_ANDY) || defined(USER_CONFIG_SHDISP_PANEL_ANDY) */
-    #define SHDISP_PANEL_GAMMA_TBL_SIZE             (24)
+    #define SHDISP_PANEL_GMM_TBL_SIZE               (24)
     #error "SHDISP SWITCH NOTHING!!"
-    #define SHDISP_LCDDR_PHY_GAMMA_BUF_MAX          (SHDISP_PANEL_GAMMA_TBL_SIZE * 3)
+    #define SHDISP_LCDDR_PHY_GMM_BUF_MAX            (SHDISP_PANEL_GMM_TBL_SIZE * 3)
     #define SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE       (9)
 #endif  /* defined(CONFIG_SHDISP_PANEL_ANDY) || defined(USER_CONFIG_SHDISP_PANEL_ANDY) */
+
+#if defined(CONFIG_SHDISP_PANEL_HAYABUSA) || defined(USER_CONFIG_SHDISP_PANEL_HAYABUSA)
+#define SHDISP_LCDDR_GMM_SET_POINT_INI              (255)
+#endif
 
 struct shdisp_bdic_status {
     int power_status;
@@ -529,26 +308,43 @@ struct shdisp_psals_status {
     int als_um_status;
 };
 
-struct shdisp_lcddr_phy_gamma_reg {
+struct shdisp_freq_params {
+#if defined(CONFIG_SHDISP_PANEL_HAYABUSA) || defined(USER_CONFIG_SHDISP_PANEL_HAYABUSA)
+    int internal_osc;
+#elif defined(CONFIG_SHDISP_PANEL_ANDY) || defined(USER_CONFIG_SHDISP_PANEL_ANDY)
+    unsigned char rtn;
+    unsigned char gip;
+    unsigned char vbp;
+    unsigned char vfp;
+#endif /* defined(CONFIG_SHDISP_PANEL_XXX) || defined(USER_CONFIG_SHDISP_PANEL_XXX) */
+};
+
+struct shdisp_lcddr_phy_gmm_reg {
 #if defined(CONFIG_SHDISP_PANEL_ANDY) || defined(USER_CONFIG_SHDISP_PANEL_ANDY)
     unsigned char  status;
-    unsigned short buf[SHDISP_LCDDR_PHY_GAMMA_BUF_MAX];
+    unsigned short buf[SHDISP_LCDDR_PHY_GMM_BUF_MAX];
     unsigned char  applied_voltage[SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE];
+    unsigned int   chksum;
+#elif defined(CONFIG_SHDISP_PANEL_HAYABUSA) || defined(USER_CONFIG_SHDISP_PANEL_HAYABUSA)
+    unsigned char  status;
+    unsigned short buf[SHDISP_LCDDR_PHY_GMM_BUF_MAX];
+    unsigned char  applied_voltage[SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE];
+    unsigned char  adv_gmm[SHDISP_LCDDR_ADVANCED_GAMMA_SIZE];
     unsigned int   chksum;
 #elif defined(CONFIG_SHDISP_PANEL_ARIA) || defined(USER_CONFIG_SHDISP_PANEL_ARIA)
     unsigned char  status;
-    unsigned short buf[SHDISP_LCDDR_PHY_GAMMA_BUF_MAX];
+    unsigned short buf[SHDISP_LCDDR_PHY_GMM_BUF_MAX];
     unsigned char  applied_voltage[SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE];
     unsigned int   chksum;
 #elif defined(CONFIG_SHDISP_PANEL_CARIN) \
    || defined(USER_CONFIG_SHDISP_PANEL_CARIN)
     unsigned char  status;
-    unsigned char  buf[SHDISP_LCDDR_PHY_GAMMA_BUF_MAX];
+    unsigned char  buf[SHDISP_LCDDR_PHY_GMM_BUF_MAX];
     unsigned char  applied_voltage[SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE];
     unsigned short chksum;
 #else   /* defined(CONFIG_SHDISP_PANEL_ANDY) || defined(USER_CONFIG_SHDISP_PANEL_ANDY) */
     unsigned char  status;
-    unsigned char  buf[SHDISP_LCDDR_PHY_GAMMA_BUF_MAX];
+    unsigned char  buf[SHDISP_LCDDR_PHY_GMM_BUF_MAX];
     unsigned char  applied_voltage[SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE];
     unsigned short chksum;
 #endif  /* defined(CONFIG_SHDISP_PANEL_ANDY) || defined(USER_CONFIG_SHDISP_PANEL_ANDY) */
@@ -556,9 +352,9 @@ struct shdisp_lcddr_phy_gamma_reg {
 
 struct shdisp_diag_gamma_info {
 #if defined(CONFIG_SHDISP_PANEL_ANDY) || defined(USER_CONFIG_SHDISP_PANEL_ANDY)
-    unsigned short  gammaR[SHDISP_PANEL_GAMMA_TBL_SIZE];
-    unsigned short  gammaG[SHDISP_PANEL_GAMMA_TBL_SIZE];
-    unsigned short  gammaB[SHDISP_PANEL_GAMMA_TBL_SIZE];
+    unsigned short  gammaR[SHDISP_PANEL_GMM_TBL_SIZE];
+    unsigned short  gammaG[SHDISP_PANEL_GMM_TBL_SIZE];
+    unsigned short  gammaB[SHDISP_PANEL_GMM_TBL_SIZE];
     unsigned char   vgh;
     unsigned char   vgl;
     unsigned char   gvddp;
@@ -568,10 +364,22 @@ struct shdisp_diag_gamma_info {
     unsigned char   vglo;
     unsigned char   avddr;
     unsigned char   aveer;
+#elif defined(CONFIG_SHDISP_PANEL_HAYABUSA) || defined(USER_CONFIG_SHDISP_PANEL_HAYABUSA)
+    unsigned short  gammaR[SHDISP_PANEL_GMM_TBL_SIZE];
+    unsigned short  gammaG[SHDISP_PANEL_GMM_TBL_SIZE];
+    unsigned short  gammaB[SHDISP_PANEL_GMM_TBL_SIZE];
+    unsigned char   vgh;
+    unsigned char   vgl;
+    unsigned char   gvddp;
+    unsigned char   gvddn;
+    unsigned char   gvddp2;
+    unsigned char   vgho;
+    unsigned char   vglo;
+    unsigned char   adv_gamma[SHDISP_LCDDR_ADVANCED_GAMMA_SIZE];
 #elif defined(CONFIG_SHDISP_PANEL_ARIA) || defined(USER_CONFIG_SHDISP_PANEL_ARIA)
-    unsigned short  gammaR[SHDISP_PANEL_GAMMA_TBL_SIZE];
-    unsigned short  gammaG[SHDISP_PANEL_GAMMA_TBL_SIZE];
-    unsigned short  gammaB[SHDISP_PANEL_GAMMA_TBL_SIZE];
+    unsigned short  gammaR[SHDISP_PANEL_GMM_TBL_SIZE];
+    unsigned short  gammaG[SHDISP_PANEL_GMM_TBL_SIZE];
+    unsigned short  gammaB[SHDISP_PANEL_GMM_TBL_SIZE];
     unsigned char   dca;
     unsigned char   dcab;
     unsigned char   dcb;
@@ -584,7 +392,7 @@ struct shdisp_diag_gamma_info {
     unsigned char   vgho;
     unsigned char   vglo;
 #elif defined(CONFIG_SHDISP_PANEL_CARIN) || defined(USER_CONFIG_SHDISP_PANEL_CARIN)
-    unsigned char   gamma[SHDISP_PANEL_GAMMA_TBL_SIZE];
+    unsigned char   gamma[SHDISP_PANEL_GMM_TBL_SIZE];
     unsigned char   vlm1;
     unsigned char   vlm2;
     unsigned char   vlm3;
@@ -595,9 +403,9 @@ struct shdisp_diag_gamma_info {
     unsigned char   vnl;
     unsigned char   svss_svdd;
 #else   /* defined(CONFIG_SHDISP_PANEL_ANDY) || defined(USER_CONFIG_SHDISP_PANEL_ANDY) */
-    unsigned char   gammaR[SHDISP_PANEL_GAMMA_TBL_SIZE];
-    unsigned char   gammaG[SHDISP_PANEL_GAMMA_TBL_SIZE];
-    unsigned char   gammaB[SHDISP_PANEL_GAMMA_TBL_SIZE];
+    unsigned char   gammaR[SHDISP_PANEL_GMM_TBL_SIZE];
+    unsigned char   gammaG[SHDISP_PANEL_GMM_TBL_SIZE];
+    unsigned char   gammaB[SHDISP_PANEL_GMM_TBL_SIZE];
     unsigned char   vlm1;
     unsigned char   vlm2;
     unsigned char   vlm3;
@@ -619,6 +427,8 @@ struct shdisp_diag_gamma {
     unsigned short  gammaG_n;
     unsigned short  gammaB_p;
     unsigned short  gammaB_n;
+#elif defined(CONFIG_SHDISP_PANEL_HAYABUSA) || defined(USER_CONFIG_SHDISP_PANEL_HAYABUSA)
+    unsigned char   level;
 #elif defined(CONFIG_SHDISP_PANEL_ARIA) || defined(USER_CONFIG_SHDISP_PANEL_ARIA)
     unsigned char   level;
     unsigned short  gammaR_p;
@@ -641,32 +451,5 @@ struct shdisp_diag_gamma {
     unsigned char   gammaB_n;
 #endif  /* defined(CONFIG_SHDISP_PANEL_ANDY) || defined(USER_CONFIG_SHDISP_PANEL_ANDY) */
 };
-
-struct shdisp_photo_sensor_trigger {
-    unsigned short level;
-    unsigned short side;
-    unsigned short en_hi_edge;
-    unsigned short en_lo_edge;
-    unsigned short enable;
-};
-
-struct shdisp_photo_sensor_int_trigger {
-    struct shdisp_photo_sensor_trigger trigger1;
-    struct shdisp_photo_sensor_trigger trigger2;
-    int type;
-    int result;
-};
-
-#define SHDISP_OPT_CHANGE_INT_1             (0x01)
-#define SHDISP_OPT_CHANGE_INT_2             (0x02)
-
-struct shdisp_light_info {
-    unsigned int lux;
-    unsigned short level;
-    unsigned int clear_ir_rate;
-    int result;
-};
-
-#endif /* (defined(CONFIG_USES_SHLCDC) || defined(FEATURE_SHLCDC)) */
 
 #endif /* SHDISP_CONTEXT_DEF_H */

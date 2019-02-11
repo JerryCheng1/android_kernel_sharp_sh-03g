@@ -1022,12 +1022,12 @@ unsigned mmc_sd_get_max_clock(struct mmc_card *card)
 #endif /* CONFIG_MMC_SD_BATTLOG_CUST_SH */
 #ifdef CONFIG_MMC_SD_ECO_MODE_CUST_SH
 		pr_info("%s: mmc_sd_get_max_clock: mode: %s\n",
-            mmc_hostname(card->host), (sh_mmc_sd_eco_mode_current ? "eco" : "normal"));
-		if (sh_mmc_sd_eco_mode_current) {
+			mmc_hostname(card->host),
+			(sh_mmc_sd_eco_mode_current ? "eco" : "normal"));
+		if (sh_mmc_sd_eco_mode_current)
 			card->sw_caps.hs_max_dtr = HIGH_SPEED_MAX_DTR_ECO;
-		}else{
+		else
 			card->sw_caps.hs_max_dtr = HIGH_SPEED_MAX_DTR;
-		}
 #endif /* CONFIG_MMC_SD_ECO_MODE_CUST_SH */
 		if (max_dtr > card->sw_caps.hs_max_dtr)
 			max_dtr = card->sw_caps.hs_max_dtr;
@@ -1351,6 +1351,7 @@ static const struct mmc_bus_ops mmc_sd_ops = {
 	.power_restore = mmc_sd_power_restore,
 	.alive = mmc_sd_alive,
 	.change_bus_speed = mmc_sd_change_bus_speed,
+	.shutdown = mmc_sd_suspend,
 };
 
 static const struct mmc_bus_ops mmc_sd_ops_unsafe = {
@@ -1361,6 +1362,7 @@ static const struct mmc_bus_ops mmc_sd_ops_unsafe = {
 	.power_restore = mmc_sd_power_restore,
 	.alive = mmc_sd_alive,
 	.change_bus_speed = mmc_sd_change_bus_speed,
+	.shutdown = mmc_sd_suspend,
 };
 
 static void mmc_sd_attach_bus_ops(struct mmc_host *host)

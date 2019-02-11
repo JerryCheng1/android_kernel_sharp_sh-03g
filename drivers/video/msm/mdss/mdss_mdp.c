@@ -58,9 +58,14 @@
 #include "mdss_mdp_rotator.h"
 
 #include "mdss_mdp_trace.h"
+#ifdef CONFIG_SHDISP  /* CUST_ID_00058 */
+#include <linux/pm_qos.h>
+#endif /* CONFIG_SHDISP */
+
 
 #define AXI_HALT_TIMEOUT_US	0x4000
 #define AUTOSUSPEND_TIMEOUT_MS	200
+#define DEFAULT_MDP_PIPE_WIDTH 2048
 
 struct mdss_data_type *mdss_res;
 
@@ -90,7 +95,6 @@ struct msm_mdp_interface mdp5 = {
 
 static DEFINE_SPINLOCK(mdp_lock);
 static DEFINE_MUTEX(mdp_clk_lock);
-static DEFINE_MUTEX(bus_bw_lock);
 static DEFINE_MUTEX(mdp_iommu_lock);
 static DEFINE_MUTEX(mdp_iommu_ref_cnt_lock);
 static DEFINE_MUTEX(mdp_fs_idle_pc_lock);
@@ -172,7 +176,7 @@ static int mdss_mdp_parse_dt_prefill(struct platform_device *pdev);
 static int mdss_mdp_parse_dt_misc(struct platform_device *pdev);
 static int mdss_mdp_parse_dt_ad_cfg(struct platform_device *pdev);
 static int mdss_mdp_parse_dt_bus_scale(struct platform_device *pdev);
-
+static int mdss_mdp_parse_dt_ppb_off(struct platform_device *pdev);
 /**
  * mdss_mdp_vbif_axi_halt() - Halt MDSS AXI ports
  * @mdata: pointer to the global mdss data structure.
@@ -299,6 +303,11 @@ static int mdss_mdp_bus_scale_register(struct mdss_data_type *mdata)
 					mdata->reg_bus_hdl);
 	}
 
+	/*
+	 * Following call will not result in actual vote rather update the
+	 * current index and ab/ib value. When continuous splash is enabled,
+	 * actual vote will happen when splash handoff is done.
+	 */
 	return mdss_bus_scale_set_quota(MDSS_MDP_RT, AB_QUOTA, IB_QUOTA);
 }
 
@@ -317,6 +326,9 @@ static void mdss_mdp_bus_scale_unregister(struct mdss_data_type *mdata)
 	}
 }
 
+/*
+ * Caller needs to hold mdata->bus_bw_lock lock before calling this function.
+ */
 static int mdss_mdp_bus_scale_set_quota(u64 ab_quota_rt, u64 ab_quota_nrt,
 		u64 ib_quota_rt, u64 ib_quota_nrt)
 {
@@ -408,8 +420,11 @@ static int mdss_mdp_bus_scale_set_quota(u64 ab_quota_rt, u64 ab_quota_nrt,
 	}
 	mdss_res->curr_bw_uc_idx = new_uc_idx;
 
-	return msm_bus_scale_client_update_request(mdss_res->bus_hdl,
-		new_uc_idx);
+	if ((mdss_res->bus_bw_cnt == 0) && mdss_res->curr_bw_uc_idx)
+		return 0;
+	else /* vote BW if bus_bw_cnt > 0 or uc_idx is zero */
+		return msm_bus_scale_client_update_request(mdss_res->bus_hdl,
+			new_uc_idx);
 }
 
 int mdss_bus_scale_set_quota(int client, u64 ab_quota, u64 ib_quota)
@@ -419,7 +434,7 @@ int mdss_bus_scale_set_quota(int client, u64 ab_quota, u64 ib_quota)
 	u64 total_ab_rt = 0, total_ib_rt = 0;
 	u64 total_ab_nrt = 0, total_ib_nrt = 0;
 
-	mutex_lock(&bus_bw_lock);
+	mutex_lock(&mdss_res->bus_bw_lock);
 
 	mdss_res->ab[client] = ab_quota;
 	mdss_res->ib[client] = ib_quota;
@@ -438,7 +453,7 @@ int mdss_bus_scale_set_quota(int client, u64 ab_quota, u64 ib_quota)
 	rc = mdss_mdp_bus_scale_set_quota(total_ab_rt, total_ab_nrt,
 			total_ib_rt, total_ib_nrt);
 
-	mutex_unlock(&bus_bw_lock);
+	mutex_unlock(&mdss_res->bus_bw_lock);
 
 	return rc;
 }
@@ -594,19 +609,96 @@ void mdss_mdp_irq_disable_nosync(u32 intr_type, u32 intf_num)
 	}
 }
 
+#define RPM_MISC_REQ_TYPE 0x6373696d
+#define RPM_MISC_REQ_SVS_PLUS_KEY 0x2B737673
+
+static void mdss_mdp_config_cx_voltage(struct mdss_data_type *mdata, int enable)
+{
+	int ret = 0;
+	static struct msm_rpm_kvp rpm_kvp;
+	static uint8_t svs_en;
+
+	if (!mdata->en_svs_high && !mdss_has_quirk(mdata,
+				MDSS_QUIRK_SVS_PLUS_VOTING))
+		return;
+
+	if (!rpm_kvp.key) {
+		rpm_kvp.key = RPM_MISC_REQ_SVS_PLUS_KEY;
+		rpm_kvp.length = sizeof(unsigned);
+		pr_err("%s: Initialized rpm_kvp structure\n", __func__);
+	}
+
+	if (enable) {
+		svs_en = 1;
+		rpm_kvp.data = &svs_en;
+		pr_debug("voting for svs high\n");
+		ret = msm_rpm_send_message(MSM_RPM_CTX_ACTIVE_SET,
+					RPM_MISC_REQ_TYPE, 0,
+					&rpm_kvp, 1);
+		if (ret)
+			pr_err("vote for active_set svs high failed: %d\n",
+					ret);
+		ret = msm_rpm_send_message(MSM_RPM_CTX_SLEEP_SET,
+					RPM_MISC_REQ_TYPE, 0,
+					&rpm_kvp, 1);
+		if (ret)
+			pr_err("vote for sleep_set svs high failed: %d\n",
+					ret);
+	} else {
+		svs_en = 0;
+		rpm_kvp.data = &svs_en;
+		pr_debug("removing vote for svs high\n");
+		ret = msm_rpm_send_message(MSM_RPM_CTX_ACTIVE_SET,
+					RPM_MISC_REQ_TYPE, 0,
+					&rpm_kvp, 1);
+		if (ret)
+			pr_err("Remove vote:active_set svs high failed: %d\n",
+					ret);
+		ret = msm_rpm_send_message(MSM_RPM_CTX_SLEEP_SET,
+					RPM_MISC_REQ_TYPE, 0,
+					&rpm_kvp, 1);
+		if (ret)
+			pr_err("Remove vote:sleep_set svs high failed: %d\n",
+					ret);
+	}
+}
+
 static int mdss_mdp_clk_update(u32 clk_idx, u32 enable)
 {
 	int ret = -ENODEV;
 	struct clk *clk = mdss_mdp_get_clk(clk_idx);
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
+	u32 rate;
 
 	if (clk) {
 		pr_debug("clk=%d en=%d\n", clk_idx, enable);
 		if (enable) {
-			if (clk_idx == MDSS_CLK_MDP_VSYNC)
+			if (clk_idx == MDSS_CLK_MDP_VSYNC) {
 				clk_set_rate(clk, 19200000);
+			} else if (clk_idx == MDSS_CLK_MDP_CORE &&
+					mdss_has_quirk(mdata,
+						MDSS_QUIRK_SVS_PLUS_VOTING)) {
+				rate = clk_get_rate(clk);
+				if (__is_mdp_clk_svs_plus_range(mdata, rate)
+						&& (!mdata->svs_plus_vote)) {
+					mdata->svs_plus_vote = 1;
+					pr_debug("Send svs plus enable request\n");
+					mdss_mdp_config_cx_voltage(mdata, 1);
+				}
+
+			}
 			ret = clk_prepare_enable(clk);
 		} else {
 			clk_disable_unprepare(clk);
+			if (clk_idx == MDSS_CLK_MDP_CORE &&
+					mdss_has_quirk(mdata,
+						MDSS_QUIRK_SVS_PLUS_VOTING)) {
+				if (mdata->svs_plus_vote) {
+					mdata->svs_plus_vote = 0;
+					pr_debug("Send svs plus disable request\n");
+					mdss_mdp_config_cx_voltage(mdata, 0);
+				}
+			}
 			ret = 0;
 		}
 	}
@@ -644,6 +736,24 @@ void mdss_mdp_set_clk_rate(unsigned long rate)
 		if (IS_ERR_VALUE(clk_rate)) {
 			pr_err("unable to round rate err=%ld\n", clk_rate);
 		} else if (clk_rate != clk_get_rate(clk)) {
+			if (mdss_has_quirk(mdata, MDSS_QUIRK_SVS_PLUS_VOTING)) {
+				if (__is_mdp_clk_svs_plus_range(mdata,
+							clk_rate)) {
+					if (!(mdata->svs_plus_vote) &&
+							mdata->clk_ena) {
+						mdata->svs_plus_vote = 1;
+						pr_debug("Send svs plus enable request\n");
+						mdss_mdp_config_cx_voltage(
+								mdata, 1);
+					} else {
+						pr_debug("Already sent svs plus request\n");
+					}
+				} else if (mdata->svs_plus_vote) {
+					mdata->svs_plus_vote = 0;
+					pr_debug("Send svs plus disable request\n");
+					mdss_mdp_config_cx_voltage(mdata, 0);
+				}
+			}
 			if (IS_ERR_VALUE(clk_set_rate(clk, clk_rate)))
 				pr_err("clk_set_rate failed\n");
 			else
@@ -698,14 +808,22 @@ int mdss_iommu_ctrl(int enable)
 		 * delay iommu attach until continous splash screen has
 		 * finished handoff, as it may still be working with phys addr
 		 */
-		if (!mdata->iommu_attached && !mdata->handoff_pending)
+		if (!mdata->iommu_attached && !mdata->handoff_pending) {
+			if (mdata->needs_iommu_bw_vote)
+				mdss_bus_scale_set_quota(MDSS_IOMMU_RT,
+					SZ_1M, SZ_1M);
 			rc = mdss_iommu_attach(mdata);
+		}
 		mdata->iommu_ref_cnt++;
 	} else {
 		if (mdata->iommu_ref_cnt) {
 			mdata->iommu_ref_cnt--;
-			if (mdata->iommu_ref_cnt == 0)
+			if (mdata->iommu_ref_cnt == 0) {
 				rc = mdss_iommu_dettach(mdata);
+				if (mdata->needs_iommu_bw_vote)
+					mdss_bus_scale_set_quota(MDSS_IOMMU_RT,
+						0, 0);
+			}
 		} else {
 			pr_err("unbalanced iommu ref\n");
 		}
@@ -765,18 +883,17 @@ end:
 void mdss_bus_bandwidth_ctrl(int enable)
 {
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
-	static int bus_bw_cnt;
 	int changed = 0;
 
-	mutex_lock(&bus_bw_lock);
+	mutex_lock(&mdata->bus_bw_lock);
 	if (enable) {
-		if (bus_bw_cnt == 0)
+		if (mdata->bus_bw_cnt == 0)
 			changed++;
-		bus_bw_cnt++;
+		mdata->bus_bw_cnt++;
 	} else {
-		if (bus_bw_cnt) {
-			bus_bw_cnt--;
-			if (bus_bw_cnt == 0)
+		if (mdata->bus_bw_cnt) {
+			mdata->bus_bw_cnt--;
+			if (mdata->bus_bw_cnt == 0)
 				changed++;
 		} else {
 			pr_err("Can not be turned off\n");
@@ -784,7 +901,7 @@ void mdss_bus_bandwidth_ctrl(int enable)
 	}
 
 	pr_debug("bw_cnt=%d changed=%d enable=%d\n",
-			bus_bw_cnt, changed, enable);
+		mdata->bus_bw_cnt, changed, enable);
 
 	if (changed) {
 		if (!enable) {
@@ -800,7 +917,7 @@ void mdss_bus_bandwidth_ctrl(int enable)
 		}
 	}
 
-	mutex_unlock(&bus_bw_lock);
+	mutex_unlock(&mdata->bus_bw_lock);
 }
 EXPORT_SYMBOL(mdss_bus_bandwidth_ctrl);
 
@@ -825,7 +942,9 @@ void mdss_mdp_clk_ctrl(int enable)
 		}
 	}
 
-	MDSS_XLOG(mdp_clk_cnt, changed, enable, current->pid);
+	if (changed)
+		MDSS_XLOG(mdp_clk_cnt, enable, current->pid);
+
 	pr_debug("%s: clk_cnt=%d changed=%d enable=%d\n",
 			__func__, mdp_clk_cnt, changed, enable);
 
@@ -918,7 +1037,7 @@ static int mdss_iommu_tlb_timeout_notify(struct notifier_block *self,
 	switch (action) {
 	case TLB_SYNC_TIMEOUT:
 		pr_err("cb for TLB SYNC timeout. Dumping XLOG's\n");
-		MDSS_XLOG_TOUT_HANDLER("vbif", "mdp");
+		MDSS_XLOG_TOUT_HANDLER_FATAL_DUMP("vbif", "mdp", "mdp_dbg_bus");
 		break;
 	}
 
@@ -1149,20 +1268,63 @@ static int mdss_mdp_debug_init(struct platform_device *pdev,
 	return 0;
 }
 
+static u32 mdss_get_props(void)
+{
+	u32 props = 0;
+	void __iomem *props_base = ioremap(0xFC4B8114, 4);
+	if (props_base) {
+		props = readl_relaxed(props_base);
+		iounmap(props_base);
+	}
+	return props;
+}
+
+static void __mdss_mdp_enable_svs_plus_vote(struct mdss_data_type *mdata, u32
+		min_lvl, u32 max_lvl)
+{
+	mdss_set_quirk(mdata, MDSS_QUIRK_SVS_PLUS_VOTING);
+	mdata->svs_plus_min = min_lvl;
+	mdata->svs_plus_max = max_lvl;
+}
+
 static void mdss_mdp_hw_rev_caps_init(struct mdss_data_type *mdata)
 {
+	/* prevent disable of prefill calculations */
+	mdata->min_prefill_lines = 0xffff;
+
+	mdss_mdp_hw_rev_debug_caps_init(mdata);
+
 	switch (mdata->mdp_rev) {
 	case MDSS_MDP_HW_REV_105:
 	case MDSS_MDP_HW_REV_109:
-	case MDSS_MDP_HW_REV_110:
 		mdss_set_quirk(mdata, MDSS_QUIRK_BWCPANIC);
+		mdss_set_quirk(mdata, MDSS_QUIRK_DOWNSCALE_HFLIP_MDPCLK);
 		mdata->max_target_zorder = 7; /* excluding base layer */
 		mdata->max_cursor_size = 128;
 		break;
+	case MDSS_MDP_HW_REV_110:
+		__mdss_mdp_enable_svs_plus_vote(mdata,
+				SVS_PLUS_MIN_HW_110, SVS_PLUS_MAX_HW_110);
+		mdss_set_quirk(mdata, MDSS_QUIRK_BWCPANIC);
+		mdss_set_quirk(mdata, MDSS_QUIRK_DOWNSCALE_HFLIP_MDPCLK);
+		mdata->max_target_zorder = 4; /* excluding base layer */
+		mdata->max_cursor_size = 128;
+		mdata->min_prefill_lines = 12;
+		mdata->props = mdss_get_props();
+		break;
+	case MDSS_MDP_HW_REV_107:
+		mdata->max_target_zorder = 4; /* excluding base layer */
+		mdata->max_cursor_size = 64;
+		mdata->min_prefill_lines = 21;
+		break;
 	default:
+		mdss_set_quirk(mdata, MDSS_QUIRK_DOWNSCALE_HFLIP_MDPCLK);
 		mdata->max_target_zorder = 4; /* excluding base layer */
 		mdata->max_cursor_size = 64;
 	}
+
+	if (mdata->mdp_rev < MDSS_MDP_HW_REV_103)
+		mdss_set_quirk(mdata, MDSS_QUIRK_DOWNSCALE_HANG);
 }
 
 static void mdss_hw_rev_init(struct mdss_data_type *mdata)
@@ -1265,6 +1427,10 @@ static u32 mdss_mdp_res_init(struct mdss_data_type *mdata)
 		mdata->iclient = NULL;
 	}
 
+	mdata->needs_iommu_bw_vote =
+			of_property_read_bool(mdata->pdev->dev.of_node,
+			 "qcom,mdss-needs-iommu-bw-vote");
+
 	rc = mdss_iommu_init(mdata);
 
 	return rc;
@@ -1290,8 +1456,10 @@ void mdss_mdp_footswitch_ctrl_splash(int on)
 				pr_err("Footswitch failed to enable\n");
 
 			mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
+			mdss_bus_bandwidth_ctrl(true);
 		} else {
 			pr_debug("Disable MDP FS for splash.\n");
+			mdss_bus_bandwidth_ctrl(false);
 			mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
 			regulator_disable(mdata->fs);
 			mdata->handoff_pending = false;
@@ -1445,15 +1613,20 @@ static ssize_t mdss_mdp_show_capabilities(struct device *dev,
 	SPRINT("dma_pipes=%d\n", mdata->ndma_pipes);
 	SPRINT("blending_stages=%d\n", mdata->max_target_zorder);
 	SPRINT("cursor_pipes=%d\n", mdata->ncursor_pipes);
+	SPRINT("max_cursor_size=%d\n", mdata->max_cursor_size);
 	SPRINT("smp_count=%d\n", mdata->smp_mb_cnt);
 	SPRINT("smp_size=%d\n", mdata->smp_mb_size);
 	SPRINT("smp_mb_per_pipe=%d\n", mdata->smp_mb_per_pipe);
 	SPRINT("max_downscale_ratio=%d\n", MAX_DOWNSCALE_RATIO);
 	SPRINT("max_upscale_ratio=%d\n", MAX_UPSCALE_RATIO);
+	if (mdata->props)
+		SPRINT("props=%d\n", mdata->props);
 	if (mdata->max_bw_low)
 		SPRINT("max_bandwidth_low=%u\n", mdata->max_bw_low);
 	if (mdata->max_bw_high)
 		SPRINT("max_bandwidth_high=%u\n", mdata->max_bw_high);
+	if (mdata->max_pipe_width)
+		SPRINT("max_pipe_width=%d\n", mdata->max_pipe_width);
 	if (mdata->max_mixer_width)
 		SPRINT("max_mixer_width=%d\n", mdata->max_mixer_width);
 	SPRINT("features=");
@@ -1495,6 +1668,25 @@ static int mdss_mdp_register_sysfs(struct mdss_data_type *mdata)
 	return rc;
 }
 
+#ifdef CONFIG_SHDISP /* CUST_ID_00058 */
+static struct pm_qos_request mdss_mdp_qos_req;
+const int cpm_qos_latency_POWER_COLLAPSE_STANDALONE=399;
+void mdss_mdp_latency_deny_collapse(void)
+{
+	int base_fps = mdss_fb_base_fps_low_mode();
+
+	if (base_fps == MDSS_BASE_FPS_120) {
+		pm_qos_update_request(&mdss_mdp_qos_req, cpm_qos_latency_POWER_COLLAPSE_STANDALONE);
+	}
+	return;
+}
+
+void mdss_mdp_latency_allow_collapse(void)
+{
+	pm_qos_update_request(&mdss_mdp_qos_req, PM_QOS_DEFAULT_VALUE);
+}
+#endif /* CONFIG_SHDISP */
+
 static int mdss_mdp_probe(struct platform_device *pdev)
 {
 	struct resource *res;
@@ -1521,6 +1713,7 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, mdata);
 	mdss_res = mdata;
 	mutex_init(&mdata->reg_lock);
+	mutex_init(&mdata->bus_bw_lock);
 	atomic_set(&mdata->sd_client_count, 0);
 	atomic_set(&mdata->active_intf_cnt, 0);
 
@@ -1618,6 +1811,10 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 		pr_err("unable to initialize mdp debugging\n");
 		goto probe_done;
 	}
+
+#ifdef CONFIG_SHDISP /* CUST_ID_00058 */
+	pm_qos_add_request(&mdss_mdp_qos_req, PM_QOS_CPU_DMA_LATENCY, PM_QOS_DEFAULT_VALUE);
+#endif /* CONFIG_SHDISP */
 
 	pm_runtime_set_autosuspend_delay(&pdev->dev, AUTOSUSPEND_TIMEOUT_MS);
 	if (mdata->idle_pc_enabled)
@@ -1819,6 +2016,10 @@ static int mdss_mdp_parse_dt(struct platform_device *pdev)
 		pr_err("Error in device tree : bus scale\n");
 		return rc;
 	}
+
+	rc = mdss_mdp_parse_dt_ppb_off(pdev);
+	if (rc)
+		pr_debug("Info in device tree: ppb offset not configured\n");
 
 	/* Parse the mdp specific register base offset*/
 	rc = of_property_read_u32(pdev->dev.of_node,
@@ -2217,10 +2418,17 @@ static int mdss_mdp_parse_dt_pipe(struct platform_device *pdev)
 			goto parse_fail;
 
 		rc = mdss_mdp_parse_dt_handler(pdev,
-			"qcom,mdss-pipe-dma-xin-id", xin_id,
+			"qcom,mdss-pipe-cursor-xin-id", xin_id,
 			mdata->ncursor_pipes);
 		if (rc)
 			goto parse_fail;
+
+		rc = mdss_mdp_parse_dt_pipe_clk_ctrl(pdev,
+			"qcom,mdss-pipe-cursor-clk-ctrl-offsets",
+			mdata->cursor_pipes, mdata->ncursor_pipes);
+		if (rc)
+			pr_err("cursor-clk-ctrl-offsets is not set\n");
+
 		/* set the fetch id to an invalid value */
 		for (i = 0; i < mdata->ncursor_pipes; i++)
 			ftch_id[i] = -1;
@@ -2427,7 +2635,7 @@ static int mdss_mdp_parse_dt_video_intf(struct platform_device *pdev)
 	if (rc)
 		goto parse_fail;
 
-#if defined(CONFIG_SHDISP) && !defined(SHDISP_DISABLE_HR_VIDEO) /* CUST_ID_00027 */
+#if defined(CONFIG_SHDISP) && !defined(SHDISP_DISABLE_HR_VIDEO) /* CUST_ID_00070 */
 	rc = mdss_mdp_hr_video_addr_setup(mdata, offsets, count);
 #else  /* CONFIG_SHDISP */
 	rc = mdss_mdp_video_addr_setup(mdata, offsets, count);
@@ -2673,7 +2881,7 @@ static void mdss_mdp_parse_vbif_qos(struct platform_device *pdev)
 static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 {
 	struct mdss_data_type *mdata = platform_get_drvdata(pdev);
-	u32 data;
+	u32 data, slave_pingpong_off;
 	const char *wfd_data;
 	int rc;
 	struct property *prop = NULL;
@@ -2683,12 +2891,12 @@ static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 	mdata->rot_block_size = (!rc ? data : 128);
 
 	rc = of_property_read_u32(pdev->dev.of_node,
-		"qcom,mdss-rotator-ot-limit", &data);
-	mdata->rotator_ot_limit = (!rc ? data : 0);
+		"qcom,mdss-default-ot-rd-limit", &data);
+	mdata->default_ot_rd_limit = (!rc ? data : 0);
 
 	rc = of_property_read_u32(pdev->dev.of_node,
-		"qcom,mdss-default-ot-limit", &data);
-	mdata->default_ot_limit = (!rc ? data : 0);
+		"qcom,mdss-default-ot-wr-limit", &data);
+	mdata->default_ot_wr_limit = (!rc ? data : 0);
 
 	mdata->has_non_scalar_rgb = of_property_read_bool(pdev->dev.of_node,
 		"qcom,mdss-has-non-scalar-rgb");
@@ -2741,6 +2949,18 @@ static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 	mdata->has_pingpong_split = of_property_read_bool(pdev->dev.of_node,
 		 "qcom,mdss-has-dst-split");
 
+	if (mdata->has_pingpong_split) {
+		rc = of_property_read_u32(pdev->dev.of_node,
+				"qcom,mdss-slave-pingpong-off",
+				&slave_pingpong_off);
+		if (rc) {
+			pr_err("Error in device tree: slave pingpong offset\n");
+			return rc;
+		}
+		mdata->slave_pingpong_base = mdata->mdss_io.base +
+			slave_pingpong_off;
+	}
+
 	/*
 	 * 2x factor on AB because bus driver will divide by 2
 	 * due to 2x ports to BIMC
@@ -2770,6 +2990,16 @@ static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 	mdata->ib_factor_overlap.denom = mdata->ib_factor.denom;
 	mdss_mdp_parse_dt_fudge_factors(pdev, "qcom,mdss-ib-factor-overlap",
 		&mdata->ib_factor_overlap);
+
+	/*
+	 * 1x factor on ib_factor_cmd as default value. This value is
+	 * experimentally determined and should be tuned in device
+	 * tree
+	 */
+	mdata->ib_factor_cmd.numer = 1;
+	mdata->ib_factor_cmd.denom = 1;
+	mdss_mdp_parse_dt_fudge_factors(pdev, "qcom,mdss-ib-factor-cmd",
+		&mdata->ib_factor_cmd);
 
 	mdata->clk_factor.numer = 1;
 	mdata->clk_factor.denom = 1;
@@ -2819,6 +3049,12 @@ static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 	if (rc)
 		pr_debug("number of channels property not specified\n");
 
+	rc = of_property_read_u32(pdev->dev.of_node,
+			"qcom,max-pipe-width", &mdata->max_pipe_width);
+	if (rc) {
+		pr_debug("max pipe width not specified. Using default value\n");
+		mdata->max_pipe_width = DEFAULT_MDP_PIPE_WIDTH;
+	}
 	return 0;
 }
 
@@ -2860,6 +3096,31 @@ static int mdss_mdp_parse_dt_ad_cfg(struct platform_device *pdev)
 parse_done:
 	kfree(ad_offsets);
 	return rc;
+}
+
+static int mdss_mdp_parse_dt_ppb_off(struct platform_device *pdev)
+{
+	struct mdss_data_type *mdata = platform_get_drvdata(pdev);
+	u32 len, index;
+	const u32 *arr;
+	arr = of_get_property(pdev->dev.of_node, "qcom,mdss-ppb-off", &len);
+	if (arr) {
+		mdata->nppb = len / sizeof(u32);
+		mdata->ppb = devm_kzalloc(&mdata->pdev->dev,
+				sizeof(struct mdss_mdp_ppb) *
+				mdata->nppb, GFP_KERNEL);
+
+		if (mdata->ppb == NULL)
+			return -ENOMEM;
+
+		for (index = 0; index <  mdata->nppb; index++) {
+			mdata->ppb[index].ctl_off = be32_to_cpu(arr[index]);
+			mdata->ppb[index].cfg_off =
+				mdata->ppb[index].ctl_off + 4;
+		}
+		return 0;
+	}
+	return -EINVAL;
 }
 
 static int mdss_mdp_parse_dt_bus_scale(struct platform_device *pdev)
@@ -3015,7 +3276,7 @@ int mdss_panel_get_boot_cfg(void)
 
 	if (!mdss_res || !mdss_res->pan_cfg.init_done)
 		return -EPROBE_DEFER;
-	if (mdss_res->pan_cfg.lk_cfg)
+	if (mdss_res->handoff_pending)
 		rc = 1;
 	else
 		rc = 0;
@@ -3039,7 +3300,7 @@ int mdss_mdp_wait_for_xin_halt(u32 xin_id, bool is_vbif_nrt)
 	if (rc == -ETIMEDOUT) {
 		pr_err("VBIF client %d not halting. TIMEDOUT.\n",
 			xin_id);
-		MDSS_XLOG_TOUT_HANDLER("mdp", "vbif", "panic");
+		MDSS_XLOG_TOUT_HANDLER("mdp", "vbif", "mdp_dbg_bus", "panic");
 	} else {
 		pr_debug("VBIF client %d is halted\n", xin_id);
 	}
@@ -3084,39 +3345,59 @@ bool force_on_xin_clk(u32 bit_off, u32 clk_ctl_reg_off, bool enable)
 	return clk_forced_on;
 }
 
-static bool limit_rotator_ot(bool is_yuv, u32 width, u32 height)
-{
-	return (true == is_yuv) &&
-		(width * height <= 1080 * 1920);
-}
-
-static int limit_wb_ot(u32 width, u32 height)
-{
-
-	return width * height <= 1080 * 1920;
-}
-
-static u32 get_ot_limit(u32 reg_off, u32 bit_off, bool is_rot,
-	bool is_wb, bool is_yuv, u32 width, u32 height)
+static void apply_dynamic_ot_limit(u32 *ot_lim,
+	struct mdss_mdp_set_ot_params *params)
 {
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
-	u32 ot_lim = mdata->default_ot_limit;
+	u32 res;
+
+	if (!is_dynamic_ot_limit_required(mdata->mdp_rev))
+		return;
+
+	res = params->width * params->height;
+
+	pr_debug("w:%d h:%d rot:%d yuv:%d wb:%d res:%d\n",
+		params->width, params->height, params->is_rot,
+		params->is_yuv, params->is_wb, res);
+
+	if ((params->is_rot && params->is_yuv) ||
+		params->is_wb) {
+		if (res <= 1080 * 1920) {
+			*ot_lim = 2;
+		} else if (res <= 3840 * 2160) {
+			if (params->is_rot && params->is_yuv)
+				*ot_lim = 8;
+			else
+				*ot_lim = 16;
+		}
+	}
+}
+
+static u32 get_ot_limit(u32 reg_off, u32 bit_off,
+	struct mdss_mdp_set_ot_params *params)
+{
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
+	u32 ot_lim = 0;
 	u32 is_vbif_nrt, val;
 
+	if (mdata->default_ot_wr_limit &&
+		(params->reg_off_vbif_lim_conf == MMSS_VBIF_WR_LIM_CONF))
+		ot_lim = mdata->default_ot_wr_limit;
+	else if (mdata->default_ot_rd_limit &&
+		(params->reg_off_vbif_lim_conf == MMSS_VBIF_RD_LIM_CONF))
+		ot_lim = mdata->default_ot_rd_limit;
+
 	/*
-	 * If default ot limit is not set from dt,
-	 * then ot limiting is disabled.
+	 * If default ot is not set from dt,
+	 * then do not configure it.
 	 */
 	if (ot_lim == 0)
 		goto exit;
 
+	/* Modify the limits if the target and the use case requires it */
+	apply_dynamic_ot_limit(&ot_lim, params);
+
 	is_vbif_nrt = mdss_mdp_is_vbif_nrt(mdata->mdp_rev);
-
-	if ((is_rot && limit_rotator_ot(is_yuv, width, height)) ||
-		(is_wb && limit_wb_ot(width, height))) {
-		ot_lim = MDSS_OT_LIMIT;
-	}
-
 	val = MDSS_VBIF_READ(mdata, reg_off, is_vbif_nrt);
 	val &= (0xFF << bit_off);
 	val = val >> bit_off;
@@ -3125,11 +3406,11 @@ static u32 get_ot_limit(u32 reg_off, u32 bit_off, bool is_rot,
 		ot_lim = 0;
 
 exit:
+	pr_debug("ot_lim=%d\n", ot_lim);
 	return ot_lim;
 }
 
-void mdss_mdp_set_ot_limit(struct mdss_mdp_set_ot_params *params,
-	bool is_rot, bool is_wb, bool is_yuv)
+void mdss_mdp_set_ot_limit(struct mdss_mdp_set_ot_params *params)
 {
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	u32 ot_lim;
@@ -3140,15 +3421,10 @@ void mdss_mdp_set_ot_limit(struct mdss_mdp_set_ot_params *params,
 	u32 reg_val;
 	bool forced_on;
 
-	if (!mdss_mdp_apply_ot_limit(mdata->mdp_rev))
-		goto exit;
-
 	ot_lim = get_ot_limit(
 		reg_off_vbif_lim_conf,
 		bit_off_vbif_lim_conf,
-		is_rot, is_wb, is_yuv,
-		params->width,
-		params->height) & 0xFF;
+		params) & 0xFF;
 
 	if (ot_lim == 0)
 		goto exit;
@@ -3190,59 +3466,6 @@ void mdss_mdp_set_ot_limit(struct mdss_mdp_set_ot_params *params,
 
 exit:
 	return;
-}
-
-#define RPM_MISC_REQ_TYPE 0x6373696d
-#define RPM_MISC_REQ_SVS_PLUS_KEY 0x2B737673
-
-static void mdss_mdp_config_cx_voltage(struct mdss_data_type *mdata, int enable)
-{
-	int ret = 0;
-	static struct msm_rpm_kvp rpm_kvp;
-	static uint8_t svs_en;
-
-	if (!mdata->en_svs_high)
-		return;
-
-	if (!rpm_kvp.key) {
-		rpm_kvp.key = RPM_MISC_REQ_SVS_PLUS_KEY;
-		rpm_kvp.length = sizeof(unsigned);
-		pr_debug("%s: Initialized rpm_kvp structure\n", __func__);
-	}
-
-	if (enable) {
-		svs_en = 1;
-		rpm_kvp.data = &svs_en;
-		pr_debug("%s: voting for svs high\n", __func__);
-		ret = msm_rpm_send_message(MSM_RPM_CTX_ACTIVE_SET,
-					RPM_MISC_REQ_TYPE, 0,
-					&rpm_kvp, 1);
-		if (ret)
-			pr_err("vote for active_set svs high failed: %d\n",
-					ret);
-		ret = msm_rpm_send_message(MSM_RPM_CTX_SLEEP_SET,
-					RPM_MISC_REQ_TYPE, 0,
-					&rpm_kvp, 1);
-		if (ret)
-			pr_err("vote for sleep_set svs high failed: %d\n",
-					ret);
-	} else {
-		svs_en = 0;
-		rpm_kvp.data = &svs_en;
-		pr_debug("%s: Removing vote for svs high\n", __func__);
-		ret = msm_rpm_send_message(MSM_RPM_CTX_ACTIVE_SET,
-					RPM_MISC_REQ_TYPE, 0,
-					&rpm_kvp, 1);
-		if (ret)
-			pr_err("Remove vote:active_set svs high failed: %d\n",
-					ret);
-		ret = msm_rpm_send_message(MSM_RPM_CTX_SLEEP_SET,
-					RPM_MISC_REQ_TYPE, 0,
-					&rpm_kvp, 1);
-		if (ret)
-			pr_err("Remove vote:sleep_set svs high failed: %d\n",
-					ret);
-	}
 }
 
 static int mdss_mdp_cx_ctrl(struct mdss_data_type *mdata, int enable)
@@ -3383,7 +3606,7 @@ static inline int mdss_mdp_suspend_sub(struct mdss_data_type *mdata)
 	return 0;
 }
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00017 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00025 */
 void mdss_mdp_suspend_shdisp(void)
 {
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
@@ -3478,7 +3701,7 @@ static int mdss_mdp_runtime_resume(struct device *dev)
 	if (!mdata)
 		return -ENODEV;
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00017 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00025 */
 	if (mdss_fb_shutdown_in_progress())
 		return -EBUSY;
 #endif /* CONFIG_SHDISP */
@@ -3512,7 +3735,7 @@ static int mdss_mdp_runtime_suspend(struct device *dev)
 	if (!mdata)
 		return -ENODEV;
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00017 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00025 */
 	if (mdss_fb_shutdown_in_progress())
 		return -EBUSY;
 #endif /* CONFIG_SHDISP */

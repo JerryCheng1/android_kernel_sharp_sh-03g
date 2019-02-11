@@ -66,7 +66,7 @@ stGPIO_DEF use_gpiono[] = {
 #endif
 };
 
-#ifdef  DTV_DRV_MSM8994
+#ifdef  DTV_DRV_PINCTRL
 struct device_node *np;
 #endif
 
@@ -200,11 +200,8 @@ static long tuner_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 static struct file_operations tuner_fops = {
 	.owner				= THIS_MODULE,
-//#ifdef  DTV_DRV_MSM8994
 	.compat_ioctl		= tuner_ioctl,
-//#else
 	.unlocked_ioctl		= tuner_ioctl,
-//#endif
 	.open				= tuner_open,
 	.release			= tuner_release,
 };
@@ -228,7 +225,7 @@ static int __init tuner_init(void)
 	int ret;
 	int i;
 	int loop = sizeof(use_gpiono)/sizeof(stGPIO_DEF);
-#ifdef  DTV_DRV_MSM8994
+#ifdef  DTV_DRV_PINCTRL
 	int portno;
 #else
 	unsigned int gpio_no;
@@ -240,7 +237,7 @@ static int __init tuner_init(void)
 		return ret;
 	}
 
-#ifdef  DTV_DRV_MSM8994
+#ifdef  DTV_DRV_PINCTRL
 	np = of_find_node_by_name( NULL, "tunctrl" );
 	if ( np ) {
 		for ( i=0; i<loop; i++ ) {
@@ -258,13 +255,8 @@ static int __init tuner_init(void)
 	}
 #else
 	for ( i=0; i<loop; i++ ) {
-		/* PMI8994_GPIO */
-		if ( use_gpiono[i].no > PMI8994_GPIO_BASE ) {
-			gpio_no = use_gpiono[i].no - PMI8994_GPIO_BASE;
-			ret = gpio_request( qpnp_pin_map("pmi8994-gpio", gpio_no),  use_gpiono[i].label );
-		}
 		/* PM8994_GPIO */
-		else if ( use_gpiono[i].no > PM8994_GPIO_BASE ) {
+		if ( use_gpiono[i].no > PM8994_GPIO_BASE ) {
 			gpio_no = use_gpiono[i].no - PM8994_GPIO_BASE;
 			ret = gpio_request( qpnp_pin_map("pm8994-gpio", gpio_no),  use_gpiono[i].label );
 		}
@@ -292,13 +284,13 @@ static void __exit tuner_cleanup(void)
 {
 	int i ;
 	int loop = sizeof(use_gpiono)/sizeof(stGPIO_DEF);
-#ifdef  DTV_DRV_MSM8994
+#ifdef  DTV_DRV_PINCTRL
 	int portno;
 #else
 	unsigned int gpio_no;
 #endif
 
-#ifdef  DTV_DRV_MSM8994
+#ifdef  DTV_DRV_PINCTRL
 	np = of_find_node_by_name( NULL, "tunctrl" );
 	if ( np ) {
 		for ( i=0; i<loop; i++ ) {
@@ -311,13 +303,8 @@ static void __exit tuner_cleanup(void)
 	}
 #else
 	for(i=0; i<loop; i++){
-		/* PMI8994_GPIO */
-		if ( use_gpiono[i].no > PMI8994_GPIO_BASE ) {
-			gpio_no = use_gpiono[i].no - PMI8994_GPIO_BASE;
-			gpio_free( qpnp_pin_map("pmi8994-gpio", gpio_no) );
-		}
 		/* PM8994_GPIO */
-		else if ( use_gpiono[i].no > PM8994_GPIO_BASE ) {
+		if ( use_gpiono[i].no > PM8994_GPIO_BASE ) {
 			gpio_no = use_gpiono[i].no - PM8994_GPIO_BASE;
 			gpio_free( qpnp_pin_map("pm8994-gpio", gpio_no) );
 		}
@@ -345,7 +332,7 @@ static int gpio_init(void)
 	stGPIO_DEF *p = &use_gpiono[0];
 	int i;
 	int errcnt = 0;
-#ifdef  DTV_DRV_MSM8994
+#ifdef  DTV_DRV_PINCTRL
 	int portno;
 #else
 	unsigned int gpio_no;
@@ -355,7 +342,7 @@ static int gpio_init(void)
 	for (i=0; i<loop; i++, p++) {
 		if (p->direction == DirctionIn) {
 			/* GPIO Input */
-#ifdef  DTV_DRV_MSM8994
+#ifdef  DTV_DRV_PINCTRL
 			portno = of_get_named_gpio( np, use_gpiono[i].label ,0 );
 		//	printk(KERN_DEBUG "of_get_named_gpio() -- gpio_direction_input [%d][%s] \n", portno, use_gpiono[i].label);
 			if ( gpio_direction_input( portno ) < 0 ) {
@@ -364,18 +351,7 @@ static int gpio_init(void)
 				continue;
 			}
 #else
-			if ( p->no > PMI8994_GPIO_BASE ) {
-				/* PMI8994_GPIO */
-				gpio_no = p->no - PMI8994_GPIO_BASE;
-
-				if (gpio_direction_input( qpnp_pin_map("pmi8994-gpio", gpio_no) ) < 0) {
-					/* Failed */
-					errcnt ++;
-					printk( "%s:%d gpio_direction_input error NO.%d \n", __FILE__,__LINE__, p->no);
-					continue;
-				}
-			}
-			else if ( p->no > PM8994_GPIO_BASE ) {
+			if ( p->no > PM8994_GPIO_BASE ) {
 				/* PM8994_GPIO */
 				gpio_no = p->no - PM8994_GPIO_BASE;
 
@@ -400,7 +376,7 @@ static int gpio_init(void)
 		}
 		if (p->direction == DirctionOut) {
 			/* GPIO Output */
-#ifdef  DTV_DRV_MSM8994
+#ifdef  DTV_DRV_PINCTRL
 			portno = of_get_named_gpio( np, use_gpiono[i].label ,0 );
 		//	printk(KERN_DEBUG "of_get_named_gpio() -- direction_output [%d][%s] \n", portno, use_gpiono[i].label);
 			if ( gpio_direction_output( portno, use_gpiono[i].out_val ) < 0 ) {
@@ -410,18 +386,7 @@ static int gpio_init(void)
 			}
 
 #else
-			if ( p->no > PMI8994_GPIO_BASE ) {
-				/* PMI8994_GPIO */
-				gpio_no = p->no - PMI8994_GPIO_BASE;
-
-				if (gpio_direction_output( qpnp_pin_map("pmi8994-gpio", gpio_no), p->out_val ) < 0) {
-					/* Failed */
-					errcnt ++;
-					printk("%s: gpio_direction_output error NO.%d \n", __FILE__, p->no);
-					continue;
-				}
-			}
-			else if ( p->no > PM8994_GPIO_BASE ) {
+			if ( p->no > PM8994_GPIO_BASE ) {
 				/* PM8994_GPIO */
 				gpio_no = p->no - PM8994_GPIO_BASE;
 
@@ -507,7 +472,7 @@ static int gpio_set(unsigned int id, int value)
 	int flag = 0;
 	int i;
 	int portno ;
-#ifndef  DTV_DRV_MSM8994
+#ifndef  DTV_DRV_PINCTRL
 	unsigned int gpio_no;
 #endif
 
@@ -515,15 +480,10 @@ static int gpio_set(unsigned int id, int value)
 		if (p->id == id){
 			flag = 1;
 
-#ifdef  DTV_DRV_MSM8994
+#ifdef  DTV_DRV_PINCTRL
 			portno = of_get_named_gpio( np, use_gpiono[i].label ,0 );
 #else
-			if ( p->no > PMI8994_GPIO_BASE ) {
-				/* PMI8994_GPIO */
-				gpio_no = p->no - PMI8994_GPIO_BASE;
-				portno = qpnp_pin_map("pmi8994-gpio", gpio_no);
-			}
-			else if ( p->no > PM8994_GPIO_BASE ) {
+			if ( p->no > PM8994_GPIO_BASE ) {
 				/* PM8994_GPIO */
 				gpio_no = p->no - PM8994_GPIO_BASE;
 				portno = qpnp_pin_map("pm8994-gpio", gpio_no);
@@ -559,7 +519,7 @@ static int gpio_get(unsigned int id, int *val)
 	int flag = 0;
 	int i;
 	int portno ;
-#ifndef  DTV_DRV_MSM8994
+#ifndef  DTV_DRV_PINCTRL
 	unsigned int gpio_no;
 #endif
 
@@ -568,16 +528,11 @@ static int gpio_get(unsigned int id, int *val)
 		if (p->id == id){
 			flag = 1;
 
-#ifdef  DTV_DRV_MSM8994
+#ifdef  DTV_DRV_PINCTRL
 			portno = of_get_named_gpio( np, use_gpiono[i].label ,0 );
-			printk(KERN_DEBUG "of_get_named_gpio() [%d][%s] \n", portno, use_gpiono[i].label);
+		//	printk(KERN_DEBUG "of_get_named_gpio() [%d][%s] \n", portno, use_gpiono[i].label);
 #else
-			if ( p->no > PMI8994_GPIO_BASE ) {
-				/* PMI8994_GPIO */
-				gpio_no = p->no - PMI8994_GPIO_BASE;
-				portno = qpnp_pin_map("pmi8994-gpio", gpio_no);
-			}
-			else if ( p->no > PM8994_GPIO_BASE ) {
+			if ( p->no > PM8994_GPIO_BASE ) {
 				/* PM8994_GPIO */
 				gpio_no = p->no - PM8994_GPIO_BASE;
 				portno = qpnp_pin_map("pm8994-gpio", gpio_no);
@@ -617,40 +572,34 @@ static int tuner_vreg_enable(void)
 	unsigned int hw_rev;
 #endif
 
-/*
-	L17(2.7V)			8994_l17
-	L27(1.2V)			8994_l27
-	GPIO22(1.2V LDO)
-*/	
-
-	/* for SPDT (2.7V -- L17) */
-	struct regulator *reg_27v;
-	struct device *dev_27v = tuner_dev.this_device;
-	const char *id_27v = "pm8994_l17";
-#if defined(CONFIG_ARCH_DECKARD_AL20) || defined(CONFIG_ARCH_LYNX_GP11D)
-	int min_27v_uV = 2800000, max_27v_uV = 2800000;
+	/* for SPDT (2.8V -- L17) */
+	struct regulator *reg_28v;
+	struct device *dev_28v = tuner_dev.this_device;
+	const char *id_28v = "pm8994_l17";
+#ifdef CONFIG_ARCH_LYNX_DL70
+	int min_28v_uV = 2700000, max_28v_uV = 2700000;
 #else
-	int min_27v_uV = 2700000, max_27v_uV = 2700000;
+	int min_28v_uV = 2800000, max_28v_uV = 2800000;
 #endif
 
-	reg_27v= regulator_get(dev_27v, id_27v);
-	if (IS_ERR(reg_27v)) {
-		printk("Unable to get %s regulator\n", id_27v);
+	reg_28v = regulator_get(dev_28v, id_28v);
+	if (IS_ERR(reg_28v)) {
+		printk("Unable to get %s regulator\n", id_28v);
 		return -1;
 	}
 
-    regulator_set_voltage(reg_27v, min_27v_uV, max_27v_uV);
+    regulator_set_voltage(reg_28v, min_28v_uV, max_28v_uV);
 
-	if (!regulator_is_enabled(reg_27v)) {
-		ret = regulator_enable(reg_27v);
+	if (!regulator_is_enabled(reg_28v)) {
+		ret = regulator_enable(reg_28v);
 	}
 
-	regulator_put(reg_27v);
+	regulator_put(reg_28v);
 	/* --- */
 
+#ifdef CONFIG_ARCH_LYNX_DL70
 	msleep(1);
 
-#ifdef CONFIG_ARCH_LYNX_DL70
 	hw_revision_get( &hw_rev );
 	if ( hw_rev <= 1 ) {		/* ES0 and ES1 */
 		reg= regulator_get(dev, id);
@@ -694,16 +643,10 @@ static int tuner_vreg_disable(void)
 	unsigned int hw_rev;
 #endif
 
-/*
-	L17(2.7V)			8994_l17
-	L27(1.2V)			8994_l27
-	GPIO22(1.2V LDO)
-*/	
-
-	/* for SPDT (2.7V -- L17) */
-	struct regulator *reg_27v;
-	struct device *dev_27v = tuner_dev.this_device;
-	const char *id_27v = "pm8994_l17";
+	/* for SPDT (2.8V -- L17) */
+	struct regulator *reg_28v;
+	struct device *dev_28v = tuner_dev.this_device;
+	const char *id_28v = "pm8994_l17";
 	/* --- */
 
 #ifdef CONFIG_SHTERM
@@ -727,18 +670,18 @@ static int tuner_vreg_disable(void)
 	}
 #endif
 
-	/* for SPDT (2.7V -- L17) */
-	reg_27v= regulator_get(dev_27v, id_27v);
-	if (IS_ERR(reg_27v)) {
-		printk("Unable to get %s regulator\n", id_27v);
+	/* for SPDT (2.8V -- L17) */
+	reg_28v = regulator_get(dev_28v, id_28v);
+	if (IS_ERR(reg_28v)) {
+		printk("Unable to get %s regulator\n", id_28v);
 		return -1;
 	}
 
-	if (regulator_is_enabled(reg_27v)) {
-		ret = regulator_disable(reg_27v);
+	if (regulator_is_enabled(reg_28v)) {
+		ret = regulator_disable(reg_28v);
 	}
 
-	regulator_put(reg_27v);
+	regulator_put(reg_28v);
 	/* --- */
 
 	return 0;

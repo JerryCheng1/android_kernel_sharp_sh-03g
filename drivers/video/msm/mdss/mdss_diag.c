@@ -21,39 +21,51 @@
 #include <mdss_dsi.h>
 #include <mdss_mdp.h>
 #include <linux/iopoll.h>
+#include <linux/module.h>
+#include "mdss_debug.h"
 
-#ifndef CONFIG_USES_SHLCDC
+#define MDSS_DIAG_MIPI_CLKCHG_ENABLE
+#if defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+#define MDSS_DIAG_MIPI_CHECK_ENABLE
+#endif  /* CONFIG_SHDISP_PANEL_HAYABUSA */
+
 #define MDSS_DIAG_MIPI_CHECK_AMP_OFF		(0x0780)
 #define MDSS_DIAG_WAIT_1FRAME_US		(16666)
 
+#ifdef MDSS_DIAG_MIPI_CHECK_ENABLE
 static uint8_t mdss_diag_mipi_check_amp_data;
-static uint8_t mdss_diag_mipi_check_rec_sens_data;
+static uint8_t mdss_diag_mipi_check_rec_sens_data_master;
+static uint8_t mdss_diag_mipi_check_rec_sens_data_slave;
 static int mdss_diag_mipi_check_exec_state = false;
+#endif /* MDSS_DIAG_MIPI_CHECK_ENABLE */
 
-static int mdss_diag_mipi_check_exec(uint8_t flame_cnt, uint8_t amp, uint8_t sensitiv, struct mdss_dsi_ctrl_pdata *ctrl);
-static int mdss_diag_mipi_check_manual(struct mdp_mipi_check_param *mipi_check_param, struct mdss_dsi_ctrl_pdata *ctrl);
-static int mdss_diag_mipi_check_auto(struct mdp_mipi_check_param *mipi_check_param, struct mdss_dsi_ctrl_pdata *ctrl);
-static void mdss_diag_mipi_check_set_param(uint8_t amp, uint8_t sensitiv, struct mdss_dsi_ctrl_pdata *ctrl);
-static void mdss_diag_mipi_check_get_param(uint8_t *amp, uint8_t *sensitiv, struct mdss_dsi_ctrl_pdata *ctrl);
-static int mdss_diag_mipi_check_test(uint8_t flame_cnt, struct mdss_dsi_ctrl_pdata *ctrl);
-static int mdss_diag_mipi_check_test_video(uint8_t flame_cnt, struct mdss_dsi_ctrl_pdata *ctrl);
-static int mdss_diag_mipi_check_test_cmd(uint8_t flame_cnt, struct mdss_dsi_ctrl_pdata *ctrl);
-static int mdss_diag_read_sensitiv(uint8_t *read_data);
+#ifdef MDSS_DIAG_MIPI_CHECK_ENABLE
+static int mdss_diag_mipi_check_exec(uint8_t *result, uint8_t frame_cnt, uint8_t amp, uint8_t sensitiv, struct mdss_dsi_ctrl_pdata *ctrl, struct mdss_dsi_ctrl_pdata *sctrl);
+static int mdss_diag_mipi_check_manual(struct mdp_mipi_check_param *mipi_check_param, struct mdss_dsi_ctrl_pdata *ctrl, struct mdss_dsi_ctrl_pdata *sctrl);
+static void mdss_diag_mipi_check_set_param(uint8_t amp, uint8_t sensitiv_master, uint8_t sensitiv_slave, struct mdss_dsi_ctrl_pdata *ctrl, struct mdss_dsi_ctrl_pdata *sctrl);
+static void mdss_diag_mipi_check_get_param(uint8_t *amp, uint8_t *sensitiv_master, uint8_t *sensitiv_slave, struct mdss_dsi_ctrl_pdata *ctrl);
+static int mdss_diag_mipi_check_test(uint8_t *result, uint8_t frame_cnt, struct mdss_dsi_ctrl_pdata *ctrl, struct mdss_dsi_ctrl_pdata *sctrl);
+static int mdss_diag_mipi_check_test_video(uint8_t frame_cnt, struct mdss_dsi_ctrl_pdata *ctrl);
+static int mdss_diag_mipi_check_test_cmd(uint8_t *result, uint8_t frame_cnt, struct mdss_dsi_ctrl_pdata *ctrl, struct mdss_dsi_ctrl_pdata *sctrl);
+static int mdss_diag_read_sensitiv(uint8_t *sensitiv_master, uint8_t *sensitiv_slave);
+static int mdss_diag_write_sensitiv(uint8_t sensitiv_master, uint8_t sensitiv_slave);
 static int mdss_diag_dsi_cmd_bta_sw_trigger(struct mdss_dsi_ctrl_pdata *ctrl);
 static int mdss_diag_dsi_ack_err_status(struct mdss_dsi_ctrl_pdata *ctrl);
-static void mdss_diag_mipi_check_result_convert(
-			uint8_t befoe[MDSS_MIPICHK_SENSITIV_NUM][MDSS_MIPICHK_AMP_NUM],
-			struct mdp_mipi_check_param *mipi_check_param);
+#endif /* MDSS_DIAG_MIPI_CHECK_ENABLE */
+
+#ifdef MDSS_DIAG_MIPI_CLKCHG_ENABLE
 static int mdss_diag_mipi_clkchg_setparam(struct mdp_mipi_clkchg_param *mipi_clkchg_param, struct mdss_mdp_ctl *pctl);
 static void mdss_diag_mipi_clkchg_host_data(struct mdp_mipi_clkchg_param *mipi_clkchg_param, struct mdss_panel_data *pdata);
-static int mdss_diag_mipi_clkchg_host(struct mdp_mipi_clkchg_param *mipi_clkchg_param, struct mdss_mdp_ctl *pctl);
+static int __mdss_diag_mipi_clkchg_host(struct mdss_mdp_ctl *pctl, struct mdss_panel_data *pdata);
+static int mdss_diag_mipi_clkchg_host(struct mdss_mdp_ctl *pctl);
 static int mdss_diag_mipi_clkchg_panel_clk_update(struct mdss_panel_data *pdata);
+static int __mdss_diag_mipi_clkchg_panel_clk_data(struct mdss_panel_data *pdata);
 static int mdss_diag_mipi_clkchg_panel_clk_data(struct mdss_panel_data *pdata);
 static int mdss_diag_mipi_clkchg_panel_porch_update(struct mdss_panel_data *pdata);
 static int mdss_diag_mipi_clkchg_panel(struct mdp_mipi_clkchg_param *mipi_clkchg_param, struct mdss_mdp_ctl *pctl);
 static void mdss_diag_mipi_clkchg_param_log(struct mdp_mipi_clkchg_param *mdp_mipi_clkchg_param);
+#endif /* MDSS_DIAG_MIPI_CLKCHG_ENABLE */
 
-extern int shdisp_api_set_freq_param(mdp_mipi_clkchg_panel_t *freq);
 #ifndef SHDISP_DET_DSI_MIPI_ERROR
 extern void mdss_dsi_err_intr_ctrl(struct mdss_dsi_ctrl_pdata *ctrl, u32 mask,int enable);
 #endif /* SHDISP_DET_DSI_MIPI_ERROR */
@@ -70,66 +82,81 @@ extern int mdss_mdp_hr_video_clkchg_mdp_update(struct mdss_mdp_ctl *ctl);
 #else  /* SHDISP_DISABLE_HR_VIDEO */
 extern int mdss_mdp_video_clkchg_mdp_update(struct mdss_mdp_ctl *ctl);
 #endif /* SHDISP_DISABLE_HR_VIDEO */
-#endif /* CONFIG_USES_SHLCDC */
 
 /* ----------------------------------------------------------------------- */
 /*                                                                         */
 /* ----------------------------------------------------------------------- */
 int mdss_diag_mipi_check_get_exec_state(void)
 {
-#ifdef CONFIG_USES_SHLCDC
-	return false;
-#else  /* CONFIG_USES_SHLCDC */
+#ifdef MDSS_DIAG_MIPI_CHECK_ENABLE
 	return mdss_diag_mipi_check_exec_state;
-#endif /* CONFIG_USES_SHLCDC */
+#else  /* MDSS_DIAG_MIPI_CHECK_ENABLE */
+	return false;
+#endif /* MDSS_DIAG_MIPI_CHECK_ENABLE */
 }
 
 /* ----------------------------------------------------------------------- */
 /*                                                                         */
 /* ----------------------------------------------------------------------- */
-int mdss_diag_mipi_check(struct mdp_mipi_check_param *mipi_check_param,
-			 struct mdss_panel_data *pdata)
+int mdss_diag_mipi_check(struct mdp_mipi_check_param *mipi_check_param, struct mdss_panel_data *pdata)
 {
-#ifdef CONFIG_USES_SHLCDC
-	return 0;
-#else  /* CONFIG_USES_SHLCDC */
+#ifdef MDSS_DIAG_MIPI_CHECK_ENABLE
 	int ret;
 	u32 isr;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata;
+	struct mdss_dsi_ctrl_pdata *sctrl_pdata = NULL;
 
-	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
-				panel_data);
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata, panel_data);
+	if (pdata->next) {
+		sctrl_pdata = container_of(pdata->next, struct mdss_dsi_ctrl_pdata, panel_data);
+	}
 
-	pr_debug("%s: called\n", __func__);
+	pr_debug("%s: in master=%p slave=%p\n", __func__, ctrl_pdata, sctrl_pdata);
+
 	if (!ctrl_pdata) {
-		pr_err("LCDERR: %s ctrl_pdata=0x%p", __func__, ctrl_pdata);
+		pr_err("%s: ctrl_pdata is NULL.\n", __func__);
 		return -ENXIO;
 	}
 
+	if (sctrl_pdata && (ctrl_pdata->panel_mode != DSI_CMD_MODE)) {
+		pr_err("%s: not support video mode.\n", __func__);
+		return -EINVAL;
+	}
+
 #ifndef SHDISP_DET_DSI_MIPI_ERROR
-	/* disable dsi error interrupt */
 	mdss_dsi_err_intr_ctrl(ctrl_pdata, DSI_INTR_ERROR_MASK, 0);
+	if (sctrl_pdata) {
+		mdss_dsi_err_intr_ctrl(sctrl_pdata, DSI_INTR_ERROR_MASK, 0);
+	}
 #endif /* SHDISP_DET_DSI_MIPI_ERROR */
+
 	mdss_diag_mipi_check_exec_state = true;
 
 	mdss_diag_dsi_cmd_bta_sw_trigger(ctrl_pdata);
+	if (sctrl_pdata) {
+		mdss_diag_dsi_cmd_bta_sw_trigger(sctrl_pdata);
+	}
 
-	mdss_diag_mipi_check_get_param(&mdss_diag_mipi_check_amp_data, &mdss_diag_mipi_check_rec_sens_data, ctrl_pdata);
+	mdss_diag_mipi_check_amp_data = 0;
+	mdss_diag_mipi_check_rec_sens_data_master = 0;
+	mdss_diag_mipi_check_rec_sens_data_slave  = 0;
+	mdss_diag_mipi_check_get_param(
+			&mdss_diag_mipi_check_amp_data,
+			&mdss_diag_mipi_check_rec_sens_data_master,
+			&mdss_diag_mipi_check_rec_sens_data_slave,
+			ctrl_pdata);
 
 	if (ctrl_pdata->panel_mode == DSI_VIDEO_MODE) {
 		mdss_shdisp_video_transfer_ctrl(false, false);
 	}
 
-	if (mipi_check_param->mode == MDSS_MIPICHK_MANUAL) {
-		ret = mdss_diag_mipi_check_manual(mipi_check_param, ctrl_pdata);
-	} else if (mipi_check_param->mode == MDSS_MIPICHK_AUTO) {
-		ret = mdss_diag_mipi_check_auto(mipi_check_param, ctrl_pdata);
-	} else {
-		pr_err("%s:mode=%d\n", __func__, mipi_check_param->mode);
-		return -EINVAL;
-	}
+	ret = mdss_diag_mipi_check_manual(mipi_check_param, ctrl_pdata, sctrl_pdata);
 
-	mdss_diag_mipi_check_set_param(mdss_diag_mipi_check_amp_data, mdss_diag_mipi_check_rec_sens_data, ctrl_pdata);
+	mdss_diag_mipi_check_set_param(
+			mdss_diag_mipi_check_amp_data,
+			mdss_diag_mipi_check_rec_sens_data_master,
+			mdss_diag_mipi_check_rec_sens_data_slave,
+			ctrl_pdata, sctrl_pdata);
 
 	if (ctrl_pdata->panel_mode == DSI_VIDEO_MODE) {
 		mdss_shdisp_video_transfer_ctrl(true, true);
@@ -140,43 +167,136 @@ int mdss_diag_mipi_check(struct mdp_mipi_check_param *mipi_check_param,
 	/* MMSS_DSI_0_INT_CTRL */
 	isr = MIPI_INP(ctrl_pdata->ctrl_base + 0x0110);
 	MIPI_OUTP(ctrl_pdata->ctrl_base + 0x0110, isr);
+	if (sctrl_pdata) {
+		isr = MIPI_INP(sctrl_pdata->ctrl_base + 0x0110);
+		MIPI_OUTP(sctrl_pdata->ctrl_base + 0x0110, isr);
+	}
 
 #ifndef SHDISP_DET_DSI_MIPI_ERROR
-	/* enable dsi error interrupt */
 	mdss_dsi_err_intr_ctrl(ctrl_pdata, DSI_INTR_ERROR_MASK, 1);
+	if (sctrl_pdata) {
+		mdss_dsi_err_intr_ctrl(sctrl_pdata, DSI_INTR_ERROR_MASK, 1);
+	}
 #endif /* SHDISP_DET_DSI_MIPI_ERROR */
 
-	pr_debug("%s: end", __func__);
+	pr_debug("%s: out\n", __func__);
 
 	return ret;
-#endif /* CONFIG_USES_SHLCDC */
+#else  /* MDSS_DIAG_MIPI_CHECK_ENABLE */
+	return 0;
+#endif /* MDSS_DIAG_MIPI_CHECK_ENABLE */
 }
 
-#ifndef CONFIG_USES_SHLCDC
 /* ----------------------------------------------------------------------- */
 /*                                                                         */
 /* ----------------------------------------------------------------------- */
-static int mdss_diag_mipi_check_manual(struct mdp_mipi_check_param *mipi_check_param, struct mdss_dsi_ctrl_pdata *ctrl)
+int mdss_diag_mipi_clkchg(struct mdp_mipi_clkchg_param *mipi_clkchg_param)
 {
+#ifdef MDSS_DIAG_MIPI_CLKCHG_ENABLE
 	int ret = 0;
+	struct mdss_mdp_ctl *pctl;
+	struct mdss_mdp_ctl *sctl;
+	struct mdss_panel_data *pdata;
+#if defined(CONFIG_SHDISP_PANEL_HAYABUSA) || defined(CONFIG_SHDISP_PANEL_ANDY)
+	struct shdisp_freq_params freq;
+#endif  /* defined(CONFIG_SHDISP_PANEL_HAYABUSA) || defined(CONFIG_SHDISP_PANEL_ANDY) */
 
 	pr_debug("%s: called\n", __func__);
+	pctl = mdss_shdisp_get_mdpctrl(0);
+	if (!pctl) {
+		pr_err("LCDERR:[%s] mdpctrl is NULL.\n", __func__);
+		return -EIO;
+	}
+	MDSS_XLOG(mipi_clkchg_param->host.clock_rate, XLOG_FUNC_ENTRY);
+	pdata = pctl->panel_data;
+
+	mdss_shdisp_lock_recovery();
+
+	if (pctl->ops.wait_pingpong) {
+		pr_debug("%s: wait_pingpong called\n", __func__);
+		ret = pctl->ops.wait_pingpong(pctl, NULL);
+		if(ret){
+			pr_err("%s: failed to wait_pingpong. ret=%d\n", __func__, ret);
+		}
+	}
+	sctl = mdss_mdp_get_split_ctl(pctl);
+	if (sctl && sctl->ops.wait_pingpong) {
+		ret = sctl->ops.wait_pingpong(sctl, NULL);
+		if(ret){
+			pr_err("%s: failed to wait_pingpong(split_ctl). ret=%d\n", __func__, ret);
+		}
+	}
+
+	mdss_diag_mipi_clkchg_param_log(mipi_clkchg_param);
+
+	mdss_diag_mipi_clkchg_host_data(mipi_clkchg_param, pdata);
+
+#if defined(CONFIG_SHDISP_PANEL_ANDY)
+	freq.rtn = mipi_clkchg_param->panel.andy.rtn;
+	freq.gip = mipi_clkchg_param->panel.andy.gip;
+	freq.vbp = mipi_clkchg_param->panel.andy.vbp;
+	freq.vfp = mipi_clkchg_param->panel.andy.vfp;
+	shdisp_api_set_freq_param(&freq);
+#endif  /* defined(CONFIG_SHDISP_PANEL_ANDY) */
+#if defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+	freq.internal_osc = mipi_clkchg_param->internal_osc;
+	shdisp_api_set_freq_param(&freq);
+#endif  /* CONFIG_SHDISP_PANEL_HAYABUSA */
+
+	if (mdss_shdisp_is_disp_on()) {
+		ret = mdss_diag_mipi_clkchg_setparam(mipi_clkchg_param, pctl);
+	} else {
+		ret = mdss_diag_mipi_clkchg_panel_clk_data(pdata);
+	}
+
+	mdss_shdisp_unlock_recovery();
+
+	pr_debug("%s: end ret(%d)\n", __func__, ret);
+	MDSS_XLOG(XLOG_FUNC_EXIT);
+
+	return ret;
+#else  /* MDSS_DIAG_MIPI_CLKCHG_ENABLE */
+	return 0;
+#endif /* MDSS_DIAG_MIPI_CLKCHG_ENABLE */
+}
+
+#ifdef MDSS_DIAG_MIPI_CHECK_ENABLE
+/* ----------------------------------------------------------------------- */
+/*                                                                         */
+/* ----------------------------------------------------------------------- */
+static int mdss_diag_mipi_check_manual(struct mdp_mipi_check_param *mipi_check_param, struct mdss_dsi_ctrl_pdata *ctrl, struct mdss_dsi_ctrl_pdata *sctrl)
+{
+	int ret = 0;
+	uint8_t result[2] = {MDSS_MIPICHK_RESULT_OK, MDSS_MIPICHK_RESULT_OK};
+	uint8_t dummy[2] = {MDSS_MIPICHK_RESULT_OK, MDSS_MIPICHK_RESULT_OK};
+
+	pr_debug("%s: in\n", __func__);
 
 	if ((mipi_check_param->amp & ~0x07) != 0) {
-		pr_err("LCDERR: %s AMP=0x%X Out of range", __func__, mipi_check_param->amp);
+		pr_err("%s: out of range. amp=0x%02X\n", __func__, mipi_check_param->amp);
 		return -ENXIO;
 	}
 
 	if ((mipi_check_param->sensitiv & ~0x0F) != 0) {
-		pr_err("LCDERR: %s SENSITIV=0x%X Out of range", __func__, mipi_check_param->amp);
+		pr_err("%s: out of range. sensitiv=0x%02X\n", __func__, mipi_check_param->sensitiv);
 		return -ENXIO;
 	}
 
-	ret = mdss_diag_mipi_check_exec(mipi_check_param->flame_cnt, mipi_check_param->amp, mipi_check_param->sensitiv, ctrl);
+	ret = mdss_diag_mipi_check_exec(result, mipi_check_param->frame_cnt, mipi_check_param->amp, mipi_check_param->sensitiv, ctrl, sctrl);
+	if (ret) {
+		result[0] = MDSS_MIPICHK_RESULT_NG;
+		result[1] = MDSS_MIPICHK_RESULT_NG;
+	}
 
-	mipi_check_param->result[0] = ret;
+	if ((result[0] != MDSS_MIPICHK_RESULT_OK) || (result[1] != MDSS_MIPICHK_RESULT_OK)) {
+		pr_debug("%s: recovery display.\n", __func__);
+		mdss_diag_mipi_check_exec(dummy, 1, MDSS_MIPICHK_AMP_NUM - 1, MDSS_MIPICHK_SENSITIV_NUM - 1, ctrl, sctrl);
+	}
 
-	pr_debug("%s: end", __func__);
+	mipi_check_param->result_master = result[0];
+	mipi_check_param->result_slave  = result[1];
+
+	pr_debug("%s: out master=%d slave=%d\n", __func__, mipi_check_param->result_master, mipi_check_param->result_slave);
 
 	return 0;
 }
@@ -184,77 +304,13 @@ static int mdss_diag_mipi_check_manual(struct mdp_mipi_check_param *mipi_check_p
 /* ----------------------------------------------------------------------- */
 /*                                                                         */
 /* ----------------------------------------------------------------------- */
-static int mdss_diag_mipi_check_auto(struct mdp_mipi_check_param *mipi_check_param, struct mdss_dsi_ctrl_pdata *ctrl)
+static int mdss_diag_mipi_check_exec(uint8_t *result, uint8_t frame_cnt, uint8_t amp, uint8_t sensitiv, struct mdss_dsi_ctrl_pdata *ctrl, struct mdss_dsi_ctrl_pdata *sctrl)
 {
 	int ret = 0;
-	int ret2 = 0;
-	uint8_t i,j;
-	uint8_t result_temp[MDSS_MIPICHK_SENSITIV_NUM][MDSS_MIPICHK_AMP_NUM]={{0}};
-	uint8_t set_flame		= 0x01;
-	uint8_t max_amp			= 0x07;
-	uint8_t max_sensitiv	= 0x0F;
+	uint8_t set_amp;
+	uint8_t set_sensitiv_master, set_sensitiv_slave;
 
-	pr_debug("%s: called\n", __func__);
-
-
-	for (i = 0; i < MDSS_MIPICHK_SENSITIV_NUM; i++) {
-		for (j = 0; j < MDSS_MIPICHK_AMP_NUM; j++) {
-			ret = mdss_diag_mipi_check_exec(mipi_check_param->flame_cnt, j, i, ctrl);
-			if (ret == MDSS_MIPICHK_RESULT_NG) {
-				ret2 = mdss_diag_mipi_check_exec(set_flame, max_amp, max_sensitiv, ctrl);
-				if (ret2 == MDSS_MIPICHK_RESULT_NG) {
-					pr_err("LCDERR: %s mdss_diag_mipi_check_exec ret=%d", __func__, ret);
-				}
-			}
-			result_temp[i][j] = ret;
-		}
-	}
-
-	mdss_diag_mipi_check_result_convert(result_temp, mipi_check_param);
-
-	pr_debug("%s: end", __func__);
-
-	return 0;
-}
-
-/* ----------------------------------------------------------------------- */
-/*                                                                         */
-/* ----------------------------------------------------------------------- */
-static void mdss_diag_mipi_check_result_convert(
-			uint8_t befoe_result[MDSS_MIPICHK_SENSITIV_NUM][MDSS_MIPICHK_AMP_NUM],
-			struct mdp_mipi_check_param *mipi_check_param)
-{
-	uint8_t i,j,x,y;
-	uint8_t after_result[MDSS_MIPICHK_SENSITIV_NUM] = {0};
-
-	for (j = 0; j < MDSS_MIPICHK_AMP_NUM; j++) {
-		for (i = 0; i < MDSS_MIPICHK_SENSITIV_NUM; i++) {
-			if(befoe_result[i][j] == MDSS_MIPICHK_RESULT_OK) {
-				x = j * 2;
-				if (i >= 8) {
-					y = i - 8;
-					x++;
-				} else {
-					y = i;
-				}
-				after_result[x] |= (1 << (7-y));
-			}
-		}
-	}
-	memcpy(mipi_check_param->result, after_result, sizeof(after_result));
-}
-
-/* ----------------------------------------------------------------------- */
-/*                                                                         */
-/* ----------------------------------------------------------------------- */
-static int mdss_diag_mipi_check_exec(uint8_t flame_cnt, uint8_t amp, uint8_t sensitiv, struct mdss_dsi_ctrl_pdata *ctrl)
-{
-	int ret = 0;
-	u32 amp_reg;
-	u32 amp_tmp;
-	uint8_t set_sensitiv = 0;
-
-	uint8_t amp_tbl[MDSS_MIPICHK_AMP_NUM] = {
+	static const uint8_t amp_tbl[MDSS_MIPICHK_AMP_NUM] = {
 		0x03,
 		0x02,
 		0x00,
@@ -265,22 +321,20 @@ static int mdss_diag_mipi_check_exec(uint8_t flame_cnt, uint8_t amp, uint8_t sen
 		0x07
 	};
 
-	pr_debug("%s: called flame_cnt=0x%02X amp=0x%02X sensitiv=0x%02X\n", __func__, flame_cnt, amp, sensitiv);
+	pr_debug("%s: in frame_cnt=0x%02X amp=0x%02X sensitiv=0x%02X\n", __func__, frame_cnt, amp, sensitiv);
 
-	amp_tmp = amp_tbl[amp];
-	amp_reg = (amp_tmp << 1) | 1;
+	set_amp = (amp_tbl[amp] << 1) | 1;
 
-#if defined(CONFIG_SHDISP_PANEL_ANDY)
-		set_sensitiv = (sensitiv << 4);
-#elif defined(CONFIG_SHDISP_PANEL_ARIA)
-		set_sensitiv = (sensitiv << 3);
-#endif  /* CONFIG_SHDISP_PANEL_ANDY || CONFIG_SHDISP_PANEL_ARIA */
+	set_sensitiv_master  = sensitiv << 4;
+	set_sensitiv_master |= mdss_diag_mipi_check_rec_sens_data_master & 0x0F;
+	set_sensitiv_slave   = sensitiv << 4;
+	set_sensitiv_slave  |= mdss_diag_mipi_check_rec_sens_data_slave  & 0x0F;
 
-	mdss_diag_mipi_check_set_param(amp_reg, set_sensitiv, ctrl);
+	mdss_diag_mipi_check_set_param(set_amp, set_sensitiv_master, set_sensitiv_slave, ctrl, sctrl);
 
-	ret = mdss_diag_mipi_check_test(flame_cnt, ctrl);
+	ret = mdss_diag_mipi_check_test(result, frame_cnt, ctrl, sctrl);
 
-	pr_debug("%s: end ret=%d \n", __func__, ret);
+	pr_debug("%s: out ret=%d\n", __func__, ret);
 
 	return ret;
 }
@@ -288,53 +342,39 @@ static int mdss_diag_mipi_check_exec(uint8_t flame_cnt, uint8_t amp, uint8_t sen
 /* ----------------------------------------------------------------------- */
 /*                                                                         */
 /* ----------------------------------------------------------------------- */
-static void mdss_diag_mipi_check_set_param(uint8_t amp, uint8_t sensitiv, struct mdss_dsi_ctrl_pdata *ctrl)
+static void mdss_diag_mipi_check_set_param(uint8_t amp, uint8_t sensitiv_master, uint8_t sensitiv_slave, struct mdss_dsi_ctrl_pdata *ctrl, struct mdss_dsi_ctrl_pdata *sctrl)
 {
-	char payload_sensitiv[2][2] = {
-		{0xFF, 0x00},
-		{0x45, 0x00},
-	};
-
-	struct shdisp_dsi_cmd_desc cmds_sensitiv[] = {
-		{SHDISP_DTYPE_DCS_WRITE1, 2, payload_sensitiv[0]},
-		{SHDISP_DTYPE_DCS_WRITE1, 2, payload_sensitiv[1]},
-	};
+	pr_debug("%s: amp=0x%02X sensitiv_master=0x%02X sensitiv_slave=0x%02X\n", __func__, amp, sensitiv_master, sensitiv_slave);
 
 	/* MMSS_DSI_0_PHY_REG_DSIPHY_REGULATOR_CTRL_0 */
 	MIPI_OUTP((ctrl->ctrl_base) + MDSS_DIAG_MIPI_CHECK_AMP_OFF, amp);
+	if (sctrl) {
+		MIPI_OUTP((sctrl->ctrl_base) + MDSS_DIAG_MIPI_CHECK_AMP_OFF, amp);
+	}
 	wmb();
 
-#if defined(CONFIG_SHDISP_PANEL_ANDY)
-	payload_sensitiv[0][1] = 0xEE;
-	sensitiv |= (mdss_diag_mipi_check_rec_sens_data & 0x0F);
-#elif defined(CONFIG_SHDISP_PANEL_ARIA)
-	payload_sensitiv[0][1] = 0xE0;
-	sensitiv |= (mdss_diag_mipi_check_rec_sens_data & 0x87);
-#endif  /* CONFIG_SHDISP_PANEL_ANDY || CONFIG_SHDISP_PANEL_ARIA */
-	payload_sensitiv[1][1] = sensitiv;
-
-	mdss_shdisp_host_dsi_tx(1, cmds_sensitiv, ARRAY_SIZE(cmds_sensitiv));
+	mdss_diag_write_sensitiv(sensitiv_master, sensitiv_slave);
 }
 
 /* ----------------------------------------------------------------------- */
 /*                                                                         */
 /* ----------------------------------------------------------------------- */
-static void mdss_diag_mipi_check_get_param(uint8_t *amp, uint8_t *sensitiv, struct mdss_dsi_ctrl_pdata *ctrl)
+static void mdss_diag_mipi_check_get_param(uint8_t *amp, uint8_t *sensitiv_master, uint8_t *sensitiv_slave, struct mdss_dsi_ctrl_pdata *ctrl)
 {
 	int ret = 0;
+
 	/* MMSS_DSI_0_PHY_REG_DSIPHY_REGULATOR_CTRL_0 */
 	*amp = MIPI_INP((ctrl->ctrl_base) + MDSS_DIAG_MIPI_CHECK_AMP_OFF);
 
-	ret = mdss_diag_read_sensitiv(sensitiv);
+	ret = mdss_diag_read_sensitiv(sensitiv_master, sensitiv_slave);
 
-	pr_debug("%s: amp=0x%02X sensitiv=0x%02X\n", __func__, *amp, *sensitiv);
-
+	pr_debug("%s: amp=0x%02X sensitiv_master=0x%02X sensitiv_slave=0x%02X ret=%d\n", __func__, *amp, *sensitiv_master, *sensitiv_slave, ret);
 }
 
 /* ----------------------------------------------------------------------- */
 /*                                                                         */
 /* ----------------------------------------------------------------------- */
-static int mdss_diag_mipi_check_test(uint8_t flame_cnt, struct mdss_dsi_ctrl_pdata *ctrl)
+static int mdss_diag_mipi_check_test(uint8_t *result, uint8_t frame_cnt, struct mdss_dsi_ctrl_pdata *ctrl, struct mdss_dsi_ctrl_pdata *sctrl)
 {
 	int ret = 0;
 	char mode;
@@ -342,11 +382,11 @@ static int mdss_diag_mipi_check_test(uint8_t flame_cnt, struct mdss_dsi_ctrl_pda
 	mode = ctrl->panel_mode;
 
 	if (mode == DSI_VIDEO_MODE) {
-		ret = mdss_diag_mipi_check_test_video(flame_cnt, ctrl);
+		result[0] = mdss_diag_mipi_check_test_video(frame_cnt, ctrl);
 	} else if (mode == DSI_CMD_MODE) {
-		ret = mdss_diag_mipi_check_test_cmd(flame_cnt, ctrl);
+		ret = mdss_diag_mipi_check_test_cmd(result, frame_cnt, ctrl, sctrl);
 	} else {
-		pr_err("LCDERR: %s paneltype=%d\n", __func__, mode);
+		pr_err("%s: invalid panel_mode=%d\n", __func__, mode);
 		ret = -EINVAL;
 	}
 
@@ -356,13 +396,13 @@ static int mdss_diag_mipi_check_test(uint8_t flame_cnt, struct mdss_dsi_ctrl_pda
 /* ----------------------------------------------------------------------- */
 /*                                                                         */
 /* ----------------------------------------------------------------------- */
-static int mdss_diag_mipi_check_test_video(uint8_t flame_cnt, struct mdss_dsi_ctrl_pdata *ctrl)
+static int mdss_diag_mipi_check_test_video(uint8_t frame_cnt, struct mdss_dsi_ctrl_pdata *ctrl)
 {
 	int ret = 0;
 	uint32_t sleep;
 
-	sleep = flame_cnt * MDSS_DIAG_WAIT_1FRAME_US;
-	pr_debug("%s: flame=%d sleep time=%d\n", __func__, flame_cnt, sleep);
+	sleep = frame_cnt * MDSS_DIAG_WAIT_1FRAME_US;
+	pr_debug("%s: frame_cnt=%d sleep=%d\n", __func__, frame_cnt, sleep);
 
 	mdss_shdisp_video_transfer_ctrl(true, true);
 
@@ -383,59 +423,123 @@ static int mdss_diag_mipi_check_test_video(uint8_t flame_cnt, struct mdss_dsi_ct
 /* ----------------------------------------------------------------------- */
 /*                                                                         */
 /* ----------------------------------------------------------------------- */
-static int mdss_diag_mipi_check_test_cmd(uint8_t flame_cnt, struct mdss_dsi_ctrl_pdata *ctrl)
+static int mdss_diag_mipi_check_test_cmd(uint8_t *result, uint8_t frame_cnt, struct mdss_dsi_ctrl_pdata *ctrl, struct mdss_dsi_ctrl_pdata *sctrl)
 {
 	int ret = 0;
 	int ret2 = 0;
 	int i;
 	struct mdss_mdp_ctl *pctl;
+	struct mdss_mdp_ctl *sctl;
+
+	pr_debug("%s: in\n", __func__);
 
 	pctl = mdss_shdisp_get_mdpctrl(0);
 	if (!pctl) {
-		pr_err("LCDERR:[%s] mdpctrl is NULL.\n", __func__);
-		return MDSS_MIPICHK_RESULT_NG;
+		pr_err("%s: pctl is NULL.\n", __func__);
+		return -EINVAL;
 	}
 
-	if (!pctl->display_fnc) {
-		pr_err("LCDERR:[%s] display_fnc is NULL.\n", __func__);
-		return MDSS_MIPICHK_RESULT_NG;
+	if (!pctl->ops.display_fnc) {
+		pr_err("%s: display_fnc is NULL.\n", __func__);
+		return -EINVAL;
 	}
 
-	for (i = 0; i < flame_cnt; i++) {
+	sctl = mdss_mdp_get_split_ctl(pctl);
+
+	for (i = 0; i < frame_cnt; i++) {
+		pr_debug("%s: frame=%d\n", __func__, i);
+
 		mutex_lock(&pctl->lock);
+
 		mdss_mdp_ctl_perf_set_transaction_status(pctl, PERF_SW_COMMIT_STATE, PERF_STATUS_BUSY);
+		if (sctl) {
+			mdss_mdp_ctl_perf_set_transaction_status(sctl, PERF_SW_COMMIT_STATE, PERF_STATUS_BUSY);
+		}
 
 		mdss_mdp_ctl_perf_update_ctl(pctl, 1);
 
-		if (pctl->wait_pingpong) {
-			ret2 = pctl->wait_pingpong(pctl, NULL);
+		if (pctl->ops.wait_pingpong) {
+			ret2 = pctl->ops.wait_pingpong(pctl, NULL);
 			if(ret2){
-				pr_err("LCDERR:[%s] failed to wait_pingpong(). (ret=%d)\n", __func__, ret2);
+				pr_err("%s: failed to wait_pingpong. ret=%d\n", __func__, ret2);
 			}
 		}
 
-		ret = pctl->display_fnc(pctl, NULL);
-		if (ret) {
-			pr_err("LCDERR:[%s] failed to display_fnc(). (ret=%d)\n", __func__, ret);
-			mutex_unlock(&pctl->lock);
-			return MDSS_MIPICHK_RESULT_NG;
+		if (sctl && sctl->ops.wait_pingpong) {
+			ret2 = sctl->ops.wait_pingpong(sctl, NULL);
+			if(ret2){
+				pr_err("%s: failed to wait_pingpong. ret=%d\n", __func__, ret2);
+			}
 		}
+
+		ret = pctl->ops.display_fnc(pctl, NULL);
+		if (ret) {
+			pr_err("%s: failed to display_fnc. ret=%d\n", __func__, ret);
+			mutex_unlock(&pctl->lock);
+			return ret;
+		}
+
 		mutex_unlock(&pctl->lock);
 	}
 
-	if (pctl->wait_pingpong) {
-		ret2 = pctl->wait_pingpong(pctl, NULL);
+	if (pctl->ops.wait_pingpong) {
+		ret2 = pctl->ops.wait_pingpong(pctl, NULL);
 		if(ret2){
-			pr_err("LCDERR:[%s] failed to wait_pingpong(). (ret=%d)\n", __func__, ret2);
+			pr_err("%s: failed to wait_pingpong. ret=%d\n", __func__, ret2);
+		}
+	}
+
+	if (sctl && sctl->ops.wait_pingpong) {
+		ret2 = sctl->ops.wait_pingpong(sctl, NULL);
+		if(ret2){
+			pr_err("%s: failed to wait_pingpong. ret=%d\n", __func__, ret2);
 		}
 	}
 
 	ret = mdss_diag_dsi_cmd_bta_sw_trigger(ctrl);
 	if (ret) {
-		ret = MDSS_MIPICHK_RESULT_NG;
+		result[0] = MDSS_MIPICHK_RESULT_NG;
 	} else {
-		ret = MDSS_MIPICHK_RESULT_OK;
+		result[0] = MDSS_MIPICHK_RESULT_OK;
 	}
+
+	if (sctrl) {
+		ret = mdss_diag_dsi_cmd_bta_sw_trigger(sctrl);
+		if (ret) {
+			result[1] = MDSS_MIPICHK_RESULT_NG;
+		} else {
+			result[1] = MDSS_MIPICHK_RESULT_OK;
+		}
+	}
+
+	pr_debug("%s: out\n", __func__);
+
+	return 0;
+}
+
+/* ----------------------------------------------------------------------- */
+/*                                                                         */
+/* ----------------------------------------------------------------------- */
+static int mdss_diag_read_sensitiv(uint8_t *sensitiv_master, uint8_t *sensitiv_slave)
+{
+	int ret = 0;
+
+	char payload_sensitiv[3][2] = {
+		{0xFF, 0xE0},
+		{0x7E, 0x00},
+		{0x97, 0x00},
+	};
+
+	struct shdisp_dsi_cmd_desc cmds_sensitiv[] = {
+		{SHDISP_DTYPE_DCS_WRITE1, 2, payload_sensitiv[0]},
+		{SHDISP_DTYPE_DCS_READ,   1, payload_sensitiv[1]},
+		{SHDISP_DTYPE_DCS_READ,   1, payload_sensitiv[2]},
+	};
+
+	mdss_shdisp_host_dsi_tx(1, &cmds_sensitiv[0], 1);
+
+	ret = mdss_shdisp_host_dsi_rx(&cmds_sensitiv[1], sensitiv_master, 1);
+	ret = mdss_shdisp_host_dsi_rx(&cmds_sensitiv[2], sensitiv_slave, 1);
 
 	return ret;
 }
@@ -443,35 +547,26 @@ static int mdss_diag_mipi_check_test_cmd(uint8_t flame_cnt, struct mdss_dsi_ctrl
 /* ----------------------------------------------------------------------- */
 /*                                                                         */
 /* ----------------------------------------------------------------------- */
-static int mdss_diag_read_sensitiv(uint8_t *read_data)
+static int mdss_diag_write_sensitiv(uint8_t sensitiv_master, uint8_t sensitiv_slave)
 {
 	int ret = 0;
-	struct shdisp_dsi_cmd_desc cmd[1];
-	char cmd_buf[1 + 2];
-	char payload_page_ee[1][2] = {
-		{0xFF, 0xEE}
+
+	char payload_sensitiv[3][2] = {
+		{0xFF, 0xE0},
+		{0x7E, 0x00},
+		{0x97, 0x00},
 	};
+
 	struct shdisp_dsi_cmd_desc cmds_sensitiv[] = {
-		{SHDISP_DTYPE_DCS_WRITE1, 2, payload_page_ee[0]},
+		{SHDISP_DTYPE_DCS_WRITE1, 2, payload_sensitiv[0]},
+		{SHDISP_DTYPE_DCS_WRITE1, 2, payload_sensitiv[1]},
+		{SHDISP_DTYPE_DCS_WRITE1, 2, payload_sensitiv[2]},
 	};
 
-#if defined(CONFIG_SHDISP_PANEL_ANDY)
-		payload_page_ee[0][1] = 0xEE;
-#elif defined(CONFIG_SHDISP_PANEL_ARIA)
-		payload_page_ee[0][1] = 0xE0;
-#endif  /* CONFIG_SHDISP_PANEL_ANDY || CONFIG_SHDISP_PANEL_ARIA */
+	payload_sensitiv[1][1] = sensitiv_master;
+	payload_sensitiv[2][1] = sensitiv_slave;
 
-	mdss_shdisp_host_dsi_tx(1, cmds_sensitiv, ARRAY_SIZE(cmds_sensitiv));
-
-	cmd_buf[0] = 0x45;
-	cmd_buf[1] = 0x00;
-
-	cmd[0].dtype = SHDISP_DTYPE_DCS_READ;
-	cmd[0].wait = 0x00;
-	cmd[0].dlen = 1;
-	cmd[0].payload = cmd_buf;
-
-	ret = mdss_shdisp_host_dsi_rx(cmd, read_data, 1);
+	ret = mdss_shdisp_host_dsi_tx(1, cmds_sensitiv, ARRAY_SIZE(cmds_sensitiv));
 
 	return ret;
 }
@@ -481,11 +576,14 @@ static int mdss_diag_read_sensitiv(uint8_t *read_data)
 /* ----------------------------------------------------------------------- */
 static int mdss_diag_dsi_cmd_bta_sw_trigger(struct mdss_dsi_ctrl_pdata *ctrl)
 {
+	int ret = 0;
 	u32 status;
-	int timeout_us = 35000, ret = 0;
+	int timeout_us = 35000;
+
+	pr_debug("%s: in\n", __func__);
 
 	if (ctrl == NULL) {
-		pr_err("%s: Invalid input data\n", __func__);
+		pr_err("%s: ctrl is NULL.\n", __func__);
 		return -EINVAL;
 	}
 
@@ -496,15 +594,15 @@ static int mdss_diag_dsi_cmd_bta_sw_trigger(struct mdss_dsi_ctrl_pdata *ctrl)
 	/* Check for CMD_MODE_DMA_BUSY */
 	if (readl_poll_timeout(((ctrl->ctrl_base) + 0x0008),
 				status, ((status & 0x0010) == 0),
-				0, timeout_us))
-	{
-		pr_info("%s: DSI status=%x failed\n", __func__, status);
+				0, timeout_us)) {
+		pr_info("%s: timeout. status=0x%08x\n", __func__, status);
 		return -EIO;
 	}
 
 	ret = mdss_diag_dsi_ack_err_status(ctrl);
 
-	pr_debug("%s: BTA done, status = %d\n", __func__, status);
+	pr_debug("%s: out status=0x%08x ret=%d\n", __func__, status, ret);
+
 	return ret;
 }
 
@@ -520,7 +618,6 @@ static int mdss_diag_dsi_ack_err_status(struct mdss_dsi_ctrl_pdata *ctrl)
 	base = ctrl->ctrl_base;
 
 	status = MIPI_INP(base + 0x0068);/* DSI_ACK_ERR_STATUS */
-
 	if (status) {
 		MIPI_OUTP(base + 0x0068, status);
 		/* Writing of an extra 0 needed to clear error bits */
@@ -528,57 +625,16 @@ static int mdss_diag_dsi_ack_err_status(struct mdss_dsi_ctrl_pdata *ctrl)
 
 		status &= ~(ack);
 		if(status){
-			pr_err("%s: status=%x\n", __func__, status);
+			pr_err("%s: status=0x%08x\n", __func__, status);
 			return -EIO;
 		}
 	}
+
 	return 0;
 }
-#endif /* CONFIG_USES_SHLCDC */
+#endif /* MDSS_DIAG_MIPI_CHECK_ENABLE */
 
-/* ----------------------------------------------------------------------- */
-/*                                                                         */
-/* ----------------------------------------------------------------------- */
-int mdss_diag_mipi_clkchg(struct mdp_mipi_clkchg_param *mipi_clkchg_param)
-{
-#ifdef CONFIG_USES_SHLCDC
-	return 0;
-#else  /* CONFIG_USES_SHLCDC */
-	int ret = 0;
-	struct mdss_mdp_ctl *pctl;
-	struct mdss_panel_data *pdata;
-
-	pr_debug("%s: called\n", __func__);
-	pctl = mdss_shdisp_get_mdpctrl(0);
-	if (!pctl) {
-		pr_err("LCDERR:[%s] mdpctrl is NULL.\n", __func__);
-		return -EIO;
-	}
-	pdata = pctl->panel_data;
-
-	mdss_shdisp_lock_recovery();
-
-	mdss_diag_mipi_clkchg_param_log(mipi_clkchg_param);
-
-	mdss_diag_mipi_clkchg_host_data(mipi_clkchg_param, pdata);
-
-	shdisp_api_set_freq_param(&mipi_clkchg_param->panel);
-
-	if (mdss_shdisp_is_disp_on()) {
-		ret = mdss_diag_mipi_clkchg_setparam(mipi_clkchg_param, pctl);
-	} else {
-		ret = mdss_diag_mipi_clkchg_panel_clk_data(pdata);
-	}
-
-	mdss_shdisp_unlock_recovery();
-
-	pr_debug("%s: end ret(%d)\n", __func__, ret);
-
-	return ret;
-#endif /* CONFIG_USES_SHLCDC */
-}
-
-#ifndef CONFIG_USES_SHLCDC
+#ifdef MDSS_DIAG_MIPI_CLKCHG_ENABLE
 /* ----------------------------------------------------------------------- */
 /*                                                                         */
 /* ----------------------------------------------------------------------- */
@@ -599,7 +655,7 @@ static int mdss_diag_mipi_clkchg_setparam(struct mdp_mipi_clkchg_param *mipi_clk
 
 	ret |= mdss_diag_mipi_clkchg_panel(mipi_clkchg_param, pctl);
 
-	ret |= mdss_diag_mipi_clkchg_host(mipi_clkchg_param, pctl);
+	ret |= mdss_diag_mipi_clkchg_host(pctl);
 
 	if (pctl->is_video_mode) {
 #ifndef SHDISP_DISABLE_HR_VIDEO
@@ -619,12 +675,12 @@ static int mdss_diag_mipi_clkchg_setparam(struct mdp_mipi_clkchg_param *mipi_clk
 /* ----------------------------------------------------------------------- */
 /*                                                                         */
 /* ----------------------------------------------------------------------- */
-static void mdss_diag_mipi_clkchg_host_data(struct mdp_mipi_clkchg_param *mipi_clkchg_param, struct mdss_panel_data *pdata)
+static void __mdss_diag_mipi_clkchg_host_data(struct mdp_mipi_clkchg_param *mipi_clkchg_param, struct mdss_panel_data *pdata)
 {
 	int i;
 	struct mdss_panel_info *pinfo = &(pdata->panel_info);
 
-	pr_debug("%s: called\n", __func__);
+	pr_debug("%s: called panel name = %s\n", __func__, pdata->panel_info.panel_name);
 
 	pinfo->clk_rate = mipi_clkchg_param->host.clock_rate;
 	pinfo->xres = mipi_clkchg_param->host.display_width;
@@ -647,14 +703,26 @@ static void mdss_diag_mipi_clkchg_host_data(struct mdp_mipi_clkchg_param *mipi_c
 /* ----------------------------------------------------------------------- */
 /*                                                                         */
 /* ----------------------------------------------------------------------- */
-static int mdss_diag_mipi_clkchg_host(struct mdp_mipi_clkchg_param *mipi_clkchg_param, struct mdss_mdp_ctl *pctl)
+static void mdss_diag_mipi_clkchg_host_data(struct mdp_mipi_clkchg_param *mipi_clkchg_param, struct mdss_panel_data *pdata)
+{
+	pr_debug("%s: called\n", __func__);
+
+	__mdss_diag_mipi_clkchg_host_data(mipi_clkchg_param, pdata);
+	if (pdata->next) {
+		__mdss_diag_mipi_clkchg_host_data(mipi_clkchg_param, pdata->next);
+	}
+
+	pr_debug("%s: end\n", __func__);
+}
+
+/* ----------------------------------------------------------------------- */
+/*                                                                         */
+/* ----------------------------------------------------------------------- */
+static int __mdss_diag_mipi_clkchg_host(struct mdss_mdp_ctl *pctl, struct mdss_panel_data *pdata)
 {
 	int ret = 0;
-	u32 ctl_flush;
-	struct mdss_panel_data *pdata = pctl->panel_data;
 
-	pr_debug("%s: called\n", __func__);
-	ret |= mdss_diag_mipi_clkchg_panel_clk_update(pdata);
+	pr_debug("%s: called panel name = %s\n", __func__, pdata->panel_info.panel_name);
 	if (pctl->is_video_mode) {
 #ifndef SHDISP_DISABLE_HR_VIDEO
 		ret |= mdss_mdp_hr_video_clkchg_mdp_update(pctl);
@@ -664,7 +732,47 @@ static int mdss_diag_mipi_clkchg_host(struct mdp_mipi_clkchg_param *mipi_clkchg_
 	}
 	ret |= mdss_diag_mipi_clkchg_panel_porch_update(pdata);
 
+	pr_debug("%s: end ret(%d)\n", __func__, ret);
+
+	return ret;
+}
+
+/* ----------------------------------------------------------------------- */
+/*                                                                         */
+/* ----------------------------------------------------------------------- */
+static int mdss_diag_mipi_clkchg_host(struct mdss_mdp_ctl *pctl)
+{
+	int ret = 0;
+	u32 ctl_flush;
+	struct mdss_panel_data *pdata = pctl->panel_data;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+
+	pr_debug("%s: called\n", __func__);
+
+	ret |= mdss_diag_mipi_clkchg_panel_clk_update(pdata);
+	if (pdata->next) {
+		ret |= mdss_diag_mipi_clkchg_panel_clk_update(pdata->next);
+	}
+
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+	mdss_dsi_pll_relock(ctrl_pdata);
+
+	ret |= __mdss_diag_mipi_clkchg_host(pctl, pdata);
+	if (ret) {
+		pr_err("LCDERR:[%s] __mdss_diag_mipi_clkchg_host err panel name = %s.\n"
+			, __func__, pdata->panel_info.panel_name);
+	}
+	if (pdata->next) {
+		ret |= __mdss_diag_mipi_clkchg_host(pctl, pdata->next);
+		if (ret) {
+			pr_err("LCDERR:[%s] __mdss_diag_mipi_clkchg_host err panel name = %s.\n"
+				, __func__, pdata->next->panel_info.panel_name);
+		}
+	}
+
 	ctl_flush = (BIT(31) >> (pctl->intf_num - MDSS_MDP_INTF0));
+	ctl_flush |= (BIT(31) >> ((pctl->intf_num + 1) - MDSS_MDP_INTF0));
 	mdss_mdp_ctl_write(pctl, MDSS_MDP_REG_CTL_FLUSH, ctl_flush);
 
 	pr_debug("%s: end ret(%d)\n", __func__, ret);
@@ -678,15 +786,10 @@ static int mdss_diag_mipi_clkchg_host(struct mdp_mipi_clkchg_param *mipi_clkchg_
 static int mdss_diag_mipi_clkchg_panel_clk_update(struct mdss_panel_data *pdata)
 {
 	int ret = 0;
-	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 
 	pr_debug("%s: called\n", __func__);
-	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
-				panel_data);
 
-	ret = mdss_diag_mipi_clkchg_panel_clk_data(pdata);
-
-	mdss_dsi_pll_relock(ctrl_pdata);
+	ret = __mdss_diag_mipi_clkchg_panel_clk_data(pdata);
 
 	pr_debug("%s: end ret(%d)\n", __func__, ret);
 
@@ -696,7 +799,7 @@ static int mdss_diag_mipi_clkchg_panel_clk_update(struct mdss_panel_data *pdata)
 /* ----------------------------------------------------------------------- */
 /*                                                                         */
 /* ----------------------------------------------------------------------- */
-static int mdss_diag_mipi_clkchg_panel_clk_data(struct mdss_panel_data *pdata)
+static int __mdss_diag_mipi_clkchg_panel_clk_data(struct mdss_panel_data *pdata)
 {
 	int ret = 0;
 	struct mdss_panel_info *pinfo = &(pdata->panel_info);
@@ -716,6 +819,33 @@ static int mdss_diag_mipi_clkchg_panel_clk_data(struct mdss_panel_data *pdata)
 		pinfo->mipi.dsi_pclk_rate;
 	ctrl_pdata->byte_clk_rate =
 		pinfo->clk_rate / 8;
+
+	pr_debug("%s: end ret(%d)\n", __func__, ret);
+
+	return ret;
+}
+
+/* ----------------------------------------------------------------------- */
+/*                                                                         */
+/* ----------------------------------------------------------------------- */
+static int mdss_diag_mipi_clkchg_panel_clk_data(struct mdss_panel_data *pdata)
+{
+	int ret = 0;
+
+	pr_debug("%s: called\n", __func__);
+
+	ret = __mdss_diag_mipi_clkchg_panel_clk_data(pdata);
+	if (ret) {
+		pr_err("LCDERR:[%s] __mdss_diag_mipi_clkchg_panel_clk_data err panel name = %s.\n"
+			, __func__, pdata->panel_info.panel_name);
+	}
+	if (pdata->next) {
+		ret |= __mdss_diag_mipi_clkchg_panel_clk_data(pdata->next);
+		if (ret) {
+			pr_err("LCDERR:[%s] __mdss_diag_mipi_clkchg_panel_clk_data err panel name = %s.\n"
+				, __func__, pdata->next->panel_info.panel_name);
+		}
+	}
 
 	pr_debug("%s: end ret(%d)\n", __func__, ret);
 
@@ -857,51 +987,7 @@ static int mdss_diag_mipi_clkchg_panel(struct mdp_mipi_clkchg_param *mipi_clkchg
 
 	pr_debug("%s: end ret(%d)\n", __func__, ret);
 
-#elif defined(CONFIG_SHDISP_PANEL_ARIA)
-	static char mipi_sh_aria_cmds_clkchgSetting[11][2] = {
-		{0xFF, 0x24 },
-		{0x34, 0x00 },
-		{0x35, 0x00 },
-		{0x7E, 0x00 },
-		{0x7F, 0x00 },
-		{0x81, 0x00 },
-		{0x91, 0x00 },
-		{0x92, 0x00 },
-		{0x93, 0x00 },
-		{0x94, 0x00 },
-		{0xFF, 0x10 }
-	};
-	static struct shdisp_dsi_cmd_desc mipi_sh_aria_cmds_clkchg[] = {
-		{SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_aria_cmds_clkchgSetting[0]},
-		{SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_aria_cmds_clkchgSetting[1]},
-		{SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_aria_cmds_clkchgSetting[2]},
-		{SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_aria_cmds_clkchgSetting[3]},
-		{SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_aria_cmds_clkchgSetting[4]},
-		{SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_aria_cmds_clkchgSetting[5]},
-		{SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_aria_cmds_clkchgSetting[6]},
-		{SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_aria_cmds_clkchgSetting[7]},
-		{SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_aria_cmds_clkchgSetting[8]},
-		{SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_aria_cmds_clkchgSetting[9]},
-		{SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_aria_cmds_clkchgSetting[10]},
-	};
-
-	pr_debug("%s: called\n", __func__);
-
-	mipi_sh_aria_cmds_clkchgSetting[1][1] = mipi_clkchg_param->panel.aria.sti;
-	mipi_sh_aria_cmds_clkchgSetting[2][1] = mipi_clkchg_param->panel.aria.swi;
-	mipi_sh_aria_cmds_clkchgSetting[3][1] = mipi_clkchg_param->panel.aria.muxs;
-	mipi_sh_aria_cmds_clkchgSetting[4][1] = mipi_clkchg_param->panel.aria.muxw;
-	mipi_sh_aria_cmds_clkchgSetting[5][1] = mipi_clkchg_param->panel.aria.muxg1;
-	mipi_sh_aria_cmds_clkchgSetting[6][1] = mipi_clkchg_param->panel.aria.rtn_h;
-	mipi_sh_aria_cmds_clkchgSetting[7][1] = mipi_clkchg_param->panel.aria.rtna;
-	mipi_sh_aria_cmds_clkchgSetting[8][1] = mipi_clkchg_param->panel.aria.fp;
-	mipi_sh_aria_cmds_clkchgSetting[9][1] = mipi_clkchg_param->panel.aria.bp;
-
-	ret = mdss_shdisp_host_dsi_tx(1, mipi_sh_aria_cmds_clkchg, ARRAY_SIZE(mipi_sh_aria_cmds_clkchg));
-
-	pr_debug("%s: end ret(%d)\n", __func__, ret);
-
-#endif	/* CONFIG_SHDISP_PANEL_ANDY || CONFIG_SHDISP_PANEL_ARIA */
+#endif	/* CONFIG_SHDISP_PANEL_ANDY */
 	return ret;
 }
 
@@ -910,53 +996,40 @@ static int mdss_diag_mipi_clkchg_panel(struct mdp_mipi_clkchg_param *mipi_clkchg
 /* ----------------------------------------------------------------------- */
 static void mdss_diag_mipi_clkchg_param_log(struct mdp_mipi_clkchg_param *mdp_mipi_clkchg_param)
 {
-	
-    pr_debug("[%s]param->host.clock_rate         = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.clock_rate          );
-    pr_debug("[%s]param->host.display_width      = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.display_width       );
-    pr_debug("[%s]param->host.display_height     = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.display_height      );
-    pr_debug("[%s]param->host.hsync_pulse_width  = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.hsync_pulse_width   );
-    pr_debug("[%s]param->host.h_back_porch       = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.h_back_porch        );
-    pr_debug("[%s]param->host.h_front_porch      = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.h_front_porch       );
-    pr_debug("[%s]param->host.vsync_pulse_width  = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.vsync_pulse_width   );
-    pr_debug("[%s]param->host.v_back_porch       = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.v_back_porch        );
-    pr_debug("[%s]param->host.v_front_porch      = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.v_front_porch       );
-    pr_debug("[%s]param->host.t_clk_post         = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.t_clk_post          );
-    pr_debug("[%s]param->host.t_clk_pre          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.t_clk_pre           );
-    pr_debug("[%s]param->host.timing_ctrl[ 0]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 0]     );
-    pr_debug("[%s]param->host.timing_ctrl[ 1]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 1]     );
-    pr_debug("[%s]param->host.timing_ctrl[ 2]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 2]     );
-    pr_debug("[%s]param->host.timing_ctrl[ 3]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 3]     );
-    pr_debug("[%s]param->host.timing_ctrl[ 4]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 4]     );
-    pr_debug("[%s]param->host.timing_ctrl[ 5]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 5]     );
-    pr_debug("[%s]param->host.timing_ctrl[ 6]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 6]     );
-    pr_debug("[%s]param->host.timing_ctrl[ 7]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 7]     );
-    pr_debug("[%s]param->host.timing_ctrl[ 8]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 8]     );
-    pr_debug("[%s]param->host.timing_ctrl[ 9]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 9]     );
-    pr_debug("[%s]param->host.timing_ctrl[10]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[10]     );
-    pr_debug("[%s]param->host.timing_ctrl[11]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[11]     );
-#if defined(CONFIG_SHDISP_PANEL_ANDY)
-    pr_debug("[%s]param->panel.andy.rtn          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.andy.rtn           );
-    pr_debug("[%s]param->panel.andy.gip          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.andy.gip           );
-    pr_debug("[%s]param->panel.andy.vbp          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.andy.vbp           );
-    pr_debug("[%s]param->panel.andy.vfp          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.andy.vfp           );
-#elif defined(CONFIG_SHDISP_PANEL_ARIA)
-    pr_debug("[%s]param->panel.aria.sti          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.aria.sti           );
-    pr_debug("[%s]param->panel.aria.swi          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.aria.swi           );
-    pr_debug("[%s]param->panel.aria.muxs         = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.aria.muxs          );
-    pr_debug("[%s]param->panel.aria.muxw         = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.aria.muxw          );
-    pr_debug("[%s]param->panel.aria.muxg1        = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.aria.muxg1         );
-    pr_debug("[%s]param->panel.aria.rtn_h        = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.aria.rtn_h         );
-    pr_debug("[%s]param->panel.aria.rtna         = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.aria.rtna          );
-    pr_debug("[%s]param->panel.aria.fp           = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.aria.fp            );
-    pr_debug("[%s]param->panel.aria.bp           = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.aria.bp            );
-#else
-    pr_debug("[%s]param->panel.andy.rtn          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.andy.rtn           );
-    pr_debug("[%s]param->panel.andy.gip          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.andy.gip           );
-    pr_debug("[%s]param->panel.andy.vbp          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.andy.vbp           );
-    pr_debug("[%s]param->panel.andy.vfp          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.andy.vfp           );
-#endif
+	pr_debug("[%s]param->host.clock_rate         = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.clock_rate          );
+	pr_debug("[%s]param->host.display_width      = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.display_width       );
+	pr_debug("[%s]param->host.display_height     = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.display_height      );
+	pr_debug("[%s]param->host.hsync_pulse_width  = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.hsync_pulse_width   );
+	pr_debug("[%s]param->host.h_back_porch       = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.h_back_porch        );
+	pr_debug("[%s]param->host.h_front_porch      = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.h_front_porch       );
+	pr_debug("[%s]param->host.vsync_pulse_width  = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.vsync_pulse_width   );
+	pr_debug("[%s]param->host.v_back_porch       = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.v_back_porch        );
+	pr_debug("[%s]param->host.v_front_porch      = %10d\n"  , __func__, mdp_mipi_clkchg_param->host.v_front_porch       );
+	pr_debug("[%s]param->host.t_clk_post         = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.t_clk_post          );
+	pr_debug("[%s]param->host.t_clk_pre          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.t_clk_pre           );
+	pr_debug("[%s]param->host.timing_ctrl[ 0]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 0]     );
+	pr_debug("[%s]param->host.timing_ctrl[ 1]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 1]     );
+	pr_debug("[%s]param->host.timing_ctrl[ 2]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 2]     );
+	pr_debug("[%s]param->host.timing_ctrl[ 3]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 3]     );
+	pr_debug("[%s]param->host.timing_ctrl[ 4]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 4]     );
+	pr_debug("[%s]param->host.timing_ctrl[ 5]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 5]     );
+	pr_debug("[%s]param->host.timing_ctrl[ 6]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 6]     );
+	pr_debug("[%s]param->host.timing_ctrl[ 7]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 7]     );
+	pr_debug("[%s]param->host.timing_ctrl[ 8]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 8]     );
+	pr_debug("[%s]param->host.timing_ctrl[ 9]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[ 9]     );
+	pr_debug("[%s]param->host.timing_ctrl[10]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[10]     );
+	pr_debug("[%s]param->host.timing_ctrl[11]    = 0x%02X\n", __func__, mdp_mipi_clkchg_param->host.timing_ctrl[11]     );
+
+#if defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+	pr_debug("[%s]param->internal_osc            = %10d\n"  , __func__, mdp_mipi_clkchg_param->internal_osc             );
+#elif defined(CONFIG_SHDISP_PANEL_ANDY)
+	pr_debug("[%s]param->panel.andy.rtn          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.andy.rtn           );
+	pr_debug("[%s]param->panel.andy.gip          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.andy.gip           );
+	pr_debug("[%s]param->panel.andy.vbp          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.andy.vbp           );
+	pr_debug("[%s]param->panel.andy.vfp          = 0x%02X\n", __func__, mdp_mipi_clkchg_param->panel.andy.vfp           );
+#endif  /* CONFIG_SHDISP_PANEL_XXX */
 
 	return;
 }
-#endif /* CONFIG_USES_SHLCDC */
+#endif /* MDSS_DIAG_MIPI_CLKCHG_ENABLE */
 

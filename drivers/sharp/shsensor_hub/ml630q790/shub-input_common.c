@@ -17,6 +17,7 @@
 #include <linux/platform_device.h>
 #include <linux/input.h>
 #include <linux/miscdevice.h>
+#include <linux/time.h> /* SHMDS_HUB_1801_01 add */
 
 #include "shub_io.h"
 #include "ml630q790.h"
@@ -45,11 +46,11 @@
 #endif
 
 // [COM1] Magnetic Filed sensor
-#define MAG_MAX         12000
-#define MAG_MIN        -12000
+#define MAG_MAX        MAG_CMN_MAX  /* SHMDS_HUB_0604_01 mod */
+#define MAG_MIN        MAG_CMN_MIN  /* SHMDS_HUB_0604_01 mod */
 // [COM1] Magnetic Field sensor Uncalibrated
-#define MAGUNC_MAX      12000
-#define MAGUNC_MIN     -12000
+#define MAGUNC_MAX     MAG_CMN_MAX  /* SHMDS_HUB_0604_01 mod */
+#define MAGUNC_MIN     MAG_CMN_MIN  /* SHMDS_HUB_0604_01 mod */
 
 // [COM2] Gyroscope
 #define GYRO_MAX        20000
@@ -62,8 +63,8 @@
 #define GRAV_MAX        8192
 #define GRAV_MIN       -8192
 // [COM3] Linear Acceleration
-#define LINEACC_MAX    ( 8192 + 1024)
-#define LINEACC_MIN    (-8192 - 1024)
+#define LINEACC_MAX    ACC_CMN_MAX  /* SHMDS_HUB_0604_01 mod */
+#define LINEACC_MIN    ACC_CMN_MIN  /* SHMDS_HUB_0604_01 mod */
 
 // [COM4] Game Rotation Vector
 #define GAMEROT_MAX     10000
@@ -656,4 +657,29 @@ int shub_gpio_to_irq(int gpio)
     return ret;
 }
 /* SHMDS_HUB_0110_01 add E */
+
+/* SHMDS_HUB_1801_01 add S */
+#ifdef SHUB_SW_TIME_API
+void shub_dbg_timer_start(struct timespec *tv)
+{
+    getnstimeofday(tv);
+}
+
+void shub_dbg_timer_end(struct timespec tv, unsigned int cmd)
+{
+    struct timespec stop, df;
+    u64 msec_api, usec_api;
+    unsigned int type;
+    
+    type = ((cmd & 0x0000FFFF) - (SHUBIO << 8));
+    getnstimeofday(&stop);
+    df = timespec_sub(stop, tv);
+    msec_api = timespec_to_ns(&df);
+    do_div(msec_api, NSEC_PER_USEC);
+    usec_api = do_div(msec_api, USEC_PER_MSEC);
+
+    printk("[shub][API] cmd=%d, total=%lu.%03lums\n", (int)type, (unsigned long)msec_api, (unsigned long)usec_api);
+}
+#endif
+/* SHMDS_HUB_1801_01 add E */
 

@@ -269,6 +269,10 @@ struct IoctlDiagMagCalibration{
 #define SHUB_DIAG_MAG_SET_CAL       _IOR(SHUBIO,1021, struct IoctlDiagMagCalibration)
 /* SHMDS_HUB_0103_06 add E */
 /* SHMDS_HUB_0103_01 add E */
+/* SHMDS_HUB_0103_14 add S */
+#define SHUB_DIAG_MES_ACC_SELF_TEST    _IOR(SHUBIO, 1022, struct IoctlDiagRes)
+#define SHUB_DIAG_MES_GYRO_SELF_TEST   _IOR(SHUBIO, 1023, struct IoctlDiagRes)
+/* SHMDS_HUB_0103_14 add E */
 
 /* SHMDS_HUB_0201_01 add S */
 struct IoctlExifData{

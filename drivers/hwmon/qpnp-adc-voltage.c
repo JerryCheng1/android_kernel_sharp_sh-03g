@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -30,6 +30,7 @@
 #include <linux/hwmon-sysfs.h>
 #include <linux/qpnp/qpnp-adc.h>
 #include <linux/platform_device.h>
+#include <linux/power_supply.h>
 #include <linux/thermal.h>
 
 #ifdef CONFIG_BATTERY_SH
@@ -157,6 +158,7 @@ struct qpnp_vadc_chip {
 	struct work_struct		trigger_low_thr_work;
 	struct qpnp_vadc_mode_state	*state_copy;
 	struct qpnp_vadc_thermal_data	*vadc_therm_chan;
+	struct power_supply		*vadc_chg_vote;
 	struct sensor_device_attribute	sens_attr[0];
 };
 
@@ -176,11 +178,11 @@ static struct qpnp_vadc_scale_fn vadc_scale_fn[] = {
 	[SCALE_QRD_SKUH_BATT_THERM] = {qpnp_adc_scale_qrd_skuh_batt_therm},
 	[SCALE_NCP_03WF683_THERM] = {qpnp_adc_scale_therm_ncp03},
 	[SCALE_QRD_SKUT1_BATT_THERM] = {qpnp_adc_scale_qrd_skut1_batt_therm},
-
+	[SCALE_QRD_SKUC_BATT_THERM] = {qpnp_adc_scale_qrd_skuc_batt_therm},
+	[SCALE_QRD_SKUE_BATT_THERM] = {qpnp_adc_scale_qrd_skue_batt_therm},
 #ifdef CONFIG_BATTERY_SH
 	[SCALE_VBATT] = {qpnp_adc_scale_vbatt},
 #endif /* CONFIG_BATTERY_SH */
-
 };
 
 static struct qpnp_vadc_rscale_fn adc_vadc_rscale_fn[] = {
@@ -478,7 +480,8 @@ static int32_t qpnp_vadc_read_conversion_result(struct qpnp_vadc_chip *vadc,
 
 	*data = (rslt_msb << 8) | rslt_lsb;
 
-	status = qpnp_vadc_check_result(data);
+	status = qpnp_vadc_check_result(data,
+			(vadc->vadc_recalib_check ? true : false));
 	if (status < 0) {
 		pr_err("VADC data check failed\n");
 		goto fail;
@@ -715,6 +718,10 @@ static int32_t qpnp_vadc_version_check(struct qpnp_vadc_chip *dev)
 #define QPNP_VBAT_COEFF_46	2120
 #define QPNP_VBAT_COEFF_47	3560
 #define QPNP_VBAT_COEFF_48	2190
+#define QPNP_VBAT_COEFF_49	4180
+#define QPNP_VBAT_COEFF_50	27800000
+#define QPNP_VBAT_COEFF_51	5110
+#define QPNP_VBAT_COEFF_52	34444000
 
 static int32_t qpnp_ocv_comp(int64_t *result,
 			struct qpnp_vadc_chip *vadc, int64_t die_temp)
@@ -877,6 +884,20 @@ static int32_t qpnp_ocv_comp(int64_t *result,
 			else if (die_temp > 40000)
 				temp_var = ((die_temp - 40000) *
 						(-QPNP_VBAT_COEFF_46));
+			break;
+		}
+		break;
+	case QPNP_REV_ID_8909_1_0:
+		switch (vadc->id) {
+		case COMP_ID_SMIC:
+			temp_var = (-QPNP_VBAT_COEFF_50);
+			break;
+		}
+		break;
+	case QPNP_REV_ID_8909_1_1:
+		switch (vadc->id) {
+		case COMP_ID_SMIC:
+			temp_var = (QPNP_VBAT_COEFF_52);
 			break;
 		}
 		break;
@@ -1048,6 +1069,30 @@ static int32_t qpnp_vbat_sns_comp(int64_t *result,
 			else if (die_temp > 40000)
 				temp_var = ((die_temp - 40000) *
 						(-QPNP_VBAT_COEFF_48));
+			break;
+		}
+		break;
+	case QPNP_REV_ID_8909_1_0:
+		switch (vadc->id) {
+		case COMP_ID_SMIC:
+			if (die_temp < 30000)
+				temp_var = (-QPNP_VBAT_COEFF_50);
+			else if (die_temp > 30000)
+				temp_var = (((die_temp - 30000) *
+					(-QPNP_VBAT_COEFF_49)) +
+					(-QPNP_VBAT_COEFF_50));
+			break;
+		}
+		break;
+	case QPNP_REV_ID_8909_1_1:
+		switch (vadc->id) {
+		case COMP_ID_SMIC:
+			if (die_temp < 30000)
+				temp_var = (QPNP_VBAT_COEFF_52);
+			else if (die_temp > 30000)
+				temp_var = (((die_temp - 30000) *
+					(-QPNP_VBAT_COEFF_51)) +
+					(QPNP_VBAT_COEFF_52));
 			break;
 		}
 		break;
@@ -1224,6 +1269,7 @@ calib_fail:
 static int32_t qpnp_vadc_calib_device(struct qpnp_vadc_chip *vadc)
 {
 	int rc, calib_read_1 = 0, calib_read_2 = 0;
+
 #ifdef CONFIG_BATTERY_SH
 	shbatt_gain_offset_data_t ab_data,ra_data;
 
@@ -1262,7 +1308,6 @@ static int32_t qpnp_vadc_calib_device(struct qpnp_vadc_chip *vadc)
 					calib_read_1;
 	vadc->adc->amux_prop->chan_prop->adc_graph[CALIB_ABSOLUTE].adc_gnd =
 					calib_read_2;
-
 #ifdef CONFIG_BATTERY_SH
 	ab_data.gain   = calib_read_1;
 	ab_data.offset = calib_read_2;
@@ -1298,7 +1343,6 @@ static int32_t qpnp_vadc_calib_device(struct qpnp_vadc_chip *vadc)
 					= calib_read_1;
 	vadc->adc->amux_prop->chan_prop->adc_graph[CALIB_RATIOMETRIC].adc_gnd
 					= calib_read_2;
-
 #ifdef CONFIG_BATTERY_SH
 	ra_data.gain   = calib_read_1;
 	ra_data.offset = calib_read_2;
@@ -1710,7 +1754,11 @@ recalibrate:
 		vadc->adc->adc_channels[dt_index].calib_type;
 
 	scale_type = vadc->adc->adc_channels[dt_index].adc_scale_fn;
+#ifdef CONFIG_BATTERY_SH
+	if ((scale_type >= SCALE_NONE && scale_type <= SH_SCALE_START) || (scale_type >= SH_SCALE_END)) {
+#else
 	if (scale_type >= SCALE_NONE) {
+#endif /*CONFIG_BATTERY_SH*/
 		rc = -EBADF;
 		goto fail_unlock;
 	}
@@ -1790,6 +1838,8 @@ int32_t qpnp_vadc_read(struct qpnp_vadc_chip *vadc,
 {
 	struct qpnp_vadc_result die_temp_result;
 	int rc = 0;
+	enum power_supply_property prop;
+	union power_supply_propval ret = {0, };
 
 	if (channel == VBAT_SNS) {
 		rc = qpnp_vadc_conv_seq_request(vadc, ADC_SEQ_NONE,
@@ -1812,23 +1862,58 @@ int32_t qpnp_vadc_read(struct qpnp_vadc_chip *vadc,
 			pr_err("Error with vbat compensation\n");
 
 		return 0;
-#ifdef CONFIG_BATTERY_SH
-	}else if (channel == P_MUX8_1_3) {
-		
-		qpnp_smb_vdir_chg_pin_enable(true);
-		
+	} else if (channel == SPARE2) {
+		/* chg temp channel */
+		if (!vadc->vadc_chg_vote) {
+			vadc->vadc_chg_vote =
+				power_supply_get_by_name("battery");
+			if (!vadc->vadc_chg_vote) {
+				pr_err("no vadc_chg_vote found\n");
+				return -EINVAL;
+			}
+		}
+
+		prop = POWER_SUPPLY_PROP_FORCE_TLIM;
+		ret.intval = 1;
+
+		rc = vadc->vadc_chg_vote->set_property(vadc->vadc_chg_vote,
+								prop, &ret);
+		if (rc) {
+			pr_err("error enabling the charger circuitry vote\n");
+			return rc;
+		}
+
 		rc = qpnp_vadc_conv_seq_request(vadc, ADC_SEQ_NONE,
 				channel, result);
-		
+		if (rc < 0)
+			pr_err("Error reading die_temp\n");
+
+		ret.intval = 0;
+		rc = vadc->vadc_chg_vote->set_property(vadc->vadc_chg_vote,
+								prop, &ret);
+		if (rc) {
+			pr_err("error enabling the charger circuitry vote\n");
+			return rc;
+		}
+
+		return 0;
+#ifdef CONFIG_BATTERY_SH
+	}else if (channel == P_MUX8_1_3) {
+
+		qpnp_smb_vdir_chg_pin_enable(true);
+
+		rc = qpnp_vadc_conv_seq_request(vadc, ADC_SEQ_NONE,
+				channel, result);
+
 		result->physical += result->physical/4;
-		
+
 		qpnp_smb_vdir_chg_pin_enable(false);
-		
+
 		if (rc < 0) {
 			pr_err("Error reading ichg \n");
 			return rc;
 		}
-		
+
 		return 0;
 #endif /* CONFIG_BATTERY_SH */
 	} else
@@ -1940,7 +2025,11 @@ int32_t qpnp_vadc_iadc_sync_complete_request(struct qpnp_vadc_chip *vadc,
 		 qpnp_vadc_amux_scaling_ratio[amux_prescaling].den;
 
 	scale_type = vadc->adc->adc_channels[dt_index].adc_scale_fn;
+#ifdef CONFIG_BATTERY_SH
+	if ((scale_type >= SCALE_NONE && scale_type <= SH_SCALE_START) || (scale_type >= SH_SCALE_END)) {
+#else
 	if (scale_type >= SCALE_NONE) {
+#endif /*CONFIG_BATTERY_SH*/
 		rc = -EBADF;
 		goto fail;
 	}

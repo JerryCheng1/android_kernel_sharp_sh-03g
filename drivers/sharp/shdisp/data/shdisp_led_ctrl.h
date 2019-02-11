@@ -18,23 +18,20 @@
 /* ------------------------------------------------------------------------- */
 /* INCLUDE FILES                                                             */
 /* ------------------------------------------------------------------------- */
-#include "shdisp_bl71y6_cmn.h"
-
-#if defined(CONFIG_ARCH_LYNX_DL70)
-#include "shdisp_bl71y6_led_dl70.h"
-#elif defined(CONFIG_ARCH_PA29)
-#include "shdisp_bl71y6_led_pa29.h"
-#elif defined(CONFIG_ARCH_DECKARD_AL20)
-#include "shdisp_bl71y6_led_al20.h"
-#elif defined(CONFIG_ARCH_LYNX_GP11D)
-#ifdef SHDISP_APPSBL
-#include "shdisp_bl71y6_led_default.h"
-#else /* SHDISP_APPSBL */
-#include "shdisp_bl71y6_led_gp11d.h"
-#endif /* SHDISP_APPSBL */
-#else  /* defined(CONFIG_ARCH_LYNX_DL70) */
-#include "shdisp_bl71y6_led_default.h"
-#endif /* defined(CONFIG_ARCH_LYNX_DL70) */
+#include "shdisp_bl71y8_cmn.h"
+#if defined(SHDISP_MODEL_FS)
+#include "shdisp_bl71y8_led_fs_dl.h"
+#elif defined(SHDISP_MODEL_MID)
+#include "shdisp_bl71y8_led_mid_dl.h"
+#else
+ #if defined(SHDISP_DL)
+#include "shdisp_bl71y8_led_dl.h"
+ #elif defined(SHDISP_AL)
+#include "shdisp_bl71y8_led_al.h"
+ #else
+#include "shdisp_bl71y8_led_default.h"
+ #endif /* SHDISP_DL SHDISP_AL */
+#endif /* SHDISP_MODEL_FS SHDISP_MODEL_MID */
 
 /* ------------------------------------------------------------------------- */
 /* VARIABLES                                                                 */
@@ -150,6 +147,16 @@ static const shdisp_bdicRegSetting_t shdisp_bdic_led_emopattern_on[] = {
     ,{BDIC_REG_CH2_SET2,            SHDISP_BDIC_STRM,   0x05,                       0xFF,      0}
 };
 
+static const shdisp_bdicRegSetting_t shdisp_bdic_illumi_triple_color_1st[] = {
+     {BDIC_REG_CH0_SET1,            SHDISP_BDIC_RMW,    0x02,                       0x6F,      0}
+    ,{BDIC_REG_CH0_SET2,            SHDISP_BDIC_RMW,    0x17,                       0xF7,      0}
+    ,{BDIC_REG_CH1_SET1,            SHDISP_BDIC_RMW,    0x02,                       0x6F,      0}
+    ,{BDIC_REG_CH1_SET2,            SHDISP_BDIC_RMW,    0x17,                       0xF7,      0}
+    ,{BDIC_REG_CH2_SET1,            SHDISP_BDIC_RMW,    0x02,                       0x6F,      0}
+    ,{BDIC_REG_CH2_SET2,            SHDISP_BDIC_RMW,    0x17,                       0xF7,      0}
+    ,{BDIC_REG_TIMEER,              SHDISP_BDIC_RMW,    0x31,                       0xF7,      0}
+};
+
 #ifdef SHDISP_EXTEND_COLOR_LED
 static const shdisp_bdicRegSetting_t shdisp_bdic_led_pattern1_on[] = {
      {BDIC_REG_CH0_SET1,            SHDISP_BDIC_STRM,   0x02,                       0xFF,      0}
@@ -250,6 +257,16 @@ static const shdisp_bdicRegSetting_t shdisp_bdic_led_emopattern_on_twin[] = {
     ,{BDIC_REG_CH4_SET2,            SHDISP_BDIC_STRM,   0x05,                       0xFF,      0}
     ,{BDIC_REG_CH5_SET1,            SHDISP_BDIC_STRM,   0x03,                       0xFF,      0}
     ,{BDIC_REG_CH5_SET2,            SHDISP_BDIC_STRM,   0x05,                       0xFF,      0}
+};
+
+static const shdisp_bdicRegSetting_t shdisp_bdic_illumi_triple_color_1st_twin[] = {
+     {BDIC_REG_CH3_SET1,            SHDISP_BDIC_RMW,    0x02,                       0x6F,      0}
+    ,{BDIC_REG_CH3_SET2,            SHDISP_BDIC_RMW,    0x17,                       0xF7,      0}
+    ,{BDIC_REG_CH4_SET1,            SHDISP_BDIC_RMW,    0x02,                       0x6F,      0}
+    ,{BDIC_REG_CH4_SET2,            SHDISP_BDIC_RMW,    0x17,                       0xF7,      0}
+    ,{BDIC_REG_CH5_SET1,            SHDISP_BDIC_RMW,    0x02,                       0x6F,      0}
+    ,{BDIC_REG_CH5_SET2,            SHDISP_BDIC_RMW,    0x17,                       0xF7,      0}
+    ,{BDIC_REG_TIMER2,              SHDISP_BDIC_RMW,    0x31,                       0xF7,      0}
 };
 #endif  /* SHDISP_COLOR_LED_TWIN */
 #endif  /* SHDISP_ANIME_COLOR_LED */
@@ -373,6 +390,23 @@ static const shdisp_bdicRegSetting_t shdisp_bdic_led_off_fix2[] = {
      {BDIC_REG_SYSTEM5,             SHDISP_BDIC_CLR,    0x00,                       0x38,   5500}
 };
 #endif  /* SHDISP_TRI_LED2 */
+
+#ifdef SHDISP_SYSFS_LED
+static const shdisp_bdicRegSetting_t shdisp_bdic_led_current[] = {
+     {BDIC_REG_CH0_A,               SHDISP_BDIC_STRM,   0x00,                       0xFF,      0},
+     {BDIC_REG_CH1_A,               SHDISP_BDIC_STRM,   0x00,                       0xFF,      0},
+     {BDIC_REG_CH2_A,               SHDISP_BDIC_STRM,   0x00,                       0xFF,      0},
+};
+
+#ifdef SHDISP_COLOR_LED_TWIN
+static const shdisp_bdicRegSetting_t shdisp_bdic_led_current_twin[] = {
+     {BDIC_REG_CH3_A,               SHDISP_BDIC_STRM,   0x00,                       0xFF,      0},
+     {BDIC_REG_CH4_A,               SHDISP_BDIC_STRM,   0x00,                       0xFF,      0},
+     {BDIC_REG_CH5_A,               SHDISP_BDIC_STRM,   0x00,                       0xFF,      0},
+};
+#endif /* SHDISP_COLOR_LED_TWIN */
+#endif /* SHDISP_SYSFS_LED */
+
 #endif  /* SHDISP_LED_CTRL_H */
 
 /* ------------------------------------------------------------------------- */

@@ -14,42 +14,88 @@
  */
 
 #include	<shfpsensor.h>
+#include	<linux/pm_qos.h>
+#include	<linux/wakelock.h>
 
 // #define VFSSPI_NOT_USE_COMPAT
 #define VFSSPI_NOT_USE_DYNAMIC_DEBUG
-#define VFSSPI_PARAMETER_DUMP
+
+enum SHFPS_LOG_FLG {
+	SHFPS_FLG_OTHER		= 1 << 0,
+	SHFPS_FLG_IOCTL		= 1 << 1,
+	SHFPS_FLG_IRQ		= 1 << 2,
+	SHFPS_FLG_DUMP		= 1 << 3,
+	SHFPS_FLG_MEASURE	= 1 << 4,
+};
+
+#define SHFPS_IOCTL_MESSAGE(cmd) \
+			(cmd == VFSSPI_IOCTL_RW_SPI_MESSAGE) ? "VFSSPI_IOCTL_RW_SPI_MESSAGE" :\
+			(cmd == VFSSPI_IOCTL_DEVICE_RESET) ? "VFSSPI_IOCTL_DEVICE_RESET" :\
+			(cmd == VFSSPI_IOCTL_SET_CLK) ? "VFSSPI_IOCTL_SET_CLK" :\
+			(cmd == VFSSPI_IOCTL_CHECK_DRDY) ? "VFSSPI_IOCTL_CHECK_DRDY" :\
+			(cmd == VFSSPI_IOCTL_REGISTER_DRDY_SIGNAL) ? "VFSSPI_IOCTL_REGISTER_DRDY_SIGNAL" :\
+			(cmd == VFSSPI_IOCTL_SET_USER_DATA) ? "VFSSPI_IOCTL_SET_USER_DATA" :\
+			(cmd == VFSSPI_IOCTL_GET_USER_DATA) ? "VFSSPI_IOCTL_GET_USER_DATA" :\
+			(cmd == VFSSPI_IOCTL_SET_DRDY_INT) ? "VFSSPI_IOCTL_SET_DRDY_INT" :\
+			(cmd == VFSSPI_IOCTL_DEVICE_SUSPEND) ? "VFSSPI_IOCTL_DEVICE_SUSPEND" :\
+			(cmd == VFSSPI_IOCTL_STREAM_READ_START) ? "VFSSPI_IOCTL_STREAM_READ_START" :\
+			(cmd == VFSSPI_IOCTL_STREAM_READ_STOP) ? "VFSSPI_IOCTL_STREAM_READ_STOP" :\
+			(cmd == VFSSPI_IOCTL_GET_FREQ_TABLE) ? "VFSSPI_IOCTL_GET_FREQ_TABLE" :\
+			(cmd == VFSSPI_IOCTL_POWER_ON) ? "VFSSPI_IOCTL_POWER_ON" :\
+			(cmd == VFSSPI_IOCTL_POWER_OFF) ? "VFSSPI_IOCTL_POWER_OFF" :\
+			(cmd == VFSSPI_IOCTL_DISABLE_SPI_CLOCK) ? "VFSSPI_IOCTL_DISABLE_SPI_CLOCK" :\
+			(cmd == VFSSPI_IOCTL_SET_SPI_CONFIGURATION) ? "VFSSPI_IOCTL_SET_SPI_CONFIGURATION" :\
+			(cmd == VFSSPI_IOCTL_RESET_SPI_CONFIGURATION) ? "VFSSPI_IOCTL_RESET_SPI_CONFIGURATION" :\
+			(cmd == VFSSPI_IOCTL_GET_SENSOR_ORIENTATION) ? "VFSSPI_IOCTL_GET_SENSOR_ORIENTATION" :\
+			(cmd == VFSSPI_IOCTL_REGISTER_SUSPENDRESUME_SIGNAL) ? "VFSSPI_IOCTL_REGISTER_SUSPENDRESUME_SIGNAL" :\
+			(cmd == VFSSPI_IOCTL_GET_SYSTEM_STATUS) ? "VFSSPI_IOCTL_GET_SYSTEM_STATUS" :\
+			#cmd
 
 #ifdef VFSSPI_NOT_USE_DYNAMIC_DEBUG
 static int sh_debug_shfpsensor = 0;
+module_param(sh_debug_shfpsensor, int, 0664);
 
-#undef pr_info
-#undef pr_debug
 #undef pr_err
-#define pr_info(fmt, ...) \
-	do {\
-		if (sh_debug_shfpsensor & 1) {\
-			printk(KERN_INFO pr_fmt(fmt), ##__VA_ARGS__);\
-		}\
-	} while (0)
-#define pr_debug(fmt, ...) \
-	do {\
-		if (sh_debug_shfpsensor & 1) {\
-			printk(KERN_DEBUG pr_fmt(fmt), ##__VA_ARGS__);\
-		}\
-	} while (0)
 #define pr_err(fmt, ...) \
 			printk(KERN_ERR pr_fmt(fmt), ##__VA_ARGS__)
+#define shfp_sensor_log(flg, fmt, ...) \
+	do {\
+		if (sh_debug_shfpsensor & flg) {\
+			if ((sh_debug_shfpsensor & flg) & SHFPS_FLG_MEASURE) {\
+				vfsspi_performance_log(pr_fmt(fmt), ##__VA_ARGS__);\
+			}\
+			else {\
+				printk(KERN_INFO pr_fmt(fmt), ##__VA_ARGS__);\
+			}\
+		}\
+	} while (0)
 
 #else
-/* todo */
+#define shfp_sensor_log(flg, fmt, ...) \
+	if ((sh_debug_shfpsensor & flg) & SHFPS_FLG_MEASURE) {\
+		vfsspi_performance_log(pr_fmt(fmt), ##__VA_ARGS__);\
+	}\
+	else {\
+		printk(KERN_INFO pr_fmt(fmt), ##__VA_ARGS__);\
+	}
 #endif /* VFSSPI_NOT_USE_DYNAMIC_DEBUG */
 
+#ifdef CONFIG_SENSORS_FPRINT_TZ_USE_BAM
 /* The initial baud rate for communicating with Validity sensor.
  * The initial clock is configured with low speed as sensor can boot
  * with external oscillator clock. */
 #define SLOW_BAUD_RATE  			(4800000)
 /* Max baud rate supported by Validity sensor. */
 #define MAX_BAUD_RATE				(4800000)
+#else
+/* The initial baud rate for communicating with Validity sensor.
+ * The initial clock is configured with low speed as sensor can boot
+ * with external oscillator clock. */
+#define SLOW_BAUD_RATE  			(9600000)
+/* Max baud rate supported by Validity sensor. */
+#define MAX_BAUD_RATE				(9600000)
+#endif
+
 /* The coefficient which is multiplying with value retrieved from the
  * VFSSPI_IOCTL_SET_CLK IOCTL command for getting the final baud rate. */
 #define BAUD_RATE_COEF  			(1000)
@@ -67,7 +113,11 @@ static int sh_debug_shfpsensor = 0;
  * @tblSize:table size
  */
 static const unsigned int freqTable[] = {
+#ifdef CONFIG_SENSORS_FPRINT_TZ_USE_BAM
 	 4800000,
+#else
+	 9600000,
+#endif
 };
 
 #ifndef VFSSPI_NOT_USE_COMPAT
@@ -188,6 +238,8 @@ static int vfsspi_enable_spiclk(struct vfsspi_devData *vfsSpiDev);
 static int vfsspi_disable_spiclk(struct vfsspi_devData *vfsSpiDev);
 #endif	/* CONFIG_SENSORS_FPRINT_SPICLK */
 
+static void vfsspi_performance_log(const char *fmt, ...);
+
 #ifdef CONFIG_OF
 static struct of_device_id vfsspi_match_table[] = {
 	{ .compatible = "vfsspi,vfs61xx",},
@@ -219,10 +271,18 @@ static DEFINE_MUTEX(deviceListMutex);
 static DEFINE_MUTEX(kernel_lock);
 static int dataToRead = 0;
 static dev_t vfsspi_major = 0;
+#ifdef CONFIG_SENSORS_FPRINT_TZ_USE_BAM
 static int platform_big_endian = 3;
+#else
+static int platform_big_endian = 0;
+#endif
 
 static unsigned long delay_time_on = POWER_ON_DELAY_MS;
 static unsigned long delay_time_off = POWER_OFF_DELAY_MS;
+
+static struct pm_qos_request fp_qos_cpu_dma_latency;
+
+static struct wake_lock shfp_wake_lock;
 
 #ifdef CONFIG_SENSORS_FPRINT_SYSFS
 static ssize_t fpsensor_check_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -249,7 +309,7 @@ static ssize_t fpsensor_check_store(struct device *dev, struct device_attribute 
 #ifdef CONFIG_SENSORS_FPRINT_PINCTRL
 		vfsspi_activate_pinctrl(vfsSpiDev);
 #endif	/* CONFIG_SENSORS_FPRINT_PINCTRL */
-		pr_info("%s: data->fpsensor_state = %d\n", __func__, vfsSpiDev->fpsensor_state);
+		shfp_sensor_log(SHFPS_FLG_OTHER, "%s: data->fpsensor_state = %d\n", __func__, vfsSpiDev->fpsensor_state);
 		msleep(5);
 		vfsspi_getAnnouncePacket(vfsSpiDev);
 		vfsspi_enable_irq(vfsSpiDev);
@@ -263,58 +323,48 @@ static ssize_t fpsensor_check_store(struct device *dev, struct device_attribute 
 #ifdef CONFIG_SENSORS_FPRINT_SPICLK
 		vfsspi_disable_spiclk(vfsSpiDev);
 #endif	/* CONFIG_SENSORS_FPRINT_SPICLK */
-		pr_info("%s: data->fpsensor_state = %d\n", __func__, vfsSpiDev->fpsensor_state);
+		shfp_sensor_log(SHFPS_FLG_OTHER, "%s: data->fpsensor_state = %d\n", __func__, vfsSpiDev->fpsensor_state);
 		memset(vfsSpiDev->announce_packet, 0x00, sizeof(vfsSpiDev->announce_packet));
 	}
 	else if (sysfs_streq(buf, "be1")) {
 		platform_big_endian = 1;
-		pr_info("%s: platform_big_endian = %d\n", __func__, platform_big_endian);
+		shfp_sensor_log(SHFPS_FLG_OTHER, "%s: platform_big_endian = %d\n", __func__, platform_big_endian);
 	}
 	else if (sysfs_streq(buf, "be2")) {
 		platform_big_endian = 2;
-		pr_info("%s: platform_big_endian = %d\n", __func__, platform_big_endian);
+		shfp_sensor_log(SHFPS_FLG_OTHER, "%s: platform_big_endian = %d\n", __func__, platform_big_endian);
 	}
 	else if (sysfs_streq(buf, "be3")) {
 		platform_big_endian = 3;
-		pr_info("%s: platform_big_endian = %d\n", __func__, platform_big_endian);
+		shfp_sensor_log(SHFPS_FLG_OTHER, "%s: platform_big_endian = %d\n", __func__, platform_big_endian);
 	}
 	else if (sysfs_streq(buf, "le")) {
 		platform_big_endian = 0;
-		pr_info("%s: platform_big_endian = %d\n", __func__, platform_big_endian);
+		shfp_sensor_log(SHFPS_FLG_OTHER, "%s: platform_big_endian = %d\n", __func__, platform_big_endian);
 	}
-#ifdef VFSSPI_NOT_USE_DYNAMIC_DEBUG
-	else if (sysfs_streq(buf, "DEBUGON")) {
-		sh_debug_shfpsensor = 1;
-		pr_info("%s: sh_debug_shfpsensor = %d\n", __func__, sh_debug_shfpsensor);
-	}
-	else if (sysfs_streq(buf, "DEBUGOFF")) {
-		sh_debug_shfpsensor = 0;
-		pr_info("%s: sh_debug_shfpsensor = %d\n", __func__, sh_debug_shfpsensor);
-	}
-#endif /* VFSSPI_NOT_USE_DYNAMIC_DEBUG */
 	else if (sysfs_streq(buf, "DELAYON1")) {
 		delay_time_on = 1;
-		pr_info("%s: delay_time_on = %lu\n", __func__, delay_time_on);
+		shfp_sensor_log(SHFPS_FLG_OTHER, "%s: delay_time_on = %lu\n", __func__, delay_time_on);
 	}
 	else if (sysfs_streq(buf, "DELAYON5")) {
 		delay_time_on = 5;
-		pr_info("%s: delay_time_on = %lu\n", __func__, delay_time_on);
+		shfp_sensor_log(SHFPS_FLG_OTHER, "%s: delay_time_on = %lu\n", __func__, delay_time_on);
 	}
 	else if (sysfs_streq(buf, "DELAYON10")) {
 		delay_time_on = 10;
-		pr_info("%s: delay_time_on = %lu\n", __func__, delay_time_on);
+		shfp_sensor_log(SHFPS_FLG_OTHER, "%s: delay_time_on = %lu\n", __func__, delay_time_on);
 	}
 	else if (sysfs_streq(buf, "DELAYOFF2")) {
 		delay_time_off = 2;
-		pr_info("%s: delay_time_off = %lu\n", __func__, delay_time_off);
+		shfp_sensor_log(SHFPS_FLG_OTHER, "%s: delay_time_off = %lu\n", __func__, delay_time_off);
 	}
 	else if (sysfs_streq(buf, "DELAYOFF5")) {
 		delay_time_off = 5;
-		pr_info("%s: delay_time_off = %lu\n", __func__, delay_time_off);
+		shfp_sensor_log(SHFPS_FLG_OTHER, "%s: delay_time_off = %lu\n", __func__, delay_time_off);
 	}
 	else if (sysfs_streq(buf, "DELAYOFF10")) {
 		delay_time_off = 10;
-		pr_info("%s: delay_time_off = %lu\n", __func__, delay_time_off);
+		shfp_sensor_log(SHFPS_FLG_OTHER, "%s: delay_time_off = %lu\n", __func__, delay_time_off);
 	}
 	else {
 		return 0;
@@ -331,15 +381,35 @@ static struct device_attribute *fp_attrs[] = {
 };
 #endif	/* CONFIG_SENSORS_FPRINT_SYSFS */
 
+static void vfsspi_performance_log(const char *fmt, ...)
+{
+	struct timeval tv;
+	va_list list;
+	char msg[256];
+	int cnt = 0;
+
+	do_gettimeofday(&tv);
+
+	va_start(list, fmt);
+	cnt = vsnprintf(msg, 256, fmt, list);
+	va_end(list);
+
+	if (msg[(cnt - 1)] == '\n')
+		msg[(cnt - 1)] = '\0';
+
+	pr_info("%s %09llu.%06lu\n", msg, (unsigned long long)tv.tv_sec, tv.tv_usec);
+
+	return;
+}
+
 static void vfsspi_parameter_dump(char *buf, size_t len)
 {
-#ifdef VFSSPI_PARAMETER_DUMP
 	size_t	idx;
 	size_t	mod;
 	unsigned char	*p;
 	unsigned char	lbuf[0x10];
 
-	pr_debug("[VFSSPI] len: 0x%2X\n", (int)len);
+	shfp_sensor_log(SHFPS_FLG_DUMP, "[VFSSPI] len: 0x%2X\n", (int)len);
 
 	if (len == 0) {
 		return;
@@ -351,14 +421,14 @@ static void vfsspi_parameter_dump(char *buf, size_t len)
 		if (((len - idx) < 0x10) && (mod != 0)) {
 			memcpy(lbuf, p, mod);
 			memset(&lbuf[mod], 0, (0x10 - mod));
-			pr_debug("[VFSSPI] 0x%2X: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+			shfp_sensor_log(SHFPS_FLG_DUMP, "[VFSSPI] 0x%2X: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
 				(int)idx,
 				lbuf[0x00], lbuf[0x01], lbuf[0x02], lbuf[0x03],
 				lbuf[0x04], lbuf[0x05], lbuf[0x06], lbuf[0x07],
 				lbuf[0x08], lbuf[0x09], lbuf[0x0A], lbuf[0x0B],
 				lbuf[0x0C], lbuf[0x0D], lbuf[0x0E], lbuf[0x0F]);
 		} else {
-			pr_debug("[VFSSPI] 0x%2X: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+			shfp_sensor_log(SHFPS_FLG_DUMP, "[VFSSPI] 0x%2X: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
 				(int)idx,
 				p[0x00], p[0x01], p[0x02], p[0x03],
 				p[0x04], p[0x05], p[0x06], p[0x07],
@@ -367,7 +437,6 @@ static void vfsspi_parameter_dump(char *buf, size_t len)
 		}
 		p += 0x10;
 	}
-#endif	/* VFSSPI_PARAMETER_DUMP */
 }
 
 static inline void longToLittleEndian(char *buf, size_t len)
@@ -430,11 +499,11 @@ static inline void longToLittleEndian(char *buf, size_t len)
 static int vfsspi_enable_irq(struct vfsspi_devData *vfsSpiDev)
 {
 	if (vfsSpiDev->isDrdyIrqEnabled == DRDY_IRQ_ENABLE) {
-		pr_debug("%s DRDY irq already enabled\n", __func__);
+		shfp_sensor_log((SHFPS_FLG_IOCTL | SHFPS_FLG_OTHER), "%s DRDY irq already enabled\n", __func__);
 		return -EBUSY;
 	}
 
-	pr_info("%s\n", __func__);
+	shfp_sensor_log((SHFPS_FLG_IOCTL | SHFPS_FLG_OTHER), "%s\n", __func__);
 	spin_lock(&vfsSpiDev->irq_lock);
 	enable_irq(vfsSpiDev->gpio_irq);
 	vfsSpiDev->isDrdyIrqEnabled = DRDY_IRQ_ENABLE;
@@ -445,7 +514,7 @@ static int vfsspi_enable_irq(struct vfsspi_devData *vfsSpiDev)
 static int vfsspi_disable_irq(struct vfsspi_devData *vfsSpiDev)
 {
 	if (vfsSpiDev->isDrdyIrqEnabled == DRDY_IRQ_DISABLE) {
-		pr_debug("%s DRDY irq already disabled\n", __func__);
+		shfp_sensor_log((SHFPS_FLG_IOCTL | SHFPS_FLG_OTHER), "%s DRDY irq already disabled\n", __func__);
 		return -EBUSY;
 	}
 
@@ -453,7 +522,7 @@ static int vfsspi_disable_irq(struct vfsspi_devData *vfsSpiDev)
 	disable_irq_nosync(vfsSpiDev->gpio_irq);
 	vfsSpiDev->isDrdyIrqEnabled = DRDY_IRQ_DISABLE;
 	spin_unlock(&vfsSpiDev->irq_lock);
-	pr_info("%s\n", __func__);
+	shfp_sensor_log((SHFPS_FLG_IOCTL | SHFPS_FLG_OTHER), "%s\n", __func__);
 	return 0;
 }
 
@@ -461,10 +530,10 @@ irqreturn_t vfsspi_irq(int irq, void *context)
 {
 	struct vfsspi_devData *vfsSpiDev = context;
 
-	pr_debug("%s DRDY interrupt occurred.\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_IRQ, "%s DRDY interrupt occurred.\n", __func__);
 
 	if (gpio_get_value(vfsSpiDev->drdyPin) == DRDY_ACTIVE_STATUS) {
-		pr_debug("%s DRDY status is active.\n", __func__);
+		shfp_sensor_log((SHFPS_FLG_IRQ | SHFPS_FLG_MEASURE), "%s DRDY status is active.\n", __func__);
 		dataToRead = 1;
 		wake_up_interruptible(&wq);
 
@@ -474,12 +543,24 @@ irqreturn_t vfsspi_irq(int irq, void *context)
 	return IRQ_HANDLED;
 }
 
+static void vfsspi_request_qos(void)
+{
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
+	pm_qos_update_request(&fp_qos_cpu_dma_latency, 1);
+}
+
+static void vfsspi_release_request_qos(void)
+{
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
+	pm_qos_update_request(&fp_qos_cpu_dma_latency, PM_QOS_DEFAULT_VALUE);
+}
+
 static void vfsspi_regulator_ctrl(struct vfsspi_devData *vfsSpiDev, bool onoff)
 {
 	int ret;
 	unsigned long delay = 0;
 
-	pr_debug("%s Power %s\n", __func__, (onoff ? "on":"off"));
+	shfp_sensor_log((SHFPS_FLG_IOCTL | SHFPS_FLG_OTHER), "%s Power %s\n", __func__, (onoff ? "on":"off"));
 
 	if (!vfsSpiDev->vcc_supply || !vfsSpiDev->sovcc_supply) {
 		pr_err("%s Regulator not set\n", __func__);
@@ -487,10 +568,12 @@ static void vfsspi_regulator_ctrl(struct vfsspi_devData *vfsSpiDev, bool onoff)
 	}
 
 	if (onoff) {
+		vfsspi_request_qos();
 		if (!vfsSpiDev->vcc_onoff) {
 			ret = regulator_enable(vfsSpiDev->vcc_supply);
 			if (ret < 0) {
 				pr_err("%s VCC fail to ON.\n", __func__);
+				vfsspi_release_request_qos();
 				return;
 			}
 			vfsSpiDev->vcc_onoff = true;
@@ -503,14 +586,16 @@ static void vfsspi_regulator_ctrl(struct vfsspi_devData *vfsSpiDev, bool onoff)
 				regulator_disable(vfsSpiDev->vcc_supply);
 				vfsSpiDev->vcc_onoff = false;
 #ifdef CONFIG_SENSORS_FPRINT_WAIT_PWRCTRL
-				pr_debug("%s mdelay start\n", __func__);
+				shfp_sensor_log((SHFPS_FLG_IOCTL | SHFPS_FLG_OTHER), "%s mdelay start\n", __func__);
 				mdelay(delay_time_off);
 #endif	/* CONFIG_SENSORS_FPRINT_WAIT_PWRCTRL */
+				vfsspi_release_request_qos();
 				return;
 			}
 			vfsSpiDev->sovcc_onoff = true;
 			delay = delay_time_on;
 		}
+		vfsspi_release_request_qos();
 		vfsSpiDev->fpsensor_state =
 			(vfsSpiDev->vcc_onoff & vfsSpiDev->sovcc_onoff);
 	} else {
@@ -536,7 +621,7 @@ static void vfsspi_regulator_ctrl(struct vfsspi_devData *vfsSpiDev, bool onoff)
 #endif
 #ifdef CONFIG_SENSORS_FPRINT_WAIT_PWRCTRL
 	if (delay > 0) {
-		pr_debug("%s mdelay start\n", __func__);
+		shfp_sensor_log((SHFPS_FLG_IOCTL | SHFPS_FLG_OTHER), "%s mdelay start\n", __func__);
 		mdelay(delay);
 	}
 #endif	/* CONFIG_SENSORS_FPRINT_WAIT_PWRCTRL */
@@ -548,11 +633,11 @@ static int vfsspi_activate_pinctrl(struct vfsspi_devData *vfsSpiDev)
 	int ret;
 
 	if (vfsSpiDev->pinctrl_active) {
-		pr_debug("%s pinctrl already activated\n", __func__);
+		shfp_sensor_log((SHFPS_FLG_IOCTL | SHFPS_FLG_OTHER), "%s pinctrl already activated\n", __func__);
 		return -EBUSY;
 	}
 
-	pr_info("%s\n", __func__);
+	shfp_sensor_log((SHFPS_FLG_IOCTL | SHFPS_FLG_OTHER), "%s\n", __func__);
 
 	if (!vfsSpiDev->pinctrl || !vfsSpiDev->pins_active) {
 		pr_err("%s pinctrl pointer is NULL.\n", __func__);
@@ -574,11 +659,11 @@ static int vfsspi_deactivate_pinctrl(struct vfsspi_devData *vfsSpiDev)
 	int ret;
 
 	if (!vfsSpiDev->pinctrl_active) {
-		pr_debug("%s pinctrl already deactivated\n", __func__);
+		shfp_sensor_log((SHFPS_FLG_IOCTL | SHFPS_FLG_OTHER), "%s pinctrl already deactivated\n", __func__);
 		return -EBUSY;
 	}
 
-	pr_info("%s\n", __func__);
+	shfp_sensor_log((SHFPS_FLG_IOCTL | SHFPS_FLG_OTHER), "%s\n", __func__);
 
 	if (!vfsSpiDev->pinctrl || !vfsSpiDev->pins_sleep) {
 		pr_err("%s pinctrl pointer is NULL.\n", __func__);
@@ -602,11 +687,11 @@ static int vfsspi_enable_spiclk(struct vfsspi_devData *vfsSpiDev)
 	int ret;
 
 	if (vfsSpiDev->spiclk_enable) {
-		pr_debug("%s SPI clock already enabled\n", __func__);
+		shfp_sensor_log((SHFPS_FLG_IOCTL | SHFPS_FLG_OTHER), "%s SPI clock already enabled\n", __func__);
 		return -EBUSY;
 	}
 
-	pr_info("%s\n", __func__);
+	shfp_sensor_log((SHFPS_FLG_IOCTL | SHFPS_FLG_OTHER), "%s\n", __func__);
 
 	if (!vfsSpiDev->clk_core_clk || !vfsSpiDev->clk_iface_clk) {
 		pr_err("%s clk_prepare_enable pointer is NULL.\n", __func__);
@@ -630,11 +715,11 @@ static int vfsspi_enable_spiclk(struct vfsspi_devData *vfsSpiDev)
 static int vfsspi_disable_spiclk(struct vfsspi_devData *vfsSpiDev)
 {
 	if (!vfsSpiDev->spiclk_enable) {
-		pr_debug("%s SPI clock already disabled\n", __func__);
+		shfp_sensor_log(SHFPS_FLG_IOCTL, "%s SPI clock already disabled\n", __func__);
 		return -EBUSY;
 	}
 
-	pr_info("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_IOCTL, "%s\n", __func__);
 
 	if (!vfsSpiDev->clk_core_clk || !vfsSpiDev->clk_iface_clk) {
 		pr_err("%s clk_disable_unprepare pointer is NULL.\n", __func__);
@@ -654,7 +739,7 @@ static int vfsspi_setclk_speed(struct vfsspi_devData *vfsSpiDev, unsigned int sp
 	struct spi_device *spidev = NULL;
 	unsigned int tblnum, idx, tmp_speed;
 
-	pr_info("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_IOCTL, "%s\n", __func__);
 
 	if (vfsSpiDev->freqTable != NULL) {
 		tblnum = vfsSpiDev->freqTableSize / sizeof(vfsSpiDev->freqTable[0]);
@@ -666,7 +751,7 @@ static int vfsspi_setclk_speed(struct vfsspi_devData *vfsSpiDev, unsigned int sp
 			}
 		}
 		if (speed != tmp_speed) {
-			pr_debug("%s speed %u was rounded to %u\n", __func__, speed, tmp_speed);
+			shfp_sensor_log(SHFPS_FLG_IOCTL, "%s speed %u was rounded to %u\n", __func__, speed, tmp_speed);
 		}
 	} else {
 		tmp_speed = speed;
@@ -694,12 +779,12 @@ static int vfsspi_sendDrdySignal(struct vfsspi_devData *vfsSpiDev)
 	struct task_struct *t;
 	int ret = 0;
 
-	pr_debug("%s\n", __func__);
+	shfp_sensor_log((SHFPS_FLG_IRQ | SHFPS_FLG_IOCTL), "%s\n", __func__);
 
 	if (vfsSpiDev->userPID != 0) {
 		rcu_read_lock();
 		/* find the task_struct associated with userpid */
-		pr_debug("%s Searching task with PID=%08x\n",
+		shfp_sensor_log((SHFPS_FLG_IRQ | SHFPS_FLG_IOCTL), "%s Searching task with PID=%08x\n",
 			__func__, vfsSpiDev->userPID);
 		t = pid_task(find_pid_ns(vfsSpiDev->userPID, &init_pid_ns),
 			PIDTYPE_PID);
@@ -709,13 +794,15 @@ static int vfsspi_sendDrdySignal(struct vfsspi_devData *vfsSpiDev)
 			return -ENODEV;
 		}
 		rcu_read_unlock();
+		shfp_sensor_log(SHFPS_FLG_MEASURE, "%s send_sig_info.\n", __func__);
 		/* notify DRDY signal to user process */
 		ret = send_sig_info(vfsSpiDev->signalID, (struct siginfo *)1, t);
+		shfp_sensor_log(SHFPS_FLG_MEASURE, "%s notify DRDY signal to user process.\n", __func__);
 		if (ret < 0) {
 			pr_err("%s Error sending signal\n", __func__);
 		}
 	} else {
-		pr_debug("%s pid not received yet.\n", __func__);
+		shfp_sensor_log((SHFPS_FLG_IRQ | SHFPS_FLG_IOCTL), "%s pid not received yet.\n", __func__);
 	}
 	return ret;
 }
@@ -728,7 +815,7 @@ static void vfsspi_getAnnouncePacket(struct vfsspi_devData *vfsSpiDev)
 	struct spi_message m;
 	int status = 0;
 
-	pr_debug("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
 
 	//
 	// Test the SPI driver reply quick
@@ -744,7 +831,7 @@ static void vfsspi_getAnnouncePacket(struct vfsspi_devData *vfsSpiDev)
 
 	status = spi_sync(vfsSpiDev->spi, &m);
 
-	pr_debug("%s spi_sync status=%d\n", __func__, (int)status);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s spi_sync status=%d\n", __func__, (int)status);
 	longToLittleEndian(rx_buf, sizeof(rx_buf));
 	memcpy(vfsSpiDev->announce_packet, rx_buf, 4);
 	return;
@@ -759,7 +846,7 @@ static inline ssize_t vfsspi_writeSync(struct vfsspi_devData *vfsSpiDev,
 	struct spi_message m;
 	struct spi_transfer t;
 
-	pr_debug("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
 
 	spi_message_init(&m);
 	memset(&t, 0, sizeof(t));
@@ -776,7 +863,7 @@ static inline ssize_t vfsspi_writeSync(struct vfsspi_devData *vfsSpiDev,
 	if (status == 0) {
 		status = m.actual_length;
 	}
-	pr_debug("%s length=%d\n", __func__, status);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s length=%d\n", __func__, status);
 
 	return status;
 }
@@ -789,7 +876,7 @@ static inline ssize_t vfsspi_readSync(struct vfsspi_devData *vfsSpiDev,
 	struct spi_message m;
 	struct spi_transfer t;
 
-	pr_debug("%s spi=%p\n", __func__, vfsSpiDev->spi);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s spi=%p\n", __func__, vfsSpiDev->spi);
 
 	spi_message_init(&m);
 	memset(&t, 0x0, sizeof(t));
@@ -804,10 +891,10 @@ static inline ssize_t vfsspi_readSync(struct vfsspi_devData *vfsSpiDev,
 	status = spi_sync(vfsSpiDev->spi, &m);
 
 	if (status == 0) {
-		pr_debug("%s: m.actual_length=%d\n", __func__, m.actual_length);
+		shfp_sensor_log(SHFPS_FLG_OTHER, "%s: m.actual_length=%d\n", __func__, m.actual_length);
 		status = len;
 	}
-	pr_debug("%s length=%d\n", __func__, status);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s length=%d\n", __func__, status);
 
 	return status;
 }
@@ -817,14 +904,14 @@ static ssize_t vfsspi_write(struct file *filp, const char __user *buf,
 	size_t count, loff_t *fPos)
 {
 #ifdef CONFIG_SENSORS_FPRINT_SECURE
-	pr_debug("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
 
 	return 0;
 #else
 	struct vfsspi_devData *vfsSpiDev = NULL;
 	ssize_t status = 0;
 
-	pr_debug("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
 
 	if (count > DEFAULT_BUFFER_SIZE || count <= 0) {
 		pr_err("%s passed incorrect buffer length - %d\n", __func__, (int)count);
@@ -860,7 +947,7 @@ static ssize_t vfsspi_read(struct file *filp, char __user *buf, size_t count,
 	loff_t *fPos)
 {
 #ifdef CONFIG_SENSORS_FPRINT_SECURE
-	pr_debug("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
 
 	return 0;
 #else
@@ -868,7 +955,7 @@ static ssize_t vfsspi_read(struct file *filp, char __user *buf, size_t count,
 	unsigned char *readBuf = NULL;
 	ssize_t status = 0;
 
-	pr_debug("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
 
 	vfsSpiDev = filp->private_data;
 
@@ -909,7 +996,7 @@ static ssize_t vfsspi_read(struct file *filp, char __user *buf, size_t count,
 			status = -EFAULT;
 		} else {
 			status = status - missing;
-			pr_debug("%s status=%d\n", __func__, (int)status);
+			shfp_sensor_log(SHFPS_FLG_OTHER, "%s status=%d\n", __func__, (int)status);
 		}
 	} else {
 		pr_err("%s err status=%d\n", __func__, (int)status);
@@ -928,7 +1015,7 @@ static int vfsspi_xfer(struct vfsspi_devData *vfsSpiDev,
 	struct spi_message m;
 	struct spi_transfer t;
 
-	pr_debug("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_IOCTL, "%s\n", __func__);
 
 	if (vfsSpiDev == NULL || tr == NULL) {
 		pr_err("%s passed NULL parameter\n", __func__);
@@ -981,7 +1068,7 @@ static int vfsspi_xfer(struct vfsspi_devData *vfsSpiDev,
 			}
 		}
 	}
-	pr_debug("%s length=%d, status=%d\n", __func__, tr->len, status);
+	shfp_sensor_log(SHFPS_FLG_IOCTL, "%s length=%d, status=%d\n", __func__, tr->len, status);
 	return status;
 }
 #endif	/* CONFIG_SENSORS_FPRINT_SECURE */
@@ -991,7 +1078,7 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	int retVal = 0;
 	struct vfsspi_devData *vfsSpiDev = NULL;
 
-	pr_debug("%s\n", __func__);
+	shfp_sensor_log((SHFPS_FLG_IOCTL | SHFPS_FLG_MEASURE), "%s %s start.\n", __func__, SHFPS_IOCTL_MESSAGE(cmd));
 
 	if (_IOC_TYPE(cmd) != VFSSPI_IOCTL_MAGIC) {
 		pr_err("%s invalid cmd= 0x%X Received= 0x%X Expected= 0x%X\n",
@@ -1006,13 +1093,11 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case VFSSPI_IOCTL_DEVICE_SUSPEND:
 	{
-		pr_debug("%s VFSSPI_IOCTL_DEVICE_SUSPEND:\n", __func__);
 		vfsspi_suspend(vfsSpiDev);
 		break;
 	}
 	case VFSSPI_IOCTL_DEVICE_RESET:
 	{
-		pr_debug("%s VFSSPI_IOCTL_DEVICE_RESET:\n", __func__);
 		vfsspi_hardReset(vfsSpiDev);
 		break;
 	}
@@ -1021,7 +1106,6 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	{
 		vfsspi_iocTransfer_t *dup = NULL;
 
-		pr_debug("%s VFSSPI_IOCTL_RW_SPI_MESSAGE\n", __func__);
 		if ((void *)arg == NULL) {
 			pr_err("%s passed arg is NULL\n", __func__);
 			retVal = -EINVAL;
@@ -1036,7 +1120,7 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		if (copy_from_user(dup, (void *)arg,
 			sizeof(vfsspi_iocTransfer_t)) == 0) {
-			pr_debug("%s VFSSPI_IOCTL_RW_SPI_MESSAGE: dup->rxBuffer=%016lx, dup->txBuffer=%016lx, dup->len=%u\n",
+			shfp_sensor_log(SHFPS_FLG_IOCTL, "%s VFSSPI_IOCTL_RW_SPI_MESSAGE: dup->rxBuffer=%016lx, dup->txBuffer=%016lx, dup->len=%u\n",
 				__func__, (unsigned long)dup->rxBuffer, (unsigned long)dup->txBuffer, dup->len);
 			retVal = vfsspi_xfer(vfsSpiDev, dup);
 			if (retVal == 0) {
@@ -1058,7 +1142,6 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	{
 		unsigned short clock = 0;
 
-		pr_debug("%s VFSSPI_IOCTL_SET_CLK\n", __func__);
 		if ((void *)arg == NULL) {
 			pr_err("%s passed arg is NULL\n", __func__);
 			retVal = -EINVAL;
@@ -1067,26 +1150,26 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (copy_from_user(&clock, (void *)arg,
 			sizeof(unsigned short)) == 0) {
 
-			pr_debug("%s VFSSPI_IOCTL_SET_CLK: clock=%u\n", __func__, clock);
+			shfp_sensor_log(SHFPS_FLG_IOCTL, "%s VFSSPI_IOCTL_SET_CLK: clock=%u\n", __func__, clock);
 
 			switch (clock) {
 			case 0:
 			{
 				/* Running baud rate. */
-				pr_debug("%s Running baud rate.\n", __func__);
+				shfp_sensor_log(SHFPS_FLG_IOCTL, "%s Running baud rate.\n", __func__);
 				vfsspi_setclk_speed(vfsSpiDev, MAX_BAUD_RATE);
 				break;
 			}
 			case 0xFFFF:
 			{
 				/* Slow baud rate */
-				pr_debug("%s slow baud rate.\n", __func__);
+				shfp_sensor_log(SHFPS_FLG_IOCTL, "%s slow baud rate.\n", __func__);
 				vfsspi_setclk_speed(vfsSpiDev, SLOW_BAUD_RATE);
 				break;
 			}
 			default:
 			{
-				pr_debug("%s baud rate is %d.\n", __func__, clock);
+				shfp_sensor_log(SHFPS_FLG_IOCTL, "%s baud rate is %d.\n", __func__, clock);
 				vfsspi_setclk_speed(vfsSpiDev, clock * BAUD_RATE_COEF);
 				break;
 			}
@@ -1099,7 +1182,6 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 	case VFSSPI_IOCTL_CHECK_DRDY:
 	{
-		pr_debug("%s: VFSSPI_IOCTL_CHECK_DRDY\n", __func__);
 		retVal = -ETIMEDOUT;
 		dataToRead = 0;
 
@@ -1142,7 +1224,6 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	{
 		vfsspi_iocRegSignal_t usrSignal;
 
-		pr_info("%s VFSSPI_IOCTL_REGISTER_DRDY_SIGNAL\n", __func__);
 		if ((void *)arg == NULL) {
 			pr_err("%s passed arg is NULL\n", __func__);
 			retVal = -EINVAL;
@@ -1153,7 +1234,7 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			pr_err("%s Failed copy from user.\n", __func__);
 			retVal = -EFAULT;
 		} else {
-			pr_debug("%s VFSSPI_IOCTL_REGISTER_DRDY_SIGNAL: usrSignal.userPID=%u, usrSignal.signalID=%u\n",
+			shfp_sensor_log(SHFPS_FLG_IOCTL, "%s VFSSPI_IOCTL_REGISTER_DRDY_SIGNAL: usrSignal.userPID=%u, usrSignal.signalID=%u\n",
 				__func__, usrSignal.userPID, usrSignal.signalID);
 			vfsSpiDev->userPID = usrSignal.userPID;
 			vfsSpiDev->signalID = usrSignal.signalID;
@@ -1164,7 +1245,6 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	{
 		vfsspi_iocUserData_t tmpUserData;
 
-		pr_info("%s VFSSPI_IOCTL_SET_USER_DATA\n", __func__);
 		if ((void *)arg == NULL) {
 			pr_err("%s passed arg is NULL\n", __func__);
 			retVal = -EINVAL;
@@ -1177,7 +1257,7 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			break;
 		}
 
-		pr_debug("%s VFSSPI_IOCTL_SET_USER_DATA: tmpUserData.buffer=%016lx, tmpUserData.len=%u\n",
+		shfp_sensor_log(SHFPS_FLG_IOCTL, "%s VFSSPI_IOCTL_SET_USER_DATA: tmpUserData.buffer=%016lx, tmpUserData.len=%u\n",
 			__func__, (unsigned long)tmpUserData.buffer, tmpUserData.len);
 
 		if (vfsSpiDev->userInfoData.buffer != NULL) {
@@ -1209,7 +1289,6 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	{
 		vfsspi_iocUserData_t tmpUserData;
 
-		pr_debug("%s VFSSPI_IOCTL_GET_USER_DATA\n", __func__);
 		retVal = -EFAULT;
 
 		if (vfsSpiDev->userInfoData.buffer == NULL ||
@@ -1224,7 +1303,7 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			break;
 		}
 
-		pr_debug("%s VFSSPI_IOCTL_GET_USER_DATA: tmpUserData.buffer=%016lx, tmpUserData.len=%u\n",
+		shfp_sensor_log(SHFPS_FLG_IOCTL, "%s VFSSPI_IOCTL_GET_USER_DATA: tmpUserData.buffer=%016lx, tmpUserData.len=%u\n",
 			__func__, (unsigned long)tmpUserData.buffer, tmpUserData.len);
 
 		if (tmpUserData.len != vfsSpiDev->userInfoData.len ||
@@ -1253,7 +1332,6 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	{
 		unsigned short drdy_enable_flag;
 
-		pr_debug("%s VFSSPI_IOCTL_SET_DRDY_INT\n", __func__);
 		if ((void *)arg == NULL) {
 			pr_err("%s passed arg is NULL\n", __func__);
 			retVal = -EINVAL;
@@ -1264,7 +1342,7 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			pr_err("%s Failed copy from user.\n", __func__);
 			retVal = -EFAULT;
 		} else {
-			pr_debug("%s VFSSPI_IOCTL_SET_DRDY_INT: drdy_enable_flag=%u\n", __func__, drdy_enable_flag);
+			shfp_sensor_log(SHFPS_FLG_IOCTL, "%s VFSSPI_IOCTL_SET_DRDY_INT: drdy_enable_flag=%u\n", __func__, drdy_enable_flag);
 			if (drdy_enable_flag == 0)
 				vfsspi_disable_irq(vfsSpiDev);
 			else {
@@ -1285,7 +1363,6 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	{
 		unsigned int streamDataSize;
 
-		pr_debug("%s VFSSPI_IOCTL_STREAM_READ_START\n", __func__);
 		if ((void *)arg == NULL) {
 			pr_err("%s passed arg is NULL\n", __func__);
 			retVal = -EINVAL;
@@ -1297,7 +1374,7 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			retVal = -EFAULT;
 			break;
 		}
-		pr_debug("%s VFSSPI_IOCTL_STREAM_READ_START: streamDataSize=%u\n",
+		shfp_sensor_log(SHFPS_FLG_IOCTL, "%s VFSSPI_IOCTL_STREAM_READ_START: streamDataSize=%u\n",
 			__func__, streamDataSize);
 
 		if (vfsSpiDev->streamBuffer != NULL) {
@@ -1315,7 +1392,6 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 	case VFSSPI_IOCTL_STREAM_READ_STOP:
 	{
-		pr_debug("%s VFSSPI_IOCTL_STREAM_READ_STOP\n", __func__);
 		if (vfsSpiDev->streamBuffer != NULL) {
 			kfree(vfsSpiDev->streamBuffer);
 			vfsSpiDev->streamBuffer = NULL;
@@ -1327,8 +1403,6 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	{
 		vfsspi_iocFreqTable_t tmpFreqData;
 
-		pr_debug("%s VFSSPI_IOCTL_GET_FREQ_TABLE\n", __func__);
-
 		retVal = -EINVAL;
 		if ((void *)arg == NULL) {
 			pr_err("%s passed arg is NULL\n", __func__);
@@ -1339,7 +1413,7 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			pr_err("%s Failed copy from user.\n", __func__);
 			break;
 		}
-		pr_debug("%s VFSSPI_IOCTL_GET_FREQ_TABLE: tmpFreqData.table=%016lx, tmpFreqData.tblSize=%u\n",
+		shfp_sensor_log(SHFPS_FLG_IOCTL, "%s VFSSPI_IOCTL_GET_FREQ_TABLE: tmpFreqData.table=%016lx, tmpFreqData.tblSize=%u\n",
 			__func__, (unsigned long)tmpFreqData.table, tmpFreqData.tblSize);
 
 		tmpFreqData.tblSize = 0;
@@ -1364,7 +1438,6 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 	case VFSSPI_IOCTL_POWER_ON:
 	{
-		pr_info("%s VFSSPI_IOCTL_POWER_ON\n", __func__);
 #ifdef CONFIG_SENSORS_FPRINT_SPICLK
 		vfsspi_enable_spiclk(vfsSpiDev);
 #endif	/* CONFIG_SENSORS_FPRINT_SPICLK */
@@ -1372,11 +1445,11 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 #ifdef CONFIG_SENSORS_FPRINT_PINCTRL
 		vfsspi_activate_pinctrl(vfsSpiDev);
 #endif	/* CONFIG_SENSORS_FPRINT_PINCTRL */
+		wake_lock(&shfp_wake_lock);
 		break;
 	}
 	case VFSSPI_IOCTL_POWER_OFF:
 	{
-		pr_info("%s VFSSPI_IOCTL_POWER_OFF\n", __func__);
 		vfsspi_disable_irq(vfsSpiDev);
 #ifdef CONFIG_SENSORS_FPRINT_PINCTRL
 		vfsspi_deactivate_pinctrl(vfsSpiDev);
@@ -1385,21 +1458,19 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 #ifdef CONFIG_SENSORS_FPRINT_SPICLK
 		vfsspi_disable_spiclk(vfsSpiDev);
 #endif	/* CONFIG_SENSORS_FPRINT_SPICLK */
+		wake_unlock(&shfp_wake_lock);
 		break;
 	}
 	case VFSSPI_IOCTL_DISABLE_SPI_CLOCK:
 	{
-		pr_info("%s VFSSPI_IOCTL_DISABLE_SPI_CLOCK\n", __func__);
 		break;
 	}
 	case VFSSPI_IOCTL_SET_SPI_CONFIGURATION:
 	{
-		pr_info("%s VFSSPI_IOCTL_SET_SPI_CONFIGURATION\n", __func__);
 		break;
 	}
 	case VFSSPI_IOCTL_RESET_SPI_CONFIGURATION:
 	{
-		pr_info("%s VFSSPI_IOCTL_RESET_SPI_CONFIGURATION\n", __func__);
 		break;
 	}
 	case VFSSPI_IOCTL_GET_SENSOR_ORIENTATION:
@@ -1409,15 +1480,14 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 #else
 		unsigned int orientation = 0;
 #endif	/* CONFIG_SENSORS_FPRINT_ORIENTATION_REVERSE */
-		
-		pr_info("%s VFSSPI_IOCTL_GET_SENSOR_ORIENTATION\n", __func__);
+
 		retVal = -EINVAL;
 		if ((void *)arg == NULL) {
 			pr_err("%s passed arg is NULL\n", __func__);
 			break;
 		}
 		if (copy_to_user((void *)arg, &orientation, sizeof(orientation)) == 0) {
-			pr_debug("%s VFSSPI_IOCTL_GET_SENSOR_ORIENTATION: orientation=%u\n",
+			shfp_sensor_log(SHFPS_FLG_IOCTL, "%s VFSSPI_IOCTL_GET_SENSOR_ORIENTATION: orientation=%u\n",
 				 __func__, orientation);
 			retVal = 0;
 		} else {
@@ -1431,12 +1501,13 @@ long vfsspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 	}
 	mutex_unlock(&vfsSpiDev->bufferMutex);
+	shfp_sensor_log((SHFPS_FLG_IOCTL | SHFPS_FLG_MEASURE), "%s end.\n", __func__);
 	return retVal;
 }
 
 static void vfsspi_hardReset(struct vfsspi_devData *vfsSpiDev)
 {
-	pr_info("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_IOCTL, "%s\n", __func__);
 
 	if (vfsSpiDev != NULL) {
 		unsigned int irq_enabled = vfsSpiDev->isDrdyIrqEnabled;
@@ -1444,6 +1515,11 @@ static void vfsspi_hardReset(struct vfsspi_devData *vfsSpiDev)
 		if (irq_enabled == DRDY_IRQ_ENABLE) {
 			vfsspi_disable_irq(vfsSpiDev);
 		}
+#ifdef CONFIG_SENSORS_FPRINT_PINCTRL
+		if (vfsSpiDev->pinctrl_active) {
+			vfsspi_deactivate_pinctrl(vfsSpiDev);
+		}
+#endif	/* CONFIG_SENSORS_FPRINT_PINCTRL */
 		vfsspi_regulator_ctrl(vfsSpiDev, false);
 		dataToRead = 0;
 #ifdef CONFIG_SENSORS_FPRINT_SPICLK
@@ -1460,7 +1536,7 @@ static void vfsspi_hardReset(struct vfsspi_devData *vfsSpiDev)
 		if (irq_enabled == DRDY_IRQ_ENABLE) {
 			vfsspi_enable_irq(vfsSpiDev);
 		}
-		pr_info("%s done.\n", __func__);
+		shfp_sensor_log(SHFPS_FLG_IOCTL, "%s done.\n", __func__);
 	}
 }
 
@@ -1607,7 +1683,7 @@ static long vfsspi_compat_ioctl(struct file *filp, unsigned int cmd,
 {
 	int ret;
 
-	pr_debug("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_IOCTL, "%s\n", __func__);
 
 	if (!filp) {
 		return -EINVAL;
@@ -1653,7 +1729,7 @@ static long vfsspi_compat_ioctl(struct file *filp, unsigned int cmd,
 	if (ret == -ENOSYS) {
 		pr_err("%s: unsupported ioctl\n", __func__);
 	} else if (ret) {
-		pr_debug("%s: ioctl err cmd=%u ret=%d\n", __func__, cmd, ret);
+		shfp_sensor_log(SHFPS_FLG_IOCTL, "%s: ioctl err cmd=%u ret=%d\n", __func__, cmd, ret);
 	}
 	return ret;
 }
@@ -1661,7 +1737,7 @@ static long vfsspi_compat_ioctl(struct file *filp, unsigned int cmd,
 
 static void vfsspi_suspend(struct vfsspi_devData *vfsSpiDev)
 {
-	pr_info("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_IOCTL, "%s\n", __func__);
 
 	if (vfsSpiDev != NULL) {
 		dataToRead = 0;
@@ -1681,7 +1757,7 @@ int vfsspi_open(struct inode *inode, struct file *filp)
 	struct vfsspi_devData *vfsSpiDev = NULL;
 	int status = -ENXIO;
 
-	pr_info("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
 
 	mutex_lock(&kernel_lock);
 	mutex_lock(&deviceListMutex);
@@ -1727,7 +1803,7 @@ int vfsspi_release(struct inode *inode, struct file *filp)
 	struct vfsspi_devData *vfsSpiDev = NULL;
 	int status = 0;
 
-	pr_info("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
 
 	mutex_lock(&deviceListMutex);
 	vfsSpiDev = filp->private_data;
@@ -1758,7 +1834,7 @@ static int vfsspi_platformInit(struct vfsspi_devData *vfsSpiDev)
 	int status = 0;
 	int error = 0;
 
-	pr_info("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
 
 	if (vfsSpiDev == NULL) {
 		pr_err("%s vfsspi_platformInit: vfsSpiDev is NULL\n", __func__);
@@ -1857,13 +1933,13 @@ static int vfsspi_platformInit(struct vfsspi_devData *vfsSpiDev)
 	}
 #endif	/* CONFIG_SENSORS_FPRINT_SPICLK */
 
-	pr_info("%s: status=%d\n", __func__, status);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s: status=%d\n", __func__, status);
 	return status;
 }
 
 static void vfsspi_platformUninit(struct vfsspi_devData *vfsSpiDev)
 {
-	pr_info("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
 
 	if (vfsSpiDev != NULL) {
 		free_irq(vfsSpiDev->gpio_irq, vfsSpiDev);
@@ -1904,7 +1980,7 @@ static int vfsspi_parse_dt(struct device *dev, struct vfsspi_devData *data)
 		pr_err("%s: fail to get drdyPin by errno=%d\n", __func__, errorno);
 	} else {
 		data->drdyPin = gpio;
-		pr_info("%s: drdyPin=%d\n", __func__, data->drdyPin);
+		shfp_sensor_log(SHFPS_FLG_OTHER, "%s: drdyPin=%d\n", __func__, data->drdyPin);
 	}
 	return errorno;
 }
@@ -1916,7 +1992,7 @@ int vfsspi_probe(struct spi_device *spi)
 	struct vfsspi_devData *vfsSpiDev = NULL;
 	struct device *dev = NULL;
 
-	pr_info("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
 
 	vfsSpiDev = (struct vfsspi_devData *)kzalloc(sizeof(*vfsSpiDev), GFP_KERNEL);
 
@@ -2003,6 +2079,10 @@ int vfsspi_probe(struct spi_device *spi)
 	vfsspi_deactivate_pinctrl(vfsSpiDev);
 #endif	/* CONFIG_SENSORS_FPRINT_PINCTRL */
 
+	fp_qos_cpu_dma_latency.type = PM_QOS_REQ_ALL_CORES;
+	pm_qos_add_request(&fp_qos_cpu_dma_latency, PM_QOS_CPU_DMA_LATENCY, PM_QOS_DEFAULT_VALUE);
+	wake_lock_init(&shfp_wake_lock, WAKE_LOCK_SUSPEND, "shfp_wake_lock");
+
 	return status;
 }
 
@@ -2012,7 +2092,11 @@ int vfsspi_remove(struct spi_device *spi)
 
 	struct vfsspi_devData *vfsSpiDev = NULL;
 
-	pr_info("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
+
+	pm_qos_remove_request(&fp_qos_cpu_dma_latency);
+	wake_unlock(&shfp_wake_lock);
+	wake_lock_destroy(&shfp_wake_lock);
 
 	vfsSpiDev = spi_get_drvdata(spi);
 
@@ -2062,7 +2146,7 @@ static int __init vfsspi_init(void)
 {
 	int status = 0;
 
-	pr_info("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
 
 	/* register major number for character device */
 	vfsspi_major = 0;
@@ -2075,7 +2159,7 @@ static int __init vfsspi_init(void)
 		return status;
 	}
 	vfsspi_major = status;
-	pr_info("%s vfsspi_major=%d\n", __func__, vfsspi_major);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s vfsspi_major=%d\n", __func__, vfsspi_major);
 
 	vfsSpiDevClass = class_create(THIS_MODULE, "validity_fingerprint");
 
@@ -2095,14 +2179,14 @@ static int __init vfsspi_init(void)
 		unregister_chrdev(vfsspi_major, vfsspi_spi.driver.name);
 		return status;
 	}
-	pr_info("%s init is successful\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s init is successful\n", __func__);
 
 	return status;
 }
 
 static void __exit vfsspi_exit(void)
 {
-	pr_info("%s\n", __func__);
+	shfp_sensor_log(SHFPS_FLG_OTHER, "%s\n", __func__);
 
 	spi_unregister_driver(&vfsspi_spi);
 	class_destroy(vfsSpiDevClass);

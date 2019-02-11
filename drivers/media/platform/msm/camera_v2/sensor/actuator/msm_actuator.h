@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -26,12 +26,15 @@
 	static struct mutex mutexname = __MUTEX_INITIALIZER(mutexname)
 
 #define	MSM_ACTUATOT_MAX_VREGS (10)
+#define	ACTUATOR_MAX_POLL_COUNT 10
 
 struct msm_actuator_ctrl_t;
 
 enum msm_actuator_state_t {
-	ACTUATOR_POWER_UP,
-	ACTUATOR_POWER_DOWN,
+	ACT_ENABLE_STATE,
+	ACT_OPS_ACTIVE,
+	ACT_OPS_INACTIVE,
+	ACT_DISABLE_STATE,
 };
 
 struct msm_actuator_func_tbl {

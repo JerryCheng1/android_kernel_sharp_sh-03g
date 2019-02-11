@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -278,7 +278,7 @@ static void mdss_dsi_20nm_phy_regulator_enable(struct mdss_dsi_ctrl_pdata
 	} else {
 		MIPI_OUTP(phy_io_base + MDSS_DSI_DSIPHY_REGULATOR_CTRL_1,
 			pd->regulator[1]);
-		MIPI_OUTP(phy_io_base +	MDSS_DSI_DSIPHY_REGULATOR_CTRL_2,
+		MIPI_OUTP(phy_io_base + MDSS_DSI_DSIPHY_REGULATOR_CTRL_2,
 			pd->regulator[2]);
 		MIPI_OUTP(phy_io_base + MDSS_DSI_DSIPHY_REGULATOR_CTRL_3,
 			pd->regulator[3]);
@@ -288,7 +288,7 @@ static void mdss_dsi_20nm_phy_regulator_enable(struct mdss_dsi_ctrl_pdata
 			pd->regulator[6]);
 		MIPI_OUTP(ctrl_pdata->phy_io.base + MDSS_DSI_DSIPHY_LDO_CNTRL,
 			0x00);
-		MIPI_OUTP(phy_io_base +	MDSS_DSI_DSIPHY_REGULATOR_CTRL_0,
+		MIPI_OUTP(phy_io_base + MDSS_DSI_DSIPHY_REGULATOR_CTRL_0,
 			pd->regulator[0]);
 	}
 }
@@ -361,6 +361,28 @@ void mdss_dsi_phy_init(struct mdss_dsi_ctrl_pdata *ctrl)
 		mdss_dsi_28nm_phy_init(ctrl);
 }
 
+int mdss_dsi_clk_refresh(struct mdss_panel_data *pdata)
+{
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	int rc = 0;
+
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+							panel_data);
+	rc = mdss_dsi_clk_div_config(&pdata->panel_info,
+			pdata->panel_info.mipi.frame_rate);
+	if (rc) {
+		pr_err("%s: unable to initialize the clk dividers\n",
+								__func__);
+		return rc;
+	}
+	ctrl_pdata->refresh_clk_rate = false;
+	ctrl_pdata->pclk_rate = pdata->panel_info.mipi.dsi_pclk_rate;
+	ctrl_pdata->byte_clk_rate = pdata->panel_info.clk_rate / 8;
+	pr_debug("%s ctrl_pdata->byte_clk_rate=%d ctrl_pdata->pclk_rate=%d\n",
+		__func__, ctrl_pdata->byte_clk_rate, ctrl_pdata->pclk_rate);
+	return rc;
+}
+
 int mdss_dsi_clk_init(struct platform_device *pdev,
 	struct mdss_dsi_ctrl_pdata *ctrl)
 {
@@ -396,10 +418,9 @@ int mdss_dsi_clk_init(struct platform_device *pdev,
 			__func__, rc);
 		goto mdss_dsi_clk_err;
 	}
-
-#if !defined(CONFIG_SHDISP) || defined(SHDISP_DISABLE_HR_VIDEO) /* CUST_ID_00027 */
+#if !defined(CONFIG_SHDISP) || defined(SHDISP_DISABLE_HR_VIDEO) /* CUST_ID_00070 */
 	if ((ctrl->panel_data.panel_info.type == MIPI_CMD_PANEL) ||
-		ctrl->panel_data.panel_info.mipi.dynamic_switch_enabled ||
+		ctrl->panel_data.panel_info.mipi.dms_mode ||
 		ctrl->panel_data.panel_info.ulps_suspend_enabled) {
 #endif /* CONFIG_SHDISP */
 		ctrl->mmss_misc_ahb_clk = clk_get(dev, "core_mmss_clk");
@@ -408,7 +429,7 @@ int mdss_dsi_clk_init(struct platform_device *pdev,
 			pr_info("%s: Unable to get mmss misc ahb clk\n",
 				__func__);
 		}
-#if !defined(CONFIG_SHDISP) || defined(SHDISP_DISABLE_HR_VIDEO) /* CUST_ID_00027 */
+#if !defined(CONFIG_SHDISP) || defined(SHDISP_DISABLE_HR_VIDEO) /* CUST_ID_00070 */
 	}
 #endif /* CONFIG_SHDISP */
 
@@ -580,7 +601,7 @@ struct dsiphy_pll_divider_config pll_divider_config;
 int mdss_dsi_clk_div_config(struct mdss_panel_info *panel_info,
 			    int frame_rate)
 {
-#ifndef CONFIG_SHDISP /* CUST_ID_00070 */
+#ifndef CONFIG_SHDISP /* CUST_ID_00056 */
 	struct mdss_panel_data *pdata  = container_of(panel_info,
 			struct mdss_panel_data, panel_info);
 	struct  mdss_dsi_ctrl_pdata *ctrl_pdata = container_of(pdata,
@@ -621,7 +642,7 @@ int mdss_dsi_clk_div_config(struct mdss_panel_info *panel_info,
 	h_period = mdss_panel_get_htotal(panel_info, true);
 	v_period = mdss_panel_get_vtotal(panel_info);
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00056 */
 	if ((frame_rate != panel_info->mipi.frame_rate) ||
 	    (!panel_info->clk_rate)) {
 #else /* CONFIG_SHDISP */
@@ -1035,9 +1056,9 @@ static int mdss_dsi_ulps_config(struct mdss_dsi_ctrl_pdata *ctrl,
 		/*
 		 * Clear out any phy errors prior to exiting ULPS
 		 * This fixes certain instances where phy does not exit
-		 * ULPS cleanly.
+		 * ULPS cleanly. Also, do not print error during such cases.
 		 */
-		mdss_dsi_dln0_phy_err(ctrl);
+		mdss_dsi_dln0_phy_err(ctrl, false);
 
 		/*
 		 * ULPS Exit Request
@@ -1398,11 +1419,13 @@ static int mdss_dsi_clk_ctrl_sub(struct mdss_dsi_ctrl_pdata *ctrl,
 			 * to enable ULPS when turning off the clocks
 			 * while blanking the panel.
 			 */
-			if (((mdss_dsi_ulps_feature_enabled(pdata)) &&
-				(pdata->panel_info.blank_state !=
-				 MDSS_PANEL_BLANK_BLANK)) ||
-				(pdata->panel_info.ulps_suspend_enabled))
+			if (pdata->panel_info.blank_state ==
+				MDSS_PANEL_BLANK_BLANK) {
+				if (pdata->panel_info.ulps_suspend_enabled)
+					mdss_dsi_ulps_config(ctrl, 1);
+			} else if (mdss_dsi_ulps_feature_enabled(pdata)) {
 				mdss_dsi_ulps_config(ctrl, 1);
+			}
 
 			mdss_dsi_link_clk_stop(ctrl);
 		}

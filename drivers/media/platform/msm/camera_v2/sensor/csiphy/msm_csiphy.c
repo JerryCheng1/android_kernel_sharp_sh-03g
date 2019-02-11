@@ -38,7 +38,13 @@
 #define NUM_LANES_OFFSET                            4
 
 #undef CDBG
+/* SHLOCAL_CAMERA_DRIVERS-> */
+#if 0
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
+#else
+#define CDBG(fmt, args...) do { } while (0)
+#endif
+/* SHLOCAL_CAMERA_DRIVERS<- */
 
 static struct msm_cam_clk_info csiphy_clk_info[CSIPHY_NUM_CLK_MAX];
 static struct v4l2_file_operations msm_csiphy_v4l2_subdev_fops;

@@ -16,7 +16,14 @@
 #include "msm_led_flash.h"
 
 #undef CDBG
+/* SHLOCAL_CAMERA_DRIVERS-> */
+#if 0
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
+#else
+#define CDBG(fmt, args...) do { } while (0)
+#endif
+/* SHLOCAL_CAMERA_DRIVERS<- */
+
 
 static struct v4l2_file_operations msm_led_flash_v4l2_subdev_fops;
 
@@ -117,6 +124,9 @@ int32_t msm_led_i2c_flash_create_v4lsubdev(void *data)
 	fctrl->msm_sd.sd.entity.type = MEDIA_ENT_T_V4L2_SUBDEV;
 	fctrl->msm_sd.sd.entity.group_id = MSM_CAMERA_SUBDEV_LED_FLASH;
 	msm_sd_register(&fctrl->msm_sd);
+
+	msm_led_flash_v4l2_subdev_fops = v4l2_subdev_fops;
+	fctrl->msm_sd.sd.devnode->fops = &msm_led_flash_v4l2_subdev_fops;
 
 	CDBG("probe success\n");
 	return 0;

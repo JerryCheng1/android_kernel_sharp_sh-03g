@@ -27,7 +27,10 @@
 /* ------------------------------------------------------------------------- */
 /* MACROS                                                                    */
 /* ------------------------------------------------------------------------- */
-
+#ifdef SHDISP_SYSFS_LED
+#define SYSFS_LED_SH_LED_1                          (0)
+#define SYSFS_LED_SH_LED_2                          (1)
+#endif /* SHDISP_SYSFS_LED */
 /* ------------------------------------------------------------------------- */
 /* TYPES                                                                     */
 /* ------------------------------------------------------------------------- */
@@ -49,11 +52,10 @@ enum {
     SHDISP_BDIC_REQ_TRI_LED_SET_MODE_AURORA,
     SHDISP_BDIC_REQ_TRI_LED_SET_MODE_RAINBOW,
     SHDISP_BDIC_REQ_TRI_LED_SET_MODE_EMOPATTERN,
-    SHDISP_BDIC_REQ_TRI_LED_SET_MODE_PATTERN1,
-    SHDISP_BDIC_REQ_TRI_LED_SET_MODE_PATTERN2,
     SHDISP_BDIC_REQ_TRI_LED_SET_ONTIME,
     SHDISP_BDIC_REQ_TRI_LED_SET_INTERVAL,
     SHDISP_BDIC_REQ_TRI_LED_SET_COUNT,
+    SHDISP_BDIC_REQ_ILLUMI_TRIPLE_COLOR,
 };
 
 struct shdisp_led_init_param {
@@ -66,6 +68,27 @@ struct shdisp_led_state_str {
     int bdic_chipver;
     int bdic_clrvari_index;
 };
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+enum {
+    ILLUMI_STATE_STOP  = -1,
+    ILLUMI_STATE_WAIT_SET_B2_AREA,
+    ILLUMI_STATE_WAIT_SET_C2_AREA,
+    ILLUMI_STATE_WAIT_SET_A3_AREA,
+    ILLUMI_STATE_WAIT_ANIME_BREAK,
+    ILLUMI_STATE_WAIT_RESTART,
+    ILLUMI_STATE_MAX,
+};
+
+struct shdisp_illumi_state {
+    char colors[ILLUMI_FRAME_MAX];
+    int  count;
+    bool running_state;
+    int  illumi_state;
+    struct workqueue_struct  * workqueue;
+    struct delayed_work works[ILLUMI_STATE_MAX];
+};
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
 
 struct shdisp_bdic_led_color_index {
     unsigned char red;
@@ -83,6 +106,10 @@ void shdisp_bdic_API_TRI_LED_set_request(struct shdisp_tri_led *tmp);
 int  shdisp_bdic_API_TRI_LED_off(void);
 unsigned char shdisp_bdic_API_TRI_LED_get_color_index_and_reedit(struct shdisp_tri_led *tri_led );
 int  shdisp_bdic_API_TRI_LED_normal_on(unsigned char color);
+#ifdef SHDISP_SYSFS_LED
+int shdisp_bdic_API_LED_on(int no, struct shdisp_tri_led led);
+int shdisp_bdic_API_LED_off(int no);
+#endif /* SHDISP_SYSFS_LED */
 void shdisp_bdic_API_TRI_LED_blink_on(unsigned char color, int ontime, int interval, int count);
 void shdisp_bdic_API_TRI_LED_firefly_on(unsigned char color, int ontime, int interval, int count);
 #ifdef SHDISP_ANIME_COLOR_LED
@@ -96,12 +123,14 @@ void shdisp_bdic_API_TRI_LED_flash_on(unsigned char color, int interval, int cou
 void shdisp_bdic_API_TRI_LED_aurora_on(int interval, int count);
 void shdisp_bdic_API_TRI_LED_rainbow_on(int interval, int count);
 #endif /* SHDISP_ILLUMI_COLOR_LED */
-#ifdef SHDISP_EXTEND_COLOR_LED
-void shdisp_bdic_API_TRI_LED_pattern1_on(int interval, int count);
-void shdisp_bdic_API_TRI_LED_pattern2_on(int interval, int count);
-#endif  /* SHDISP_EXTEND_COLOR_LED */
 void shdisp_bdic_API_TRI_LED_emopattern_on(int interval, int count);
 #endif  /* SHDISP_ANIME_COLOR_LED */
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+void shdisp_bdic_API_LED_set_illumi_triple_color(struct shdisp_illumi_triple_color illumi_triple_color);
+void shdisp_bdic_API_LED_clear_illumi_triple_color(void);
+bool shdisp_bdic_API_LED_is_running_illumi_triple_color(void);
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
 
 #ifdef SHDISP_TRI_LED2
 int  shdisp_bdic_API_TRI_LED_off2(void);
@@ -118,12 +147,9 @@ void shdisp_bdic_API_TRI_LED_flash_on2(unsigned char color, int interval, int co
 void shdisp_bdic_API_TRI_LED_aurora_on2(int interval, int count);
 void shdisp_bdic_API_TRI_LED_rainbow_on2(int interval, int count);
 void shdisp_bdic_API_TRI_LED_emopattern_on2(int interval, int count);
-#ifdef SHDISP_EXTEND_COLOR_LED
-void shdisp_bdic_API_TRI_LED_pattern1_on2(int interval, int count);
-void shdisp_bdic_API_TRI_LED_pattern2_on2(int interval, int count);
-#endif  /* SHDISP_EXTEND_COLOR_LED */
 #endif  /* SHDISP_ANIME_COLOR_LED */
 #endif  /* SHDISP_TRI_LED2 */
+void shdisp_bdic_API_TRI_LED_exit(void);
 #if defined(CONFIG_ANDROID_ENGINEERING)
 void shdisp_bdic_API_TRI_LED_INFO_output(void);
 void shdisp_bdic_API_TRI_LED2_INFO_output(void);

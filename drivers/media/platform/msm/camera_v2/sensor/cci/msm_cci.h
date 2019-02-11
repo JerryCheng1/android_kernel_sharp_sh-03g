@@ -31,6 +31,8 @@
 #define CCI_PINCTRL_STATE_SLEEP "cci_suspend"
 
 #define CCI_NUM_CLK_MAX	16
+#define CCI_NUM_CLK_CASES 5
+#define CCI_CLK_SRC_NAME "cci_src_clk"
 #define MSM_CCI_WRITE_DATA_PAYLOAD_SIZE_10 10
 #define MSM_CCI_WRITE_DATA_PAYLOAD_SIZE_11 11
 #define BURST_MIN_FREE_SIZE 8
@@ -118,6 +120,7 @@ struct msm_cci_clk_params_t {
 	uint8_t hw_scl_stretch_en;
 	uint8_t hw_trdhld;
 	uint8_t hw_tsp;
+	uint32_t cci_clk_src;
 };
 
 enum msm_cci_state_t {
@@ -138,6 +141,7 @@ struct cci_device {
 	uint8_t ref_count;
 	enum msm_cci_state_t cci_state;
 	uint32_t num_clk;
+	uint32_t num_clk_cases;
 
 	struct clk *cci_clk[CCI_NUM_CLK_MAX];
 	struct msm_camera_cci_i2c_queue_info
@@ -151,6 +155,7 @@ struct cci_device {
 	uint8_t cci_pinctrl_status;
 	struct regulator *reg_ptr;
 	uint32_t cycles_per_us;
+	uint32_t cci_clk_src;
 	uint8_t payload_size;
 	uint8_t support_seq_write;
 };

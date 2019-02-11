@@ -11,7 +11,7 @@
  */
 
 #include "sharp-shdisp-ir2e71y6.dtsi"
-#include "sharp-shdisp-dsi-panel-andy-dl70-1080p-video.dtsi"
+#include "sharp-shdisp-dsi-panel-andy-dl-1080p-video.dtsi"
 #include "sharp-shdisp-andy.dtsi"
 
 &soc {

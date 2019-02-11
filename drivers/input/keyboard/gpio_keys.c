@@ -32,7 +32,7 @@
 #include <linux/pinctrl/consumer.h>
 
 #ifdef CONFIG_KEYBOARD_GPIO_CUST_SC
-#define COUNT_BUF_SIZE	16
+#define COUNT_BUF_SIZE 16
 #endif
 
 struct gpio_button_data {
@@ -899,7 +899,6 @@ static int gpio_keys_probe(struct platform_device *pdev)
 
 		if (button->wakeup)
 			wakeup = 1;
-
 #ifdef CONFIG_KEYBOARD_GPIO_CUST_SC
 		bdata->count = 0;
 #endif
@@ -1035,8 +1034,9 @@ static int gpio_keys_resume(struct device *dev)
 
 	if (error)
 		return error;
-
-	gpio_keys_report_state(ddata);
+#ifndef CONFIG_KEYBOARD_GPIO_CUST_SC
+	        gpio_keys_report_state(ddata);
+#endif
 	return 0;
 }
 #endif

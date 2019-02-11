@@ -26,6 +26,10 @@
 #include <linux/delay.h>
 #include <linux/regulator/consumer.h>
 #include <linux/delay.h>
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+#include <linux/semaphore.h>
+#include "leds-gpio-ctrl.h"
+#endif /* CONFIG_SHDISP */
 
 #define WLED_MOD_EN_REG(base, n)	(base + 0x60 + n*0x10)
 #define WLED_IDAC_DLY_REG(base, n)	(WLED_MOD_EN_REG(base, n) + 0x01)
@@ -130,7 +134,7 @@
 #define FLASH_TMR_SAFETY		0x00
 #define FLASH_FAULT_DETECT_MASK		0X80
 #define FLASH_HW_VREG_OK		0x40
-#define FLASH_SW_VREG_OK                0x80
+#define FLASH_SW_VREG_OK		0x80
 #define FLASH_VREG_MASK			0xC0
 #define FLASH_STARTUP_DLY_MASK		0x02
 #define FLASH_CURRENT_RAMP_MASK		0xBF
@@ -307,6 +311,28 @@ enum led_mode {
 	MANUAL_MODE,
 };
 
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+enum pierce_diag_mode{
+	LEDS_PIERCE_DIAG_MODE_OFF = 0,
+	LEDS_PIERCE_DIAG_MODE_ON
+};
+
+enum pierce_ins_mode{
+	LEDS_PIERCE_INS_MODE_OFF = 0,
+	LEDS_PIERCE_INS_MODE_ON
+};
+
+enum pierce_sel_pmi{
+	LEDS_PIERCE_SEL_PMI = 0,
+	LEDS_PIERCE_SEL_BDIC
+};
+
+enum {
+	LEDS_PIERCE_REQUEST = 0,
+	LEDS_PIERCE_NOT_REQUEST
+};
+#endif /* CONFIG_SHDISP */
+
 static u8 wled_debug_regs[] = {
 	/* brightness registers */
 	0x40, 0x41, 0x42, 0x43, 0x44, 0x45,
@@ -363,6 +389,9 @@ struct pwm_config_data {
 	u8	default_mode;
 	bool	pwm_enabled;
 	bool use_blink;
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+	bool use_pierce;
+#endif /* CONFIG_SHDISP */
 	bool blinking;
 };
 
@@ -461,11 +490,11 @@ struct flash_config_data {
 	bool	safety_timer;
 	bool	torch_enable;
 	bool	flash_reg_get;
-	bool    flash_wa_reg_get;
+	bool	flash_wa_reg_get;
 	bool	flash_on;
 	bool	torch_on;
 	bool	vreg_ok;
-	bool    no_smbb_support;
+	bool	no_smbb_support;
 	struct regulator *flash_boost_reg;
 	struct regulator *torch_boost_reg;
 	struct regulator *flash_wa_reg;
@@ -551,10 +580,42 @@ struct qpnp_led_data {
 	struct mpp_config_data	*mpp_cfg;
 	struct gpio_config_data	*gpio_cfg;
 	int			max_current;
-	bool			default_on;
-	bool                    in_order_command_processing;
+	bool		default_on;
+	bool		in_order_command_processing;
 	int			turn_off_delay_ms;
 };
+
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+/* ------------------------------------------------------------------------- */
+/* VARIABLES                                                                 */
+/* ------------------------------------------------------------------------- */
+static struct semaphore			led_class_sem;
+static struct qpnp_led_data		*leds_led_data;
+
+static struct {
+	enum pierce_diag_mode		diag_mode;
+	enum pierce_ins_mode		insert;
+	enum pierce_sel_pmi			select;
+	int							pmi_brightness;
+	int							pmi_blinking;
+} leds_pierce_status;
+
+/* ------------------------------------------------------------------------- */
+/* PROTOTYPES                                                                */
+/* ------------------------------------------------------------------------- */
+static void led_class_pierce_initialize(void);
+static void led_class_semaphore_start(void);
+static void led_class_semaphore_end(void);
+static int led_class_dissw_store(struct qpnp_led_data *led);
+static void led_class_brightness_store(struct qpnp_led_data *led_cdev, int value);
+static void led_class_blinking_store(struct qpnp_led_data *led, int value);
+static int led_class_insert_sp_pierce(void);
+static int led_class_remove_sp_pierce(void);
+static void led_class_sp_pierce(enum pierce_ins_mode request);
+static int led_class_select_sp_pierce(int value);
+static int led_class_set_pierce_select(enum pierce_sel_pmi value);
+static int led_class_set_pierce_diagmode(enum pierce_diag_mode value);
+#endif /* CONFIG_SHDISP */
 
 static DEFINE_MUTEX(flash_lock);
 static struct pwm_device *kpdbl_master;
@@ -1796,6 +1857,42 @@ static int qpnp_rgb_set(struct qpnp_led_data *led)
 	return 0;
 }
 
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+static void pierce_qpnp_led_set(struct led_classdev *led_cdev,
+				enum led_brightness value)
+{
+	struct qpnp_led_data *led;
+
+	led = container_of(led_cdev, struct qpnp_led_data, cdev);
+	if (value < LED_OFF) {
+		dev_err(&led->spmi_dev->dev, "Invalid brightness value\n");
+		return;
+	}
+
+	if (value > led->cdev.max_brightness) {
+		value = led->cdev.max_brightness;
+	}
+
+	pr_debug("[leds]%s() in value(%d)\n", __func__, value);
+
+	if (led->id == QPNP_ID_RGB_RED) {
+		led_class_semaphore_start();
+		leds_pierce_status.pmi_brightness = (int)value;
+		leds_pierce_status.pmi_blinking = LED_OFF;
+		if (led_class_dissw_store(led) == LEDS_PIERCE_NOT_REQUEST) {
+			led_class_semaphore_end();
+			return;
+		}
+		led_class_brightness_store(led, value);
+		led_class_semaphore_end();
+	} else {
+		led_class_brightness_store(led, value);
+	}
+
+	pr_debug("[leds]%s() out \n", __func__);
+}
+#endif /* CONFIG_SHDISP */
+
 static void qpnp_led_set(struct led_classdev *led_cdev,
 				enum led_brightness value)
 {
@@ -1822,10 +1919,21 @@ static void __qpnp_led_work(struct qpnp_led_data *led,
 {
 	int rc;
 
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+	if (led->id == QPNP_ID_FLASH1_LED0 || led->id == QPNP_ID_FLASH1_LED1) {
+		mutex_lock(&flash_lock);
+	} else {
+		if (led->id == QPNP_ID_RGB_RED) {
+			led_class_semaphore_start();
+		}
+		mutex_lock(&led->lock);
+	}
+#else /* CONFIG_SHDISP */
 	if (led->id == QPNP_ID_FLASH1_LED0 || led->id == QPNP_ID_FLASH1_LED1)
 		mutex_lock(&flash_lock);
 	else
 		mutex_lock(&led->lock);
+#endif /* CONFIG_SHDISP */
 
 	switch (led->id) {
 	case QPNP_ID_WLED:
@@ -1842,6 +1950,13 @@ static void __qpnp_led_work(struct qpnp_led_data *led,
 				"FLASH set brightness failed (%d)\n", rc);
 		break;
 	case QPNP_ID_RGB_RED:
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+		rc = qpnp_rgb_set(led);
+		if (rc < 0)
+			dev_err(&led->spmi_dev->dev,
+				"RED set brightness failed (%d)\n", rc);
+		break;
+#endif /* CONFIG_SHDISP */
 	case QPNP_ID_RGB_GREEN:
 	case QPNP_ID_RGB_BLUE:
 		rc = qpnp_rgb_set(led);
@@ -1872,10 +1987,21 @@ static void __qpnp_led_work(struct qpnp_led_data *led,
 		dev_err(&led->spmi_dev->dev, "Invalid LED(%d)\n", led->id);
 		break;
 	}
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+	if (led->id == QPNP_ID_FLASH1_LED0 || led->id == QPNP_ID_FLASH1_LED1) {
+		mutex_unlock(&flash_lock);
+	} else {
+		mutex_unlock(&led->lock);
+		if (led->id == QPNP_ID_RGB_RED) {
+			led_class_semaphore_end();
+		}
+	}
+#else /* CONFIG_SHDISP */
 	if (led->id == QPNP_ID_FLASH1_LED0 || led->id == QPNP_ID_FLASH1_LED1)
 		mutex_unlock(&flash_lock);
 	else
 		mutex_unlock(&led->lock);
+#endif /* CONFIG_SHDISP */
 
 }
 
@@ -2614,7 +2740,13 @@ static void led_blink(struct qpnp_led_data *led,
 {
 	int rc;
 
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+	if (led->id != QPNP_ID_RGB_RED) {
+		flush_work(&led->work);
+	}
+#else /* CONFIG_SHDISP */
 	flush_work(&led->work);
+#endif /* CONFIG_SHDISP */
 	mutex_lock(&led->lock);
 	if (pwm_cfg->use_blink) {
 		if (led->cdev.brightness) {
@@ -2635,8 +2767,16 @@ static void led_blink(struct qpnp_led_data *led,
 		}
 		pwm_free(pwm_cfg->pwm_dev);
 		qpnp_pwm_init(pwm_cfg, led->spmi_dev, led->cdev.name);
+
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+		if (led->id == QPNP_ID_RGB_RED) {
+			led_class_brightness_store(led, led->cdev.brightness);
+			rc = 0;
+		} else if ((led->id == QPNP_ID_RGB_GREEN) || (led->id == QPNP_ID_RGB_BLUE)) {
+#else /* CONFIG_SHDISP */
 		if (led->id == QPNP_ID_RGB_RED || led->id == QPNP_ID_RGB_GREEN
 				|| led->id == QPNP_ID_RGB_BLUE) {
+#endif /* CONFIG_SHDISP */
 			rc = qpnp_rgb_set(led);
 			if (rc < 0)
 				dev_err(&led->spmi_dev->dev,
@@ -2668,7 +2808,11 @@ static ssize_t blink_store(struct device *dev,
 	ret = kstrtoul(buf, 10, &blinking);
 	if (ret)
 		return ret;
+
+	pr_debug("[leds]%s() in blinking(%d)\n", __func__, (int)blinking);
+
 	led = container_of(led_cdev, struct qpnp_led_data, cdev);
+
 	led->cdev.brightness = blinking ? led->cdev.max_brightness : 0;
 
 	switch (led->id) {
@@ -2676,6 +2820,18 @@ static ssize_t blink_store(struct device *dev,
 		led_blink(led, led->mpp_cfg->pwm_cfg);
 		break;
 	case QPNP_ID_RGB_RED:
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+		led_class_semaphore_start();
+		leds_pierce_status.pmi_blinking = blinking ? 1 : LED_OFF;
+		leds_pierce_status.pmi_brightness = LED_OFF;
+		if (led_class_dissw_store(led) == LEDS_PIERCE_NOT_REQUEST) {
+			led_class_semaphore_end();
+			return count;
+		}
+		led_blink(led, led->rgb_cfg->pwm_cfg);
+		led_class_semaphore_end();
+		break;
+#endif /* CONFIG_SHDISP */
 	case QPNP_ID_RGB_GREEN:
 	case QPNP_ID_RGB_BLUE:
 		led_blink(led, led->rgb_cfg->pwm_cfg);
@@ -2687,8 +2843,364 @@ static ssize_t blink_store(struct device *dev,
 		dev_err(&led->spmi_dev->dev, "Invalid LED id type for blink\n");
 		return -EINVAL;
 	}
+
+	pr_debug("[leds]%s() out \n", __func__);
 	return count;
 }
+
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+/* ------------------------------------------------------------------------- */
+/* led_class_pierce_initialize                                               */
+/* ------------------------------------------------------------------------- */
+static void led_class_pierce_initialize(void)
+{
+	sema_init(&led_class_sem, 1);
+
+	memset(&leds_pierce_status, 0, sizeof(leds_pierce_status));
+
+}
+
+/* ------------------------------------------------------------------------- */
+/* led_class_semaphore_start                                                 */
+/* ------------------------------------------------------------------------- */
+static void led_class_semaphore_start(void)
+{
+	down(&led_class_sem);
+}
+
+/* ------------------------------------------------------------------------- */
+/* led_class_semaphore_end                                                   */
+/* ------------------------------------------------------------------------- */
+static void led_class_semaphore_end(void)
+{
+	up(&led_class_sem);
+}
+/* ------------------------------------------------------------------------- */
+/* led_class_dissw_store                                                     */
+/* ------------------------------------------------------------------------- */
+static int led_class_dissw_store(struct qpnp_led_data *led)
+{
+	int value = led->cdev.brightness;
+
+	if (led->id == QPNP_ID_RGB_RED) {
+		pr_debug("[leds]%s() in\n", __func__);
+
+		if (value != LED_OFF) {
+			if ((leds_pierce_status.insert == LEDS_PIERCE_INS_MODE_OFF) &&
+				(leds_pierce_status.diag_mode == LEDS_PIERCE_DIAG_MODE_OFF)) {
+				pr_debug("[leds]%s() PMI LED on request but removed pierce\n", __func__);
+				return LEDS_PIERCE_NOT_REQUEST;
+			}
+			led_gpio_set_value(LEDS_DIS_SW_GPIO, LEDS_GPIO_HIGH);
+			if (leds_pierce_status.select != LEDS_PIERCE_SEL_PMI) {
+				pr_warning("[leds]%s() <warning> PMI LED on but select BDIC\n", __func__);
+			}
+		} else {
+			if (leds_pierce_status.select == LEDS_PIERCE_SEL_PMI) {
+				led_gpio_set_value(LEDS_DIS_SW_GPIO, LEDS_GPIO_LOW);
+			}
+		}
+
+		pr_debug("[leds]%s() out\n", __func__);
+	}
+
+	return LEDS_PIERCE_REQUEST;
+}
+
+/* ------------------------------------------------------------------------- */
+/* led_class_brightness_store                                                */
+/* ------------------------------------------------------------------------- */
+static void led_class_brightness_store(struct qpnp_led_data *led, int value)
+{
+	led->cdev.brightness = (unsigned long)value;
+	if (led->in_order_command_processing) {
+		queue_work(led->workqueue, &led->work);
+	} else {
+		schedule_work(&led->work);
+	}
+}
+
+/* ------------------------------------------------------------------------- */
+/* led_class_blinking_store                                                  */
+/* ------------------------------------------------------------------------- */
+static void led_class_blinking_store(struct qpnp_led_data *led, int value)
+{
+	led->cdev.brightness = value ? led->cdev.max_brightness : 0;
+	led_blink(led, led->rgb_cfg->pwm_cfg);
+}
+
+/* ------------------------------------------------------------------------- */
+/* led_class_insert_sp_pierce                                                */
+/* ------------------------------------------------------------------------- */
+static int led_class_insert_sp_pierce(void)
+{
+	int ret = 0;
+
+	pr_debug("[leds]%s() in\n", __func__);
+
+	if (leds_pierce_status.insert == LEDS_PIERCE_INS_MODE_ON) {
+		return ret;
+	}
+
+	leds_pierce_status.insert = LEDS_PIERCE_INS_MODE_ON;
+
+	switch (leds_pierce_status.select) {
+	case LEDS_PIERCE_SEL_PMI:
+		if ((leds_pierce_status.pmi_brightness != LED_OFF) ||
+			(leds_pierce_status.pmi_blinking != LED_OFF)) {
+			ret = led_gpio_set_value(LEDS_DIS_SW_GPIO, LEDS_GPIO_HIGH);
+			if (ret != 0) {
+				return -EIO;
+			}
+			led_class_sp_pierce(LEDS_PIERCE_INS_MODE_ON);
+		}
+		break;
+	case LEDS_PIERCE_SEL_BDIC:
+		ret = led_gpio_set_value(LEDS_DIS_SW_GPIO, LEDS_GPIO_HIGH);
+		break;
+	default:
+		ret = -EIO;
+	}
+
+	pr_debug("[leds]%s() out %d\n", __func__, ret);
+	return ret;
+}
+
+/* ------------------------------------------------------------------------- */
+/* led_class_remove_sp_pierce                                                */
+/* ------------------------------------------------------------------------- */
+static int led_class_remove_sp_pierce(void)
+{
+	int ret = 0;
+
+	pr_debug("[leds]%s() in\n", __func__);
+
+	if (leds_pierce_status.insert == LEDS_PIERCE_INS_MODE_OFF) {
+		return ret;
+	}
+
+	leds_pierce_status.insert = LEDS_PIERCE_INS_MODE_OFF;
+
+	if (leds_pierce_status.diag_mode == LEDS_PIERCE_DIAG_MODE_ON) {
+		pr_debug("[leds]%s() diag_mode on\n", __func__);
+		return 0;
+	}
+
+	ret = led_gpio_set_value(LEDS_DIS_SW_GPIO, LEDS_GPIO_LOW);
+	if (ret != 0) {
+		return -EIO;
+	}
+
+	if (leds_pierce_status.select == LEDS_PIERCE_SEL_PMI) {
+		if ((leds_pierce_status.pmi_brightness != LED_OFF) ||
+			(leds_pierce_status.pmi_blinking != LED_OFF)) {
+			led_class_sp_pierce(LEDS_PIERCE_INS_MODE_OFF);
+		}
+	}
+
+	pr_debug("[leds]%s() out %d\n", __func__, ret);
+	return 0;
+}
+
+/* ------------------------------------------------------------------------- */
+/* led_class_sp_pierce                                                       */
+/* ------------------------------------------------------------------------- */
+static void led_class_sp_pierce(enum pierce_ins_mode request)
+{
+	pr_debug("[leds]%s() in\n", __func__);
+
+	if (request == LEDS_PIERCE_INS_MODE_ON) {
+		if (leds_pierce_status.pmi_brightness != LED_OFF) {
+			led_class_brightness_store(leds_led_data, leds_pierce_status.pmi_brightness);
+		}
+		if (leds_pierce_status.pmi_blinking != LED_OFF) {
+			led_class_blinking_store(leds_led_data, leds_pierce_status.pmi_blinking);
+		}
+	} else {
+		if (leds_pierce_status.pmi_brightness != LED_OFF) {
+			led_class_brightness_store(leds_led_data, LED_OFF);
+		}
+		if (leds_pierce_status.pmi_blinking != LED_OFF) {
+			led_class_blinking_store(leds_led_data, LED_OFF);
+		}
+	}
+
+	pr_debug("[leds]%s() out\n", __func__);
+	return;
+}
+
+/* ------------------------------------------------------------------------- */
+/* led_class_select_sp_pierce                                                */
+/* ------------------------------------------------------------------------- */
+static int led_class_select_sp_pierce(int value)
+{
+	int ret = 0;
+
+	switch (value) {
+	case LEDS_PIERCE_SEL_PMI:
+		ret = led_gpio_set_value(LEDS_SEL_PMI_GPIO, LEDS_GPIO_HIGH);
+		break;
+	case LEDS_PIERCE_SEL_BDIC:
+		if ((leds_pierce_status.pmi_brightness != LED_OFF) ||
+			(leds_pierce_status.pmi_blinking != LED_OFF)) {
+			pr_warning("[leds]%s() <warning> select BDIC but PMI LED on \n", __func__);
+		}
+		ret = led_gpio_set_value(LEDS_SEL_PMI_GPIO, LEDS_GPIO_LOW);
+
+		if ((leds_pierce_status.insert == LEDS_PIERCE_INS_MODE_ON) ||
+			(leds_pierce_status.diag_mode == LEDS_PIERCE_DIAG_MODE_ON)) {
+			led_gpio_set_value(LEDS_DIS_SW_GPIO, LEDS_GPIO_HIGH);
+		}
+		break;
+	default:
+		ret = -EIO;
+	}
+
+	return ret;
+}
+
+/* ------------------------------------------------------------------------- */
+/* led_class_set_pierce_select                                               */
+/* ------------------------------------------------------------------------- */
+static int led_class_set_pierce_select(enum pierce_sel_pmi value)
+{
+	int ret = 0;
+
+	pr_debug("[leds]%s() in value(%d) \n", __func__, value);
+
+	if ((value != LEDS_PIERCE_SEL_PMI) && (value != LEDS_PIERCE_SEL_BDIC)) {
+		return -EIO;
+	}
+
+	led_class_semaphore_start();
+	leds_pierce_status.select = value;
+	ret = led_class_select_sp_pierce(value);
+	led_class_semaphore_end();
+
+	pr_debug("[leds]%s() out %d\n", __func__, ret);
+	return ret;
+}
+
+/* ------------------------------------------------------------------------- */
+/* led_class_set_pierce_diagmode                                             */
+/* ------------------------------------------------------------------------- */
+static int led_class_set_pierce_diagmode(enum pierce_diag_mode value)
+{
+	int ret = 0;
+
+	pr_debug("[leds]%s() in value(%d) \n", __func__, value);
+
+	if ((value != LEDS_PIERCE_DIAG_MODE_OFF) && (value != LEDS_PIERCE_DIAG_MODE_ON)) {
+		return -EIO;
+	}
+
+	led_class_semaphore_start();
+	if (leds_pierce_status.diag_mode == value) {
+		led_class_semaphore_end();
+		return ret;
+	}
+
+	leds_pierce_status.diag_mode = value;
+	led_class_semaphore_end();
+
+	pr_debug("[leds]%s() out %d\n", __func__, ret);
+	return ret;
+}
+
+/* ------------------------------------------------------------------------- */
+/* select_store                                                              */
+/* ------------------------------------------------------------------------- */
+static ssize_t select_store(struct device *dev,
+	struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	struct qpnp_led_data *led;
+	unsigned long state;
+	struct led_classdev *led_cdev = dev_get_drvdata(dev);
+	ssize_t ret = -EINVAL;
+
+	ret = kstrtoul(buf, 10, &state);
+	if (ret) {
+		return ret;
+	}
+	led = container_of(led_cdev, struct qpnp_led_data, cdev);
+
+	if (led->id == QPNP_ID_RGB_RED) {
+		if (led_class_set_pierce_select((int)state) != 0) {
+			return -EINVAL;
+		}
+	} else {
+		dev_err(&led->spmi_dev->dev, "Invalid LED id type for select\n");
+		return -EINVAL;
+	}
+	return count;
+}
+
+/* ------------------------------------------------------------------------- */
+/* select_show                                                               */
+/* ------------------------------------------------------------------------- */
+static ssize_t select_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct qpnp_led_data *led;
+	struct led_classdev *led_cdev = dev_get_drvdata(dev);
+
+	led = container_of(led_cdev, struct qpnp_led_data, cdev);
+	if (led->id == QPNP_ID_RGB_RED) {
+		return snprintf(buf, 20, "%u\n", leds_pierce_status.select);
+	}
+
+	dev_err(&led->spmi_dev->dev, "Invalid LED id type for select\n");
+	return -EINVAL;
+}
+
+/* ------------------------------------------------------------------------- */
+/* insert_store                                                              */
+/* ------------------------------------------------------------------------- */
+static ssize_t insert_store(struct device *dev,
+	struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	struct qpnp_led_data *led;
+	unsigned long state;
+	struct led_classdev *led_cdev = dev_get_drvdata(dev);
+	ssize_t ret = -EINVAL;
+
+	ret = kstrtoul(buf, 10, &state);
+	if (ret) {
+		return ret;
+	}
+	led = container_of(led_cdev, struct qpnp_led_data, cdev);
+
+	if (led->id == QPNP_ID_RGB_RED) {
+		if (led_class_set_pierce_diagmode((int)state) != 0) {
+			return -EINVAL;
+		}
+	} else {
+		dev_err(&led->spmi_dev->dev, "Invalid LED id type for insert\n");
+		return -EINVAL;
+	}
+	return count;
+}
+
+/* ------------------------------------------------------------------------- */
+/* insert_show                                                               */
+/* ------------------------------------------------------------------------- */
+static ssize_t insert_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct qpnp_led_data *led;
+	struct led_classdev *led_cdev = dev_get_drvdata(dev);
+
+	led = container_of(led_cdev, struct qpnp_led_data, cdev);
+	if (led->id == QPNP_ID_RGB_RED) {
+		return snprintf(buf, 20, "%u,%u\n", leds_pierce_status.diag_mode, leds_pierce_status.insert);
+	}
+
+	dev_err(&led->spmi_dev->dev, "Invalid LED id type for insert\n");
+	return -EINVAL;
+}
+#endif /* CONFIG_SHDISP */
 
 static DEVICE_ATTR(led_mode, 0664, NULL, led_mode_store);
 static DEVICE_ATTR(strobe, 0664, NULL, led_strobe_type_store);
@@ -2700,6 +3212,10 @@ static DEVICE_ATTR(ramp_step_ms, 0664, NULL, ramp_step_ms_store);
 static DEVICE_ATTR(lut_flags, 0664, NULL, lut_flags_store);
 static DEVICE_ATTR(duty_pcts, 0664, NULL, duty_pcts_store);
 static DEVICE_ATTR(blink, 0664, NULL, blink_store);
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+static DEVICE_ATTR(select, 0664, select_show, select_store);
+static DEVICE_ATTR(insert, 0664, insert_show, insert_store);
+#endif /* CONFIG_SHDISP */
 
 static struct attribute *led_attrs[] = {
 	&dev_attr_led_mode.attr,
@@ -2730,6 +3246,17 @@ static struct attribute *blink_attrs[] = {
 	&dev_attr_blink.attr,
 	NULL
 };
+
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+static struct attribute *pierce_attrs[] = {
+	&dev_attr_select.attr,
+	&dev_attr_insert.attr,
+	NULL
+};
+static const struct attribute_group pierce_attr_group = {
+	.attrs = pierce_attrs,
+};
+#endif /* CONFIG_SHDISP */
 
 static const struct attribute_group pwm_attr_group = {
 	.attrs = pwm_attrs,
@@ -3429,6 +3956,10 @@ static int qpnp_get_config_pwm(struct pwm_config_data *pwm_cfg,
 
 	pwm_cfg->use_blink =
 		of_property_read_bool(node, "qcom,use-blink");
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+	pwm_cfg->use_pierce =
+		of_property_read_bool(node, "qcom,use-pierce");
+#endif /* CONFIG_SHDISP */
 
 	if (pwm_cfg->mode == LPG_MODE || pwm_cfg->use_blink) {
 		pwm_cfg->duty_cycles =
@@ -3550,6 +4081,9 @@ static int qpnp_get_config_pwm(struct pwm_config_data *pwm_cfg,
 
 bad_lpg_params:
 	pwm_cfg->use_blink = false;
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+	pwm_cfg->use_pierce = false;
+#endif /* CONFIG_SHDISP */
 	if (pwm_cfg->mode == PWM_MODE) {
 		dev_err(&spmi_dev->dev, "LPG parameters not set for" \
 			" blink mode, defaulting to PWM mode\n");
@@ -3931,7 +4465,12 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 			goto fail_id_check;
 		}
 
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+		leds_led_data = led;
+		led->cdev.brightness_set    = pierce_qpnp_led_set;
+#else /* CONFIG_SHDISP */
 		led->cdev.brightness_set    = qpnp_led_set;
+#endif /* CONFIG_SHDISP */
 		led->cdev.brightness_get    = qpnp_led_get;
 
 		if (strncmp(led_label, "wled", sizeof("wled")) == 0) {
@@ -4084,6 +4623,14 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 				if (rc)
 					goto fail_id_check;
 			}
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+			if (led->rgb_cfg->pwm_cfg->use_pierce) {
+				rc = sysfs_create_group(&led->cdev.dev->kobj,
+					&pierce_attr_group);
+				if (rc)
+					goto fail_id_check;
+			}
+#endif /* CONFIG_SHDISP */
 		} else if (led->id == QPNP_ID_KPDBL) {
 			if (led->kpdbl_cfg->pwm_cfg->mode == PWM_MODE) {
 				rc = sysfs_create_group(&led->cdev.dev->kobj,
@@ -4244,6 +4791,10 @@ static struct spmi_driver qpnp_leds_driver = {
 
 static int __init qpnp_led_init(void)
 {
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+	led_class_pierce_initialize();
+#endif /* CONFIG_SHDISP */
+
 	return spmi_driver_register(&qpnp_leds_driver);
 }
 module_init(qpnp_led_init);
@@ -4253,6 +4804,44 @@ static void __exit qpnp_led_exit(void)
 	spmi_driver_unregister(&qpnp_leds_driver);
 }
 module_exit(qpnp_led_exit);
+
+#ifdef CONFIG_SHDISP  /* CUST_ID_00057 */
+/* ------------------------------------------------------------------------- */
+/* leds_api_insert_sp_pierce                                                 */
+/* ------------------------------------------------------------------------- */
+int leds_api_insert_sp_pierce(void)
+{
+	int ret = 0;
+
+	pr_debug("[leds]%s() in\n", __func__);
+
+	led_class_semaphore_start();
+	led_class_insert_sp_pierce();
+	led_class_semaphore_end();
+
+	pr_debug("[leds]%s() out %d\n", __func__, ret);
+	return ret;
+}
+EXPORT_SYMBOL(leds_api_insert_sp_pierce);
+
+/* ------------------------------------------------------------------------- */
+/* leds_api_remove_sp_pierce                                                 */
+/* ------------------------------------------------------------------------- */
+int leds_api_remove_sp_pierce(void)
+{
+	int ret = 0;
+
+	pr_debug("[leds]%s() in\n", __func__);
+
+	led_class_semaphore_start();
+	led_class_remove_sp_pierce();
+	led_class_semaphore_end();
+
+	pr_debug("[leds]%s() out %d\n", __func__, ret);
+	return 0;
+}
+EXPORT_SYMBOL(leds_api_remove_sp_pierce);
+#endif /* CONFIG_SHDISP */
 
 MODULE_DESCRIPTION("QPNP LEDs driver");
 MODULE_LICENSE("GPL v2");

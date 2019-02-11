@@ -21,6 +21,8 @@
 /* ------------------------------------------------------------------------- */
 /* INCLUDE FILES                                                             */
 /* ------------------------------------------------------------------------- */
+#include <linux/platform_device.h>
+#include <linux/irq.h>
 
 /* ------------------------------------------------------------------------- */
 /* DEBUG MACROS                                                              */
@@ -37,33 +39,59 @@
 #define SHDISP_GPIO_NUM_BL_RST_N            (28)
 #define SHDISP_GPIO_NUM_PANEL_RST_N         (78)
 #define SHDISP_GPIO_NUM_CLK_SEL             (107)
-#define SHDISP_GPIO_NUM_ANDY_VDD            (107)
+#define SHDISP_GPIO_NUM_PANEL_VDD           (107)
+
 #define SHDISP_GPIO_NUM_MIPI_ERROR          (34)
-#define SHDISP_GPIO_NUM_UPPER_UNIT ("gp-63")
-#define SHDISP_GPIO_PIN_UPPER_UNIT ("fd510000.pinctrl")
+#if defined(CONFIG_SHDISP_PANEL_ANDY)
+#define SHDISP_GPIO_NUM_UPPER_UNIT          ("gp-63")
+#else  /* CONFIG_SHDISP_PANEL_ANDY */
+#define SHDISP_GPIO_NUM_UPPER_UNIT          ("gp-69")
+#endif /* CONFIG_SHDISP_PANEL_ANDY */
+#define SHDISP_GPIO_PIN_UPPER_UNIT          ("fd510000.pinctrl")
 
-#define SHDISP_HW_REV_ES0                   (0x00)            /* ES0   */
-#define SHDISP_HW_REV_ES1                   (0x01)            /* ES1   */
-#define SHDISP_HW_REV_ES2                   (0x02)            /* ES2   */
-#define SHDISP_HW_REV_PP1                   (0x03)            /* PP1   */
-#define SHDISP_HW_REV_PP15                  (0x04)            /* PP1.5 */
-#define SHDISP_HW_REV_PP2                   (0x05)            /* PP2   */
-#define SHDISP_HW_REV_PP25                  (0x06)            /* PP2.5 */
-#define SHDISP_HW_REV_MP                    (0x07)            /* MP    */
+enum {
+    SHDISP_HW_REV_ES0,
+    SHDISP_HW_REV_ES1,
+    SHDISP_HW_REV_ES15,
+    SHDISP_HW_REV_PP1,
+    SHDISP_HW_REV_PP15,
+    SHDISP_HW_REV_PP2,
+    SHDISP_HW_REV_PP25,
+    SHDISP_HW_REV_MP,
+};
 
-#define SHDISP_HW_REV_BIT_ES0               (0)
-#define SHDISP_HW_REV_BIT_ES1               (1)
-#define SHDISP_HW_REV_BIT_ES2               (2)
-#define SHDISP_HW_REV_BIT_PP1               (3)
-#define SHDISP_HW_REV_BIT_PP2               (5)
-#define SHDISP_HW_REV_BIT_RESERVE1          (4)
-#define SHDISP_HW_REV_BIT_RESERVE2          (6)
-#define SHDISP_HW_REV_BIT_MP                (7)
+#define SHDISP_HW_REV_BIT(bit3, bit2, bit1) (((bit3) << 2) | ((bit2) << 1) | (bit1))
+
+#define SHDISP_HW_REV_BIT_ES0               SHDISP_HW_REV_BIT(0, 0, 0)
+#define SHDISP_HW_REV_BIT_ES1               SHDISP_HW_REV_BIT(0, 0, 1)
+#define SHDISP_HW_REV_BIT_ES15              SHDISP_HW_REV_BIT(0, 1, 0)
+#define SHDISP_HW_REV_BIT_PP1               SHDISP_HW_REV_BIT(0, 1, 1)
+#define SHDISP_HW_REV_BIT_PP15              SHDISP_HW_REV_BIT(1, 0, 0)
+#define SHDISP_HW_REV_BIT_PP2               SHDISP_HW_REV_BIT(1, 0, 1)
+#define SHDISP_HW_REV_BIT_PP25              SHDISP_HW_REV_BIT(1, 1, 0)
+#define SHDISP_HW_REV_BIT_MP                SHDISP_HW_REV_BIT(1, 1, 1)
+
+#define SHDISP_HW_REV_TABLE_SIZE            (8)
+#define SHDISP_HW_REV_TABLE_ITEMS                     \
+        {SHDISP_HW_REV_BIT_ES0,  SHDISP_HW_REV_ES0},  \
+        {SHDISP_HW_REV_BIT_ES1,  SHDISP_HW_REV_ES1},  \
+        {SHDISP_HW_REV_BIT_ES15, SHDISP_HW_REV_ES15}, \
+        {SHDISP_HW_REV_BIT_PP1,  SHDISP_HW_REV_PP1},  \
+        {SHDISP_HW_REV_BIT_PP15, SHDISP_HW_REV_PP15}, \
+        {SHDISP_HW_REV_BIT_PP2,  SHDISP_HW_REV_PP2},  \
+        {SHDISP_HW_REV_BIT_PP25, SHDISP_HW_REV_PP25}, \
+        {SHDISP_HW_REV_BIT_MP,   SHDISP_HW_REV_MP},   \
 
 #define SHDISP_BDIC_I2C_DEVNAME             ("sharp,bdic_i2c")
 #define SHDISP_SENSOR_DEVNAME               ("sharp,sensor_i2c")
 
 #define WAIT_1FRAME_US                      (16666)
+
+#define SHDISP_DEBUGFLG_BIT_KERNEL_LOG      (0x01)
+#define SHDISP_DEBUGFLG_BIT_USER_LOG        (0x02)
+#define SHDISP_DEBUGFLG_BIT_APPSBL_LOG      (0x04)
+#define SHDISP_DEBUGFLG_BIT_SBL1_LOG        (0x08)
+#define SHDISP_DEBUGFLG_BIT_MDP_DUMP        (0x10)
 
 /* ------------------------------------------------------------------------- */
 /* TYPES                                                                     */
@@ -89,6 +117,9 @@ enum {
 /* ------------------------------------------------------------------------- */
 int  shdisp_SYS_API_Host_control(int cmd, unsigned long rate);
 void shdisp_SYS_API_delay_us(unsigned long usec);
+void shdisp_SYS_API_msleep(unsigned int msec);
+void shdisp_SYS_API_usleep(unsigned int usec);
+
 void shdisp_SYS_API_Host_gpio_init(void);
 void shdisp_SYS_API_Host_gpio_exit(void);
 int  shdisp_SYS_API_Host_gpio_request(int num, char *label);
@@ -98,10 +129,10 @@ int  shdisp_SYS_API_get_Host_gpio(int num);
 int  shdisp_SYS_API_check_upper_unit(int gpio_no);
 
 void shdisp_SYS_API_set_irq_port(int irq_port, struct platform_device *pdev);
-int  shdisp_SYS_API_request_irq(irqreturn_t (*irq_handler)( int , void * ) );
+int  shdisp_SYS_API_request_irq(irqreturn_t (*irq_handler)(int , void *));
 void shdisp_SYS_API_free_irq(void);
 void shdisp_SYS_API_set_irq_init(void);
-int  shdisp_SYS_API_set_irq( int enable );
+int  shdisp_SYS_API_set_irq(int enable);
 
 int  shdisp_SYS_API_bdic_i2c_init(void);
 int  shdisp_SYS_API_bdic_i2c_exit(void);
@@ -119,6 +150,13 @@ int  shdisp_SYS_API_panel_external_clk_ctl(int enable);
 int  shdisp_SYS_API_Host_i2c_send(unsigned char slaveaddr, unsigned char *sendval, unsigned char size);
 int  shdisp_SYS_API_Host_i2c_recv(unsigned char slaveaddr, unsigned char *sendval, unsigned char sendsize,
                                    unsigned char *recvval, unsigned char recvsize);
+
+int shdisp_SYS_API_get_hayabusa_rev(int hw_handset, int hw_revision);
+unsigned char shdisp_SYS_API_get_debugflg(void);
+
+
+int shdisp_SYS_API_check_diag_mode(void);
+
 #endif /* SHDISP_SYSTEM_H */
 
 /* ------------------------------------------------------------------------- */

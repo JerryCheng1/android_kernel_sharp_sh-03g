@@ -291,7 +291,6 @@ cpufreq_verify_within_cpu_limits(struct cpufreq_policy *policy)
 #define SH_CPUFREQ_ADJUST_NOTIFIER	(3)
 #endif /* CONFIG_SHSYS_CUST */
 
-
 /* Transition notifiers */
 #define CPUFREQ_PRECHANGE		(0)
 #define CPUFREQ_POSTCHANGE		(1)
@@ -309,10 +308,9 @@ cpufreq_verify_within_cpu_limits(struct cpufreq_policy *policy)
 
 /* Govinfo Notifiers */
 #define CPUFREQ_LOAD_CHANGE		(0)
-
 #ifdef CONFIG_SHSYS_CUST
 /* Adjust Notifiers  */
-#define SH_CPUFREQ_PERIOD			(0)
+#define SH_CPUFREQ_PERIOD		(0)
 
 struct sh_cpufreq_adjust_param {
 	int mdp_clk_ena;
@@ -320,7 +318,9 @@ struct sh_cpufreq_adjust_param {
 	int music_type;
 };
 void sh_cpufreq_notify_adjust(struct sh_cpufreq_adjust_param *sh_cpufreq_adjust, unsigned int state);
+void sh_cpufreq_update_policy_try(void);
 #endif /* CONFIG_SHSYS_CUST */
+
 
 #ifdef CONFIG_CPU_FREQ
 int cpufreq_register_notifier(struct notifier_block *nb, unsigned int list);

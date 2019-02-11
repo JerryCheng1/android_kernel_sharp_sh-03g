@@ -132,6 +132,8 @@ struct mmc_blk_data {
 #define MMC_BLK_WRITE		BIT(1)
 #define MMC_BLK_DISCARD		BIT(2)
 #define MMC_BLK_SECDISCARD	BIT(3)
+#define MMC_BLK_FLUSH		BIT(4)
+
 
 	/*
 	 * Only set in main mmc_blk_data associated
@@ -166,34 +168,32 @@ module_param_named(sh_sd_eco_mode,  sh_mmc_sd_eco_mode,  int, S_IRUGO | S_IWUSR 
 
 int sh_mmc_sd_set_eco_mode(struct mmc_host *host)
 {
-    int ret = 0;
-    int hw_reset_err;
-    int hw_reset_err_retry;
+	int ret = 0;
+	int hw_reset_err;
+	int hw_reset_err_retry;
 
-    if (sh_mmc_sd_eco_mode_current != sh_mmc_sd_eco_mode) {
-        if (strncmp(mmc_hostname(host), HOST_MMC_SD, sizeof(HOST_MMC_SD)) == 0) {
+	if (sh_mmc_sd_eco_mode_current != sh_mmc_sd_eco_mode) {
+		if (strncmp(mmc_hostname(host), HOST_MMC_SD, sizeof(HOST_MMC_SD)) == 0) {
 
-            sh_mmc_sd_eco_mode_current = sh_mmc_sd_eco_mode;
+			sh_mmc_sd_eco_mode_current = sh_mmc_sd_eco_mode;
+			ret = 1;
 
-            ret = 1;
-
-            /* reset, re-init and change the mode. */
-            hw_reset_err_retry = 0;
-            do{
-                msleep(10);
-                hw_reset_err = mmc_hw_reset(host);
-                if (hw_reset_err){
-                    hw_reset_err_retry++;
-                    pr_warn("%s: mmc_hw_reset for eco mode %d error!!\n",
-                            mmc_hostname(host), hw_reset_err);
-                }
-                else{
-                    break;
-                }
-            }while(hw_reset_err_retry<=SET_ECO_MODE_RETRY_MAX);
-        }
-    }
-    return ret;
+			/* reset, re-init and change the mode. */
+			hw_reset_err_retry = 0;
+			do {
+				msleep(10);
+				hw_reset_err = mmc_hw_reset(host);
+				if (hw_reset_err) {
+					hw_reset_err_retry++;
+					pr_warn("%s: mmc_hw_reset for eco mode %d error!!\n",
+						mmc_hostname(host), hw_reset_err);
+				} else {
+					break;
+				}
+			} while(hw_reset_err_retry<=SET_ECO_MODE_RETRY_MAX);
+		}
+	}
+	return ret;
 }
 #endif /* CONFIG_MMC_SD_ECO_MODE_CUST_SH */
 
@@ -217,10 +217,6 @@ static u32 emmc_card_status_resp = 0;
 	 R1_CC_ERROR |           /* Card controller error */ \
 	 R1_ERROR)               /* General/unknown error */
 #endif /* CONFIG_ERR_DETECT_EMMC_CUST_SH */
-
-#ifdef CONFIG_HS400_TUNING_EMMC_CUST_SH
-bool emmc_start_recovering_error = false;
-#endif /* CONFIG_HS400_TUNING_EMMC_CUST_SH */
 
 #ifdef CONFIG_MMC_SD_BATTLOG_CUST_SH
 #include "sh_sd_battlog.h"
@@ -600,7 +596,7 @@ static ssize_t force_ro_show(struct device *dev, struct device_attribute *attr,
 	if (!md)
 		return -EINVAL;
 
-	ret = snprintf(buf, PAGE_SIZE, "%d",
+	ret = snprintf(buf, PAGE_SIZE, "%d\n",
 		       get_disk_ro(dev_to_disk(dev)) ^
 		       md->read_only);
 	mmc_blk_put(md);
@@ -1060,10 +1056,13 @@ static int mmc_blk_ioctl_cmd(struct block_device *bdev,
 	mmc_claim_host(card->host);
 
 #ifdef CONFIG_MMC_SD_ECO_MODE_CUST_SH
-    if (sh_mmc_sd_set_eco_mode(card->host))
-        pr_info("%s: %s switch eco / normal mode.\n",
-                mmc_hostname(card->host), __func__);
+	if (sh_mmc_sd_set_eco_mode(card->host))
+		pr_info("%s: %s switch eco / normal mode.\n",
+				mmc_hostname(card->host), __func__);
 #endif /* CONFIG_MMC_SD_ECO_MODE_CUST_SH */
+
+	if (mmc_card_get_bkops_en_manual(card))
+		mmc_stop_bkops(card);
 
 	err = mmc_blk_part_switch(card, md);
 	if (err)
@@ -1218,6 +1217,9 @@ static int mmc_blk_ioctl_rpmb_cmd(struct block_device *bdev,
 
 	mmc_rpm_hold(card->host, &card->dev);
 	mmc_claim_host(card->host);
+
+	if (mmc_card_get_bkops_en_manual(card))
+		mmc_stop_bkops(card);
 
 	err = mmc_blk_part_switch(card, md);
 	if (err)
@@ -1496,18 +1498,21 @@ static int mmc_blk_cmd_error(struct request *req, const char *name, int error,
 	switch (error) {
 	case -EILSEQ:
 		/* response crc error, retry the r/w cmd */
-		pr_err("%s: %s sending %s command, card status %#x\n",
-			req->rq_disk->disk_name, "response CRC error",
+		pr_err_ratelimited(
+			"%s: response CRC error sending %s command, card status %#x\n",
+			req->rq_disk->disk_name,
 			name, status);
 		return ERR_RETRY;
 
 	case -ETIMEDOUT:
-		pr_err("%s: %s sending %s command, card status %#x\n",
-			req->rq_disk->disk_name, "timed out", name, status);
+		pr_err_ratelimited(
+			"%s: timed out sending %s command, card status %#x\n",
+			req->rq_disk->disk_name, name, status);
 
 		/* If the status cmd initially failed, retry the r/w cmd */
 		if (!status_valid) {
-			pr_err("%s: status not valid, retrying timeout\n", req->rq_disk->disk_name);
+			pr_err_ratelimited("%s: status not valid, retrying timeout\n",
+				req->rq_disk->disk_name);
 			return ERR_RETRY;
 		}
 		/*
@@ -1516,17 +1521,22 @@ static int mmc_blk_cmd_error(struct request *req, const char *name, int error,
 		 * have corrected the state problem above.
 		 */
 		if (status & (R1_COM_CRC_ERROR | R1_ILLEGAL_COMMAND)) {
-			pr_err("%s: command error, retrying timeout\n", req->rq_disk->disk_name);
+			pr_err_ratelimited(
+				"%s: command error, retrying timeout\n",
+				req->rq_disk->disk_name);
 			return ERR_RETRY;
 		}
 
 		/* Otherwise abort the command */
-		pr_err("%s: not retrying timeout\n", req->rq_disk->disk_name);
+		pr_err_ratelimited(
+			"%s: not retrying timeout\n",
+			req->rq_disk->disk_name);
 		return ERR_ABORT;
 
 	default:
 		/* We don't understand the error code the driver gave us */
-		pr_err("%s: unknown error %d sending read/write command, card status %#x\n",
+		pr_err_ratelimited(
+			"%s: unknown error %d sending read/write command, card status %#x\n",
 		       req->rq_disk->disk_name, error, status);
 		return ERR_ABORT;
 	}
@@ -1551,6 +1561,7 @@ static const struct mmc_protect_inf mmc_protect_part[] = {
 	};
 #else /* CONFIG_ANDROID_ENGINEERING || CONFIG_ANDROID_RECOVERY_BUILD */
 static const struct mmc_protect_inf mmc_protect_part[] = {
+#ifdef CONFIG_RW_PROTECT_TYPE_EMMC_CUST_SH
 	{ 0,	                   MMC_PROTECT_WRITE	},
 	{ 5,	                   MMC_PROTECT_WRITE	},
 	{ 9,	                   MMC_PROTECT_WRITE	},
@@ -1575,6 +1586,32 @@ static const struct mmc_protect_inf mmc_protect_part[] = {
 	{29,	MMC_PROTECT_READ | MMC_PROTECT_WRITE	},
 	{30,	MMC_PROTECT_READ | MMC_PROTECT_WRITE	},
 	{31,	                   MMC_PROTECT_WRITE	},
+#else /* RW_PROTECT_TYPE_EMMC_CUST_SH */
+	{ 0,	                   MMC_PROTECT_WRITE	},
+	{ 5,	                   MMC_PROTECT_WRITE	},
+	{ 7,	                   MMC_PROTECT_WRITE	},
+	{ 8,	MMC_PROTECT_READ | MMC_PROTECT_WRITE	},
+	{ 9,	MMC_PROTECT_READ | MMC_PROTECT_WRITE	},
+	{10,	MMC_PROTECT_READ | MMC_PROTECT_WRITE	},
+	{11,	MMC_PROTECT_READ | MMC_PROTECT_WRITE	},
+	{12,	MMC_PROTECT_READ | MMC_PROTECT_WRITE	},
+	{13,	MMC_PROTECT_READ | MMC_PROTECT_WRITE	},
+	{14,	                   MMC_PROTECT_WRITE	},
+	{15,	                   MMC_PROTECT_WRITE	},
+	{16,	                   MMC_PROTECT_WRITE	},
+	{17,	                   MMC_PROTECT_WRITE	},
+	{18,	                   MMC_PROTECT_WRITE	},
+	{19,	                   MMC_PROTECT_WRITE	},
+	{20,	                   MMC_PROTECT_WRITE	},
+	{21,	MMC_PROTECT_READ | MMC_PROTECT_WRITE	},
+	{22,	                   MMC_PROTECT_WRITE	},
+	{23,	                   MMC_PROTECT_WRITE	},
+	{24,	MMC_PROTECT_READ | MMC_PROTECT_WRITE	},
+	{25,	MMC_PROTECT_READ | MMC_PROTECT_WRITE	},
+	{27,	MMC_PROTECT_READ | MMC_PROTECT_WRITE	},
+	{28,	MMC_PROTECT_READ | MMC_PROTECT_WRITE	},
+	{31,	                   MMC_PROTECT_WRITE	},
+#endif /* RW_PROTECT_TYPE_EMMC_CUST_SH */
 	};
 #endif /* CONFIG_ANDROID_ENGINEERING || CONFIG_ANDROID_RECOVERY_BUILD */
 
@@ -1938,7 +1975,8 @@ int mmc_try_flush_cache(struct mmc_host *host, int type)
 				(R1_CURRENT_STATE(status) == R1_STATE_PRG));
 	}
 
-	err = mmc_cache_ctrl(host, 0);
+//	err = mmc_cache_ctrl(host, 0);
+	err = mmc_flush_cache(host->card);
 	if (err) {
 		pr_err("%s: %s: %d: Failed to flush cache\n",
 			mmc_hostname(host), __func__, __LINE__);
@@ -1966,11 +2004,6 @@ static int mmc_blk_reset(struct mmc_blk_data *md, struct mmc_host *host,
 		return -EEXIST;
 
 	md->reset_done |= type;
-#ifdef CONFIG_HS400_TUNING_EMMC_CUST_SH
-	if (!strncmp(mmc_hostname(host), HOST_MMC_MMC, sizeof(HOST_MMC_MMC)))
-		emmc_start_recovering_error = true;
-#endif /* CONFIG_HS400_TUNING_EMMC_CUST_SH */
-
 #if defined(CONFIG_ERR_RETRY_MMC_CUST_SH) || defined(CONFIG_PM_EMMC_CUST_SH)
 	if (mmc_try_flush_cache( host, type ))
 		BUG_ON(1);
@@ -2016,6 +2049,18 @@ static inline void mmc_blk_reset_success(struct mmc_blk_data *md, int type)
 #endif /* CONFIG_ERR_RETRY_MMC_CUST_SH */
 }
 
+int mmc_access_rpmb(struct mmc_queue *mq)
+{
+	struct mmc_blk_data *md = mq->data;
+	/*
+	 * If this is a RPMB partition access, return ture
+	 */
+	if (md && md->part_type == EXT_CSD_PART_CONFIG_ACC_RPMB)
+		return true;
+
+	return false;
+}
+
 static int mmc_blk_issue_discard_rq(struct mmc_queue *mq, struct request *req)
 {
 	struct mmc_blk_data *md = mq->data;
@@ -2041,7 +2086,7 @@ static int mmc_blk_issue_discard_rq(struct mmc_queue *mq, struct request *req)
 	from = blk_rq_pos(req);
 	nr = blk_rq_sectors(req);
 
-	if (card->ext_csd.bkops_en)
+	if (mmc_card_get_bkops_en_manual(card))
 		card->bkops_info.sectors_changed += blk_rq_sectors(req);
 
 	if (mmc_can_discard(card))
@@ -2201,6 +2246,16 @@ static int mmc_blk_issue_flush(struct mmc_queue *mq, struct request *req)
 	int ret = 0;
 
 	ret = mmc_flush_cache(card);
+	if (ret == -ENODEV) {
+		pr_err("%s: %s: restart mmc card",
+				req->rq_disk->disk_name, __func__);
+		if (mmc_blk_reset(md, card->host, MMC_BLK_FLUSH))
+			pr_err("%s: %s: fail to restart mmc",
+				req->rq_disk->disk_name, __func__);
+		else
+			mmc_blk_reset_success(md, MMC_BLK_FLUSH);
+	}
+
 	if (ret == -ETIMEDOUT) {
 		pr_info("%s: %s: requeue flush request after timeout",
 				req->rq_disk->disk_name, __func__);
@@ -3087,7 +3142,7 @@ static u8 mmc_blk_prep_packed_list(struct mmc_queue *mq, struct request *req)
 
 		if (rq_data_dir(next) == WRITE) {
 			mq->num_of_potential_packed_wr_reqs++;
-			if (card->ext_csd.bkops_en)
+			if (mmc_card_get_bkops_en_manual(card))
 				card->bkops_info.sectors_changed +=
 					blk_rq_sectors(next);
 		}
@@ -3351,7 +3406,8 @@ static int mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *rqc)
 		return 0;
 
 	if (rqc) {
-		if ((card->ext_csd.bkops_en) && (rq_data_dir(rqc) == WRITE))
+		if (mmc_card_get_bkops_en_manual(card) &&
+			(rq_data_dir(rqc) == WRITE))
 			card->bkops_info.sectors_changed += blk_rq_sectors(rqc);
 		reqs = mmc_blk_prep_packed_list(mq, rqc);
 	}
@@ -3613,7 +3669,7 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 	if (mmc_bus_needs_resume(card->host))
 		mmc_resume_bus(card->host);
 #endif
-		if (card->ext_csd.bkops_en)
+		if (mmc_card_get_bkops_en_manual(card))
 			mmc_stop_bkops(card);
 	}
 
@@ -4458,11 +4514,6 @@ static int mmc_blk_ioctl_ffu(struct block_device *bdev,
 		err = 0;
 		goto err_put;
 	}
-#ifdef CONFIG_HS400_TUNING_EMMC_CUST_SH
-	else {
-		emmc_start_recovering_error = true;
-	}
-#endif /* CONFIG_HS400_TUNING_EMMC_CUST_SH */
 
 	mmc_rpm_hold(card->host, &card->dev);
 	mmc_claim_host(card->host);
@@ -4597,7 +4648,7 @@ static int mmc_blk_ioctl_ffu(struct block_device *bdev,
 
 		if (ext_csd[EXT_CSD_FFU_STATUS] != 0x0) {
 			pr_err("Error in downloading FW. FFU STATUS = %X\n",
-			 			ext_csd[EXT_CSD_FFU_STATUS]);
+						ext_csd[EXT_CSD_FFU_STATUS]);
 
 			err = mmc_hw_reset(card->host);
 			if (err) {

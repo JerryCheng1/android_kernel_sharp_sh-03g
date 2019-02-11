@@ -36,6 +36,9 @@ static int jack_switch_types[] = {
 	SW_HPHR_OVERCURRENT,
 	SW_UNSUPPORT_INSERT,
 	SW_MICROPHONE2_INSERT,
+#if defined( CONFIG_SH_SMARTPHONE_PIERCE )
+	SW_PIERCE,
+#endif
 };
 
 static int snd_jack_dev_free(struct snd_device *device)

@@ -66,6 +66,12 @@ static int emergency_mode = 0;
 module_param_call(emergency_mode, emergency_set, param_get_int, &emergency_mode, 0664);
 #endif
 
+#ifdef CONFIG_SHSYS_SHUTDOWN_TIME_CUST
+static int force_warm_reset_mode_set(const char *val, struct kernel_param *kp);
+static int force_warm_reset_mode = 0;
+module_param_call(force_warm_reset_mode, force_warm_reset_mode_set, param_get_int, &force_warm_reset_mode, 0664);
+#endif /*  CONFIG_SHSYS_SHUTDOWN_TIME_CUST  */
+
 #ifdef CONFIG_MSM_DLOAD_MODE
 #define EDL_MODE_PROP "qcom,msm-imem-emergency_download_mode"
 #define DL_MODE_PROP "qcom,msm-imem-download_mode"
@@ -235,6 +241,8 @@ static void halt_spmi_pmic_arbiter(void)
 
 static void msm_restart_prepare(const char *cmd)
 {
+	bool need_warm_reset = false;
+
 #ifdef CONFIG_MSM_DLOAD_MODE
 
 #ifdef CONFIG_SHLOG_SYSTEM
@@ -255,18 +263,47 @@ static void msm_restart_prepare(const char *cmd)
 	__raw_writel(0x00000000, restart_reason);
 #endif
 
+	need_warm_reset = (get_dload_mode() ||
+				(cmd != NULL && cmd[0] != '\0'));
+
+	if (qpnp_pon_check_hard_reset_stored()) {
+		/* Set warm reset as true when device is in dload mode
+		 *  or device doesn't boot up into recovery, bootloader or rtc.
+		 */
+		if (get_dload_mode() ||
+			((cmd != NULL && cmd[0] != '\0') &&
+			strcmp(cmd, "recovery") &&
+			strcmp(cmd, "bootloader") &&
+			strcmp(cmd, "rtc") &&
+			strcmp(cmd, "dm-verity device corrupted") &&
+			strcmp(cmd, "dm-verity enforcing") &&
+			strcmp(cmd, "keys clear")))
+			need_warm_reset = true;
+	}
+
 	smbchg_vbus_oscillation_wa(true);
 
+#ifdef CONFIG_SHSYS_SHUTDOWN_TIME_CUST
+	if (force_warm_reset_mode) {
+		need_warm_reset = true;
+	}
+#endif /*  CONFIG_SHSYS_SHUTDOWN_TIME_CUST  */
+
 	/* Hard reset the PMIC unless memory contents must be maintained. */
-	if (get_dload_mode() || (cmd != NULL && cmd[0] != '\0'))
+	if (need_warm_reset) {
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
-	else
+	} else {
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
+	}
 
 	if (cmd != NULL) {
 		if (!strncmp(cmd, "bootloader", 10)) {
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_BOOTLOADER);
 			__raw_writel(0x77665500, restart_reason);
 		} else if (!strncmp(cmd, "recovery", 8)) {
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_RECOVERY);
 			__raw_writel(0x77665502, restart_reason);
 #ifdef CONFIG_SHLOG_SYSTEM
 		} else if (!strncmp(cmd, "emergency", 9)) {
@@ -281,7 +318,15 @@ static void msm_restart_prepare(const char *cmd)
 			__raw_writel(0x77665594, restart_reason);
 #endif
 		} else if (!strcmp(cmd, "rtc")) {
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_RTC);
 			__raw_writel(0x77665503, restart_reason);
+		} else if (!strcmp(cmd, "dm-verity device corrupted")) {
+			__raw_writel(0x77665508, restart_reason);
+		} else if (!strcmp(cmd, "dm-verity enforcing")) {
+			__raw_writel(0x77665509, restart_reason);
+		} else if (!strcmp(cmd, "keys clear")) {
+			__raw_writel(0x7766550a, restart_reason);
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned long code;
 			int ret;
@@ -291,13 +336,13 @@ static void msm_restart_prepare(const char *cmd)
 					     restart_reason);
 		} else if (!strncmp(cmd, "edl", 3)) {
 			enable_emergency_dload_mode();
-#ifdef CONFIG_MSM_DLOAD_MODE
+#if defined(CONFIG_MSM_DLOAD_MODE) && defined(CONFIG_SHBOOT_CUST)
 		} else if (!strncmp(cmd, "downloader", 10)) {
 			if (dload_mode_addr) {
 				__raw_writel(0x1F2E3D4C, dload_mode_addr);
 				__raw_writel(0xB4A56978, dload_mode_addr + sizeof(unsigned int));
 			}
-#endif
+#endif /* CONFIG_MSM_DLOAD_MODE && CONFIG_SHBOOT_CUST */
 		} else {
 			__raw_writel(0x77665501, restart_reason);
 		}
@@ -461,6 +506,22 @@ static int emergency_set(const char *val, struct kernel_param *kp)
 	return 0;
 }
 #endif
+
+#ifdef CONFIG_SHSYS_SHUTDOWN_TIME_CUST
+static int force_warm_reset_mode_set(const char *val, struct kernel_param *kp)
+{
+	int ret;
+
+	ret = param_set_int(val, kp);
+
+	if (ret)
+		return ret;
+
+	printk("force_warm_reset_mode_set:%d by %s\n", force_warm_reset_mode, current->comm);
+
+	return 0;
+}
+#endif /*  CONFIG_SHSYS_SHUTDOWN_TIME_CUST  */
 
 static int msm_restart_probe(struct platform_device *pdev)
 {

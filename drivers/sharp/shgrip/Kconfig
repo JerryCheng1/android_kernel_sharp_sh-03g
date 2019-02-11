@@ -5,7 +5,26 @@
 menu "Grip Sensor Driver configuration"
 
 config SENSOR_SHGRIP
-        bool "SHARP Grip Sensor Driver"
-        default n
+	bool "SHARP Grip Sensor Driver"
+	default n
 
+config SENSOR_SHGRIP_MODEL1
+	bool "SHARP Grip Sensor Model1 Driver"
+	depends on SENSOR_SHGRIP
+	default n
+
+config SENSOR_SHGRIP_MODEL2_1
+	bool "SHARP Grip Sensor Model2-1 Driver"
+	depends on SENSOR_SHGRIP
+	default n
+
+config SENSOR_SHGRIP_MODEL2_2
+	bool "SHARP Grip Sensor Model2-2 Driver"
+	depends on SENSOR_SHGRIP
+	default n
+
+config SENSOR_SHGRIP_MODEL3
+	bool "SHARP Grip Sensor Model3 Driver"
+	depends on SENSOR_SHGRIP
+	default n
 endmenu

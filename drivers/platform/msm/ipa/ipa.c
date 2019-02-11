@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -40,9 +40,6 @@
 			       x == IPA_MODE_MOBILE_AP_WLAN)
 #define IPA_CNOC_CLK_RATE (75 * 1000 * 1000UL)
 #define IPA_A5_MUX_HEADER_LENGTH (8)
-#define IPA_DMA_POOL_SIZE (512)
-#define IPA_DMA_POOL_ALIGNMENT (4)
-#define IPA_DMA_POOL_BOUNDARY (1024)
 #define IPA_ROUTING_RULE_BYTE_SIZE (4)
 #define IPA_BAM_CNFG_BITS_VALv1_1 (0x7FFFE004)
 #define IPA_BAM_CNFG_BITS_VALv2_0 (0xFFFFE004)
@@ -51,7 +48,7 @@
 
 #define IPA_AGGR_MAX_STR_LENGTH (10)
 
-#define CLEANUP_TAG_PROCESS_TIMEOUT 20
+#define CLEANUP_TAG_PROCESS_TIMEOUT 150
 
 #define IPA_AGGR_STR_IN_BYTES(str) \
 	(strnlen((str), IPA_AGGR_MAX_STR_LENGTH - 1) + 1)
@@ -67,7 +64,7 @@
 #define IPA_Q6_CLEANUP_EXP_AGGR_MAX_CMDS \
 	(IPA_NUM_PIPES*2) \
 
-#define IPA_SPS_PROD_TIMEOUT_MSEC 1000
+#define IPA_SPS_PROD_TIMEOUT_MSEC 100
 
 #ifdef CONFIG_COMPAT
 #define IPA_IOC_ADD_HDR32 _IOWR(IPA_IOC_MAGIC, \
@@ -1166,8 +1163,14 @@ int ipa_init_q6_smem(void)
 
 	ipa_inc_client_enable_clks();
 
-	rc = ipa_init_smem_region(IPA_MEM_PART(modem_size),
-		IPA_MEM_PART(modem_ofst));
+	if (ipa_ctx->ipa_hw_type == IPA_HW_v2_0)
+		rc = ipa_init_smem_region(IPA_MEM_PART(modem_size) -
+			IPA_MEM_RAM_MODEM_NETWORK_STATS_SIZE,
+			IPA_MEM_PART(modem_ofst));
+	else
+		rc = ipa_init_smem_region(IPA_MEM_PART(modem_size),
+			IPA_MEM_PART(modem_ofst));
+
 	if (rc) {
 		IPAERR("failed to initialize Modem RAM memory\n");
 		ipa_dec_client_disable_clks();
@@ -1489,7 +1492,7 @@ static int ipa_q6_set_ex_path_dis_agg(void)
 		}
 	}
 
-	/* Will wait 20msecs for IPA tag process completion */
+	/* Will wait 150msecs for IPA tag process completion */
 	retval = ipa_tag_process(desc, num_descs,
 				 msecs_to_jiffies(CLEANUP_TAG_PROCESS_TIMEOUT));
 	if (retval) {
@@ -1500,10 +1503,6 @@ static int ipa_q6_set_ex_path_dis_agg(void)
 				kfree(desc[index].user1);
 			retval = -EINVAL;
 		}
-
-		/* Ignoring TAG process timeout */
-		if (retval == -ETIME)
-			retval = 0;
 	}
 
 	kfree(desc);
@@ -1544,14 +1543,10 @@ int ipa_q6_cleanup(void)
 		BUG();
 	}
 
-	/*
-	 * Q6 relies on the AP to reset all Q6 IPA pipes.
-	 * In case the uC is not loaded, or upon any failure in the pipe reset
-	 * sequence, we have to assert.
-	 */
 	if (!ipa_ctx->uc_ctx.uc_loaded) {
-		IPAERR("uC is not loaded, can't reset Q6 pipes\n");
-		BUG();
+		IPAERR("uC is not loaded, won't reset Q6 pipes\n");
+		ipa_dec_client_disable_clks();
+		return 0;
 	}
 
 	for (client_idx = 0; client_idx < IPA_CLIENT_MAX; client_idx++)
@@ -1562,7 +1557,9 @@ int ipa_q6_cleanup(void)
 				BUG();
 		}
 
-	ipa_ctx->q6_proxy_clk_vote_valid = true;
+	/* set proxy vote before decrement */
+	ipa_proxy_clk_vote();
+	ipa_dec_client_disable_clks();
 	return 0;
 }
 
@@ -1596,7 +1593,6 @@ int _ipa_init_sram_v2(void)
 	IPA_SRAM_SET(IPA_MEM_PART(v6_rt_ofst), IPA_MEM_CANARY_VAL);
 	IPA_SRAM_SET(IPA_MEM_PART(modem_hdr_ofst), IPA_MEM_CANARY_VAL);
 	IPA_SRAM_SET(IPA_MEM_PART(modem_ofst), IPA_MEM_CANARY_VAL);
-	IPA_SRAM_SET(IPA_MEM_PART(apps_v4_flt_ofst), IPA_MEM_CANARY_VAL);
 	IPA_SRAM_SET(IPA_MEM_PART(uc_info_ofst), IPA_MEM_CANARY_VAL);
 
 	iounmap(ipa_sram_mmio);
@@ -1649,6 +1645,8 @@ int _ipa_init_sram_v2_5(void)
 
 #define IPA_SRAM_SET(ofst, val) (ipa_sram_mmio[(ofst - 4) / 4] = val)
 
+	IPA_SRAM_SET(IPA_MEM_PART(v4_flt_ofst) - 4, IPA_MEM_CANARY_VAL);
+	IPA_SRAM_SET(IPA_MEM_PART(v4_flt_ofst), IPA_MEM_CANARY_VAL);
 	IPA_SRAM_SET(IPA_MEM_PART(v6_flt_ofst) - 4, IPA_MEM_CANARY_VAL);
 	IPA_SRAM_SET(IPA_MEM_PART(v6_flt_ofst), IPA_MEM_CANARY_VAL);
 	IPA_SRAM_SET(IPA_MEM_PART(v4_rt_ofst) - 4, IPA_MEM_CANARY_VAL);
@@ -1659,8 +1657,7 @@ int _ipa_init_sram_v2_5(void)
 							IPA_MEM_CANARY_VAL);
 	IPA_SRAM_SET(IPA_MEM_PART(modem_hdr_proc_ctx_ofst), IPA_MEM_CANARY_VAL);
 	IPA_SRAM_SET(IPA_MEM_PART(modem_ofst), IPA_MEM_CANARY_VAL);
-	IPA_SRAM_SET(IPA_MEM_PART(apps_v4_flt_ofst), IPA_MEM_CANARY_VAL);
-	IPA_SRAM_SET(IPA_MEM_PART(uc_info_ofst), IPA_MEM_CANARY_VAL);
+	IPA_SRAM_SET(IPA_MEM_PART(end_ofst), IPA_MEM_CANARY_VAL);
 
 	iounmap(ipa_sram_mmio);
 
@@ -2321,7 +2318,7 @@ void _ipa_enable_clks_v2_0(void)
 	}
 }
 
-void _ipa_enable_clks_v1(void)
+void _ipa_enable_clks_v1_1(void)
 {
 
 	if (ipa_cnoc_clk) {
@@ -2410,7 +2407,7 @@ void ipa_enable_clks(void)
 		WARN_ON(1);
 }
 
-void _ipa_disable_clks_v1(void)
+void _ipa_disable_clks_v1_1(void)
 {
 
 	if (ipa_inactivity_clk)
@@ -2577,7 +2574,6 @@ static int ipa_setup_bam_cfg(const struct ipa_plat_drv_res *res)
 	if (!ipa_bam_mmio)
 		return -ENOMEM;
 	switch (ipa_ctx->ipa_hw_type) {
-	case IPA_HW_v1_0:
 	case IPA_HW_v1_1:
 		reg_val = IPA_BAM_CNFG_BITS_VALv1_1;
 		break;
@@ -2589,9 +2585,8 @@ static int ipa_setup_bam_cfg(const struct ipa_plat_drv_res *res)
 		retval = -EPERM;
 		goto fail;
 	}
-
-	ipa_write_reg(ipa_bam_mmio, IPA_BAM_CNFG_BITS_OFST, reg_val);
-
+	if (ipa_ctx->ipa_hw_type < IPA_HW_v2_5)
+		ipa_write_reg(ipa_bam_mmio, IPA_BAM_CNFG_BITS_OFST, reg_val);
 fail:
 	iounmap(ipa_bam_mmio);
 
@@ -2790,8 +2785,10 @@ static void ipa_sps_process_irq(struct work_struct *work)
 
 	/* process bam irq */
 	ret = sps_bam_process_irq(ipa_ctx->bam_handle);
-	if (ret)
+	if (ret) {
 		IPAERR("sps_process_eot_event failed %d\n", ret);
+		ipa_sps_irq_rx_notify_all();
+	}
 
 	/* release IPA clocks */
 	ipa_sps_process_irq_schedule_rel();
@@ -2898,10 +2895,14 @@ static void sps_event_cb(enum sps_callback_case event, void *param)
 	case SPS_CALLBACK_BAM_RES_REL:
 		ipa_sps_process_irq_schedule_rel();
 		break;
+
+	case SPS_CALLBACK_BAM_POLL:
+		ipa_sps_irq_rx_notify_all();
+		break;
+
 	default:
 		IPADBG("unsupported event %d\n", event);
 	}
-
 	spin_unlock_irqrestore(&ipa_ctx->sps_pm.lock, flags);
 }
 /**
@@ -2968,6 +2969,7 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 	ipa_ctx->ipa_hw_type = resource_p->ipa_hw_type;
 	ipa_ctx->ipa_hw_mode = resource_p->ipa_hw_mode;
 	ipa_ctx->use_ipa_teth_bridge = resource_p->use_ipa_teth_bridge;
+	ipa_ctx->ipa_bam_remote_mode = resource_p->ipa_bam_remote_mode;
 	ipa_ctx->wan_rx_ring_size = resource_p->wan_rx_ring_size;
 
 	/* default aggregation parameters */
@@ -3090,6 +3092,8 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 	if (ipa_ctx->ipa_hw_mode != IPA_HW_MODE_VIRTUAL)
 		bam_props.options |= SPS_BAM_OPT_IRQ_WAKEUP;
 	bam_props.options |= SPS_BAM_RES_CONFIRM;
+	if (ipa_ctx->ipa_bam_remote_mode == true)
+		bam_props.manage |= SPS_BAM_MGR_DEVICE_REMOTE;
 	bam_props.ee = resource_p->ee;
 	bam_props.callback = sps_event_cb;
 
@@ -3175,21 +3179,11 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 		result = -ENOMEM;
 		goto fail_rx_pkt_wrapper_cache;
 	}
-	/*
-	 * setup DMA pool 4 byte aligned, don't cross 1k boundaries, nominal
-	 * size 512 bytes
-	 * This is an issue with IPA HW v1.0 only.
-	 */
-	if (ipa_ctx->ipa_hw_type == IPA_HW_v1_0) {
-		ipa_ctx->dma_pool = dma_pool_create("ipa_1k",
-				ipa_ctx->pdev,
-				IPA_DMA_POOL_SIZE, IPA_DMA_POOL_ALIGNMENT,
-				IPA_DMA_POOL_BOUNDARY);
-	} else {
-		ipa_ctx->dma_pool = dma_pool_create("ipa_tx", ipa_ctx->pdev,
-			IPA_NUM_DESC_PER_SW_TX * sizeof(struct sps_iovec),
-			0, 0);
-	}
+
+	/* Setup DMA pool */
+	ipa_ctx->dma_pool = dma_pool_create("ipa_tx", ipa_ctx->pdev,
+		IPA_NUM_DESC_PER_SW_TX * sizeof(struct sps_iovec),
+		0, 0);
 	if (!ipa_ctx->dma_pool) {
 		IPAERR("cannot alloc DMA pool.\n");
 		result = -ENOMEM;
@@ -3425,11 +3419,6 @@ fail_empty_rt_tbl:
 			  ipa_ctx->empty_rt_tbl_mem.phys_base);
 fail_apps_pipes:
 	idr_destroy(&ipa_ctx->ipa_idr);
-	/*
-	 * DMA pool need to be released only for IPA HW v1.0 only.
-	 */
-	if (ipa_ctx->ipa_hw_type == IPA_HW_v1_0)
-		dma_pool_destroy(ipa_ctx->dma_pool);
 fail_dma_pool:
 	kmem_cache_destroy(ipa_ctx->rx_pkt_wrapper_cache);
 fail_rx_pkt_wrapper_cache:
@@ -3478,6 +3467,7 @@ static int get_ipa_dts_configuration(struct platform_device *pdev,
 	ipa_drv_res->ipa_pipe_mem_size = IPA_PIPE_MEM_SIZE;
 	ipa_drv_res->ipa_hw_type = 0;
 	ipa_drv_res->ipa_hw_mode = 0;
+	ipa_drv_res->ipa_bam_remote_mode = false;
 	ipa_drv_res->wan_rx_ring_size = IPA_GENERIC_RX_POOL_SZ;
 
 	/* Get IPA HW Version */
@@ -3514,6 +3504,13 @@ static int get_ipa_dts_configuration(struct platform_device *pdev,
 	IPADBG(": using TBDr = %s",
 		ipa_drv_res->use_ipa_teth_bridge
 		? "True" : "False");
+
+	ipa_drv_res->ipa_bam_remote_mode =
+			of_property_read_bool(pdev->dev.of_node,
+			"qcom,ipa-bam-remote-mode");
+	IPADBG(": ipa bam remote mode = %s\n",
+			ipa_drv_res->ipa_bam_remote_mode
+			? "True" : "False");
 
 	/* Get IPA wrapper address */
 	resource = platform_get_resource_byname(pdev, IORESOURCE_MEM,

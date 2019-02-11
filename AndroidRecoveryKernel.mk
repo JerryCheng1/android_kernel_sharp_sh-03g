@@ -54,14 +54,18 @@ ifeq ($(RECOVERY_KERNEL_DEFCONFIG)$(wildcard $(RECOVERY_KERNEL_CONFIG)),)
 $(error Kernel configuration not defined, cannot build kernel)
 else
 
-ifeq ($(TARGET_USES_UNCOMPRESSED_KERNEL),true)
+ifeq ($(TARGET_USES_UNCOMPRESSED_RECOVERY),true)
 $(info Using uncompressed kernel)
 TARGET_PREBUILT_INT_RECOVERY_KERNEL := $(RECOVERY_KERNEL_OUT)/arch/$(KERNEL_ARCH)/boot/Image
 else
+ifeq ($(KERNEL_ARCH),arm64)
+TARGET_PREBUILT_INT_RECOVERY_KERNEL := $(RECOVERY_KERNEL_OUT)/arch/$(KERNEL_ARCH)/boot/Image.gz
+else
 TARGET_PREBUILT_INT_RECOVERY_KERNEL := $(RECOVERY_KERNEL_OUT)/arch/$(KERNEL_ARCH)/boot/zImage
 endif
+endif
 
-ifeq ($(TARGET_KERNEL_APPEND_DTB), true)
+ifeq ($(TARGET_RECOVERY_APPEND_DTB), true)
 $(info Using appended DTB)
 TARGET_PREBUILT_INT_RECOVERY_KERNEL := $(TARGET_PREBUILT_INT_RECOVERY_KERNEL)-dtb
 endif

@@ -21,49 +21,6 @@
 /* ------------------------------------------------------------------------- */
 #include "shdisp_context_def.h"
 
-#if (defined(CONFIG_USES_SHLCDC) || defined(FEATURE_SHLCDC))
-struct shdisp_boot_context {
-    int driver_is_initialized;
-    unsigned short hw_handset;
-    unsigned short hw_revision;
-    unsigned char device_code;
-    int handset_color;
-    int upper_unit_is_connected;
-    int main_disp_status;
-    int is_trickled;
-    struct shdisp_main_bkl_ctl main_bkl;
-    struct shdisp_tri_led tri_led;
-    unsigned short vcom;
-    unsigned short vcom_low;
-    unsigned short vcom_nvram;
-    struct shdisp_photo_sensor_adj photo_sensor_adj;
-    struct shdisp_lcddr_phy_gamma_reg lcddr_phy_gamma;
-    struct shdisp_ledc_status ledc_status;
-    int bdic_is_exist;
-    int bdic_chipver;
-    struct shdisp_bdic_status bdic_status;
-    struct shdisp_psals_status psals_status;
-    union {
-        void *image_addr;
-        unsigned long long pad1;
-    };
-    char err_on[SHDISP_NOOS_RESET_NUM];
-    struct shdisp_dbg_error_code err_code[SHDISP_NOOS_RESET_NUM];
-    unsigned short lut_status;
-    union {
-        struct shdisp_boot_context *shdisp_boot_ctx_smem_phy_addr;
-        unsigned long long pad2;
-    };
-    struct shdisp_clmr_status clmr_status;
-    struct shdisp_clmr_ewb clmr_ewb[2];
-    unsigned short slave_vcom;
-    unsigned short slave_vcom_low;
-    unsigned char pll_on_ctl_count;
-    unsigned char ram_dump_avail;
-    unsigned char edram_dump_buf[1];
-    unsigned char sram_dump_buf[1];
-};
-#else /* (defined(CONFIG_USES_SHLCDC) || defined(FEATURE_SHLCDC)) */
 struct shdisp_boot_context {
     int driver_is_initialized;
     unsigned short hw_handset;
@@ -80,7 +37,7 @@ struct shdisp_boot_context {
     unsigned short vcom_low;
     unsigned short vcom_nvram;
     struct shdisp_photo_sensor_adj photo_sensor_adj;
-    struct shdisp_lcddr_phy_gamma_reg lcddr_phy_gamma;
+    struct shdisp_lcddr_phy_gmm_reg lcddr_phy_gmm;
     struct shdisp_ledc_status ledc_status;
     int bdic_is_exist;
     int bdic_chipver;
@@ -100,6 +57,5 @@ struct shdisp_boot_context {
         unsigned long long pad2;
     };
 };
-#endif /* (defined(CONFIG_USES_SHLCDC) || defined(FEATURE_SHLCDC)) */
 
 #endif /* SHDISP_BOOT_CONTEXT_H */

@@ -988,6 +988,18 @@
 			};
 		};
 
+		wcd9xxx_intr {
+			qcom,pins = <&gp 72>;
+			qcom,num-grp-pins = <1>;
+			qcom,pin-func = <0>;
+			label = "wcd-intr-default";
+			wcd_intr_default: default {
+				drive-strength = <2>; /* 2 MA */
+				bias-pull-down; /* pull down */
+				input-enable;
+			};
+		};
+
 		cci0_active {
 			/* CLK, DATA */
 			qcom,pins = <&gp 17>, <&gp 18>;
@@ -996,10 +1008,7 @@
 			label = "cci0-active";
 			/* active state */
 			cci0_active: cci0_active {
-/* SH_CAMERA_DRIVER-> */
-//				drive-strength = <2>; /* 2 MA */
-				drive-strength = <4>; /* 4 MA */
-/* SH_CAMERA_DRIVER<- */
+				drive-strength = <2>; /* 2 MA */
 				bias-disable; /* No PULL */
 			};
 		};
@@ -1008,17 +1017,11 @@
 			/* CLK, DATA */
 			qcom,pins = <&gp 17>, <&gp 18>;
 			qcom,num-grp-pins = <2>;
-/* SH_CAMERA_DRIVER-> */
-//			qcom,pin-func = <0>;
-			qcom,pin-func = <1>;
-/* SH_CAMERA_DRIVER<- */
+			qcom,pin-func = <0>;
 			label = "cci0-suspend";
 			/*suspended state */
 			cci0_suspend: cci0_suspend {
-/* SH_CAMERA_DRIVER-> */
-//				drive-strength = <2>; /* 2 MA */
-				drive-strength = <4>; /* 4 MA */
-/* SH_CAMERA_DRIVER<- */
+				drive-strength = <2>; /* 2 MA */
 				bias-disable; /* No PULL */
 			};
 		};
@@ -1057,10 +1060,7 @@
 			label = "cam_sensor_mclk0_active";
 			/* active state */
 			cam_sensor_mclk0_active: cam_sensor_mclk0_active {
-/* SH_CAMERA_DRIVER-> */
-//				drive-strength = <2>; /* 2 MA */
-				drive-strength = <6>; /* 6 MA */
-/* SH_CAMERA_DRIVER<- */
+				drive-strength = <2>; /* 2 MA */
 				bias-disable; /* No PULL */
 			};
 		};
@@ -1072,23 +1072,15 @@
 			label = "cam_sensor_mclk0_suspend";
 			/*suspended state */
 			cam_sensor_mclk0_suspend: cam_sensor_mclk0_suspend {
-/* SH_CAMERA_DRIVER-> */
-//				drive-strength = <2>; /* 2 MA */
-//				bias-pull-down; /* PULL DOWN */
-				drive-strength = <6>; /* 6 MA */
-				bias-disable; /* No PULL */
-/* SH_CAMERA_DRIVER<- */
+				drive-strength = <2>; /* 2 MA */
+				bias-pull-down; /* PULL DOWN */
 			};
 		};
 
 		cam_sensor_rear_active {
 			/* RESET, STANDBY */
-/* SH_CAMERA_DRIVER-> */
-//			qcom,pins = <&gp 92>, <&gp 91>;
-//			qcom,num-grp-pins = <2>;
-			qcom,pins = <&gp 92>;
-			qcom,num-grp-pins = <1>;
-/* SH_CAMERA_DRIVER<- */
+			qcom,pins = <&gp 92>, <&gp 91>;
+			qcom,num-grp-pins = <2>;
 			label = "cam_sensor_rear_active";
 			/* active state */
 			cam_sensor_rear_active: cam_sensor_rear_active {
@@ -1099,12 +1091,8 @@
 
 		cam_sensor_rear_suspend {
 			/* RESET, STANDBY */
-/* SH_CAMERA_DRIVER-> */
-//			qcom,pins = <&gp 92>, <&gp 91>;
-//			qcom,num-grp-pins = <2>;
-			qcom,pins = <&gp 92>;
-			qcom,num-grp-pins = <1>;
-/* SH_CAMERA_DRIVER<- */
+			qcom,pins = <&gp 92>, <&gp 91>;
+			qcom,num-grp-pins = <2>;
 			label = "cam_sensor_rear_suspend";
 			/*suspended state */
 			cam_sensor_rear_suspend: cam_sensor_rear_suspend {
@@ -1170,10 +1158,7 @@
 			label = "cam_sensor_mclk2_active";
 			/* active state */
 			cam_sensor_mclk2_active: cam_sensor_mclk2_active {
-/* SH_CAMERA_DRIVER-> */
-//				drive-strength = <2>; /* 2 MA */
-				drive-strength = <6>; /* 6 MA */
-/* SH_CAMERA_DRIVER<- */
+				drive-strength = <2>; /* 2 MA */
 				bias-disable; /* No PULL */
 			};
 		};
@@ -1185,23 +1170,15 @@
 			label = "cam_sensor_mclk2_suspend";
 			/* suspend state */
 			cam_sensor_mclk2_suspend: cam_sensor_mclk2_suspend {
-/* SH_CAMERA_DRIVER-> */
-//				drive-strength = <2>; /* 2 MA */
-//				bias-pull-down; /* PULL DOWN */
-				drive-strength = <6>; /* 2 MA */
-				bias-disable; /* No PULL */
-/* SH_CAMERA_DRIVER<- */
+				drive-strength = <2>; /* 2 MA */
+				bias-pull-down; /* PULL DOWN */
 			};
 		};
 
 		cam_sensor_front_active {
 			/* RESET, STANDBY */
-/* SH_CAMERA_DRIVER-> */
-//			qcom,pins = <&gp 104>, <&gp 105>;
-//			qcom,num-grp-pins = <2>;
-			qcom,pins = <&gp 104>;
-			qcom,num-grp-pins = <1>;
-/* SH_CAMERA_DRIVER<- */
+			qcom,pins = <&gp 104>, <&gp 105>;
+			qcom,num-grp-pins = <2>;
 			label = "cam_sensor_front_active";
 			/* active state */
 			cam_sensor_front_active: cam_sensor_front_active {
@@ -1212,12 +1189,8 @@
 
 		cam_sensor_front_suspend {
 			/* RESET, STANDBY */
-/* SH_CAMERA_DRIVER-> */
-//			qcom,pins = <&gp 104>, <&gp 105>;
-//			qcom,num-grp-pins = <2>;
-			qcom,pins = <&gp 104>;
-			qcom,num-grp-pins = <1>;
-/* SH_CAMERA_DRIVER<- */
+			qcom,pins = <&gp 104>, <&gp 105>;
+			qcom,num-grp-pins = <2>;
 			label = "cam_sensor_front_suspend";
 			/*suspended state */
 			cam_sensor_front_suspend: cam_sensor_front_suspend {
@@ -1232,27 +1205,22 @@
 			qcom,pin-func = <0>;
 			label = "cnss_pins";
 			cnss_default: default {
-/* SH_WLAN_DRIVER-> */
-//				drive-strength = <16>;
-				drive-strength = <2>;
-				bias-disable;
-/* SH_WLAN_DRIVER<- */
+				drive-strength = <16>;
+				bias-pull-down;
 			};
 		};
 
-/* SH_GPS_DRIVER DEL-> */
-//		cnss_lpass: cnss_lpass {
-//			qcom,pins = <&gp 112>;
-//			qcom,num-grp-pins = <1>;
-//			qcom,pin-func = <0>;
-//			label = "cnss-lpass";
-//			/* default state */
-//			cnss_lpass_default: cnss_lpass_default {
-//				drive-strength = <16>;
-//				bias-pull-down;
-//			};
-//		};
-/* SH_GPS_DRIVER DEL<- */
+		cnss_lpass: cnss_lpass {
+			qcom,pins = <&gp 112>;
+			qcom,num-grp-pins = <1>;
+			qcom,pin-func = <0>;
+			label = "cnss-lpass";
+			/* default state */
+			cnss_lpass_default: cnss_lpass_default {
+				drive-strength = <16>;
+				bias-pull-down;
+			};
+		};
 
 		pcie0_clkreq {
 			qcom,pins = <&gp 54>;
@@ -1296,10 +1264,7 @@
 			/* default state */
 			pcie1_clkreq_default: pcie1_clkreq_default {
 				drive-strength = <2>;
-/* SH_WLAN_DRIVER-> */
-//				bias-pull-up;
-				bias-disable;
-/* SH_WLAN_DRIVER<- */
+				bias-pull-up;
 			};
 		};
 
@@ -1310,10 +1275,7 @@
 			/* default state */
 			pcie1_perst_default: pcie1_perst_default {
 				drive-strength = <2>;
-/* SH_WLAN_DRIVER-> */
-//				bias-pull-down;
-				bias-disable;
-/* SH_WLAN_DRIVER<- */
+				bias-pull-down;
 			};
 		};
 
@@ -1324,10 +1286,7 @@
 			/* default state */
 			pcie1_wake_default: pcie1_wake_default {
 				drive-strength = <2>;
-/* SH_WLAN_DRIVER-> */
-//				bias-pull-down;
-				bias-disable;
-/* SH_WLAN_DRIVER<- */
+				bias-pull-down;
 			};
 
 			pcie1_wake_sleep: pcie1_wake_sleep {
@@ -1336,15 +1295,23 @@
 			};
 		};
 
-		pmx_sec_aux_pcm {
+		pmx_sec_aux_pcm_sleep {
 			qcom,pins = <&gp 79>, <&gp 80>, <&gp 82>;
 			qcom,num-grp-pins = <3>;
-			qcom,pin-func = <1>;
-			label = "sec_aux_pcm";
+			qcom,pin-func = <0>;
+			label = "pmx_sec_aux_pcm_sleep";
 			sec_aux_pcm_sleep: sec_aux_pcm_sleep {
 				drive-strength = <2>;	/* 2 mA */
 				bias-pull-down;		/* PULL DOWN */
+				input-enable;
 			};
+		};
+
+		pmx_sec_aux_pcm_active {
+			qcom,pins = <&gp 79>, <&gp 80>, <&gp 82>;
+			qcom,num-grp-pins = <3>;
+			qcom,pin-func = <1>;
+			label = "pmx_sec_aux_pcm_active";
 			sec_aux_pcm_active: sec_aux_pcm_active {
 				drive-strength = <8>;	/* 8 mA */
 				bias-disable;		/* NO PULL */
@@ -1352,15 +1319,23 @@
 			};
 		};
 
-		pmx_sec_aux_pcm_din {
+		pmx_sec_aux_pcm_din_sleep {
 			qcom,pins = <&gp 81>;
 			qcom,num-grp-pins = <1>;
-			qcom,pin-func = <1>;
-			label = "sec_aux_pcm_din";
+			qcom,pin-func = <0>;
+			label = "pmx_sec_aux_pcm_din_sleep";
 			sec_aux_pcm_din_sleep: sec_aux_pcm_din_sleep {
 				drive-strength = <2>;	/* 2 mA */
 				bias-pull-down;		/* PULL DOWN */
+				input-enable;
 			};
+		};
+
+		pmx_sec_aux_pcm_din_active {
+			qcom,pins = <&gp 81>;
+			qcom,num-grp-pins = <1>;
+			qcom,pin-func = <1>;
+			label = "pmx_sec_aux_pcm_din_active";
 			sec_aux_pcm_din_active: sec_aux_pcm_din_active {
 				drive-strength = <8>;	/* 8 mA */
 				bias-disable;		/* NO PULL */
@@ -1368,10 +1343,10 @@
 		};
 
 		pmx_pri_mi2s_sleep {
-/* SH_AUDIO_DRIVER -> */ /*14-061*/
+/* SH_AUDIO_DRIVER -> */ /*20-009*/
 //			qcom,pins = <&gp 65>, <&gp 66>;
 			qcom,pins = <&gp 121>, <&gp 122>;
-/* SH_AUDIO_DRIVER <- */ /*14-061*/
+/* SH_AUDIO_DRIVER <- */ /*20-009*/
 			qcom,num-grp-pins = <2>;
 			qcom,pin-func = <0>;
 			label = "pri_mi2s_sleep";

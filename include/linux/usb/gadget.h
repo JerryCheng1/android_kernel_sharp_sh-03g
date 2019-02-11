@@ -26,10 +26,6 @@
 #include <linux/workqueue.h>
 #include <linux/usb/ch9.h>
 
-#ifdef CONFIG_USB_ANDROID_SH_MTP
-#define D_USB_GADGET_SETUP_PENDING		(-10)
-#endif /* CONFIG_USB_ANDROID_SH_MTP */
-
 struct usb_ep;
 
 /**

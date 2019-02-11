@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -16,10 +16,10 @@
 #include <sound/jack.h>
 #include <sound/apr_audio-v2.h>
 #include <linux/mfd/wcd9xxx/wcd9xxx-slimslave.h>
-#ifdef CONFIG_SH_AUDIO_DRIVER /* 14-023 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-023 */
 #include <linux/cpufreq.h>
 #include <linux/notifier.h>
-#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 14-023 */
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 18-023 */
 #include "wcd9xxx-mbhc.h"
 #include "wcd9xxx-resmgr.h"
 #include "wcd9xxx-common.h"
@@ -42,6 +42,23 @@
 #define WCD9330_DMIC_CLK_DIV_16 0x04
 
 #define TOMTOM_ZDET_SUPPORTED true
+
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_0P0_A	0x0
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_0P375_A 0x1
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_0P750_A 0x2
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_1P125_A 0x3
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_1P500_A 0x4
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_1P875_A 0x5
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_2P250_A 0x6
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_2P625_A 0x7
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_3P000_A 0x8
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_3P375_A 0x9
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_3P750_A 0xA
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_4P125_A 0xB
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_4P500_A 0xC
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_4P875_A 0xD
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_5P250_A 0xE
+#define WCD9330_SPKDRV_OCP_CURR_LIMIT_I_5P625_A 0xF
 
 extern const u8 tomtom_reg_readable[TOMTOM_CACHE_SIZE];
 extern const u8 tomtom_reset_reg_defaults[TOMTOM_CACHE_SIZE];
@@ -128,7 +145,7 @@ extern void tomtom_register_ext_clk_cb(
 	int (*get_ext_clk_cnt) (void),
 	struct snd_soc_codec *codec);
 extern int tomtom_enable_qfuse_sensing(struct snd_soc_codec *codec);
-#ifdef CONFIG_SH_AUDIO_DRIVER /* 14-023 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-023 */
 extern int msm_routing_get_is_music_play(void);
-#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 14-023 */
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 18-023 */
 #endif

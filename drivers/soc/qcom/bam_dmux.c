@@ -233,11 +233,7 @@ static struct workqueue_struct *bam_mux_tx_workqueue;
 static struct srcu_struct bam_dmux_srcu;
 
 /* A2 power collaspe */
-#if defined(CONFIG_SHSYS_CUST)
-#define UL_TIMEOUT_DELAY 100    /* in ms */
-#else    /* defined(CONFIG_SHSYS_CUST) */
-#define UL_TIMEOUT_DELAY 1000    /* in ms */
-#endif    /* defined(CONFIG_SHSYS_CUST) */
+#define UL_TIMEOUT_DELAY 1000	/* in ms */
 #define SHUTDOWN_TIMEOUT_MS	500
 #define UL_WAKEUP_TIMEOUT_MS	2000
 static void toggle_apps_ack(void);
@@ -532,6 +528,8 @@ static void bam_mux_process_data(struct sk_buff *rx_skb)
 	struct bam_mux_hdr *rx_hdr;
 	unsigned long event_data;
 	uint8_t ch_id;
+	void (*notify)(void *, int, unsigned long);
+	void *priv;
 
 	rx_hdr = (struct bam_mux_hdr *)rx_skb->data;
 	ch_id = rx_hdr->ch_id;
@@ -544,15 +542,19 @@ static void bam_mux_process_data(struct sk_buff *rx_skb)
 	rx_skb->truesize = rx_hdr->pkt_len + sizeof(struct sk_buff);
 
 	event_data = (unsigned long)(rx_skb);
+	notify = NULL;
+	priv = NULL;
 
 	spin_lock_irqsave(&bam_ch[ch_id].lock, flags);
-	if (bam_ch[ch_id].notify)
-		bam_ch[ch_id].notify(
-			bam_ch[ch_id].priv, BAM_DMUX_RECEIVE,
-							event_data);
+	if (bam_ch[ch_id].notify) {
+		notify = bam_ch[ch_id].notify;
+		priv = bam_ch[ch_id].priv;
+	}
+	spin_unlock_irqrestore(&bam_ch[ch_id].lock, flags);
+	if (notify)
+		notify(priv, BAM_DMUX_RECEIVE, event_data);
 	else
 		dev_kfree_skb_any(rx_skb);
-	spin_unlock_irqrestore(&bam_ch[ch_id].lock, flags);
 
 	queue_rx();
 }

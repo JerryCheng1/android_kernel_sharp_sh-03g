@@ -250,9 +250,6 @@ EXPORT_SYMBOL(trigger_cpu_pwr_stats_calc);
 
 void set_cpu_throttled(cpumask_t *mask, bool throttling)
 {
-#ifdef CONFIG_SHSYS_CUST
-	return;
-#else  /* CONFIG_SHSYS_CUST */
 	int cpu;
 
 	if (!mask)
@@ -262,7 +259,6 @@ void set_cpu_throttled(cpumask_t *mask, bool throttling)
 	for_each_cpu(cpu, mask)
 		cpu_stats[cpu].throttling = throttling;
 	spin_unlock(&update_lock);
-#endif /* CONFIG_SHSYS_CUST */
 }
 EXPORT_SYMBOL(set_cpu_throttled);
 
@@ -347,6 +343,14 @@ static void clear_static_power(struct cpu_static_info *sp)
 	kfree(sp);
 }
 
+static BLOCKING_NOTIFIER_HEAD(msm_core_stats_notifier_list);
+
+int register_cpu_pwr_stats_ready_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(&msm_core_stats_notifier_list,
+						nb);
+}
+
 static int update_userspace_power(struct sched_params __user *argp)
 {
 	int i;
@@ -422,6 +426,9 @@ static int update_userspace_power(struct sched_params __user *argp)
 			}
 			cpu_stats[cpu].ptable = per_cpu(ptable, cpu);
 			repopulate_stats(cpu);
+
+			blocking_notifier_call_chain(
+				&msm_core_stats_notifier_list, cpu, NULL);
 		}
 	}
 	spin_unlock(&update_lock);
@@ -461,13 +468,9 @@ static long msm_core_ioctl(struct file *file, unsigned int cmd,
 			pr_err("Userspace power update failed with %ld\n", ret);
 		break;
 	case EA_VOLT:
-		for (i = 0; i < MAX_CORES_PER_CLUSTER; i++, cpumask >>= 1) {
-			if (!(cpumask & 0x01))
-				continue;
-
-			mpidr |= i;
+		for (i = 0; cpumask > 0; i++, cpumask >>= 1) {
 			for_each_possible_cpu(cpu) {
-				if (cpu_logical_map(cpu) == mpidr)
+				if (cpu_logical_map(cpu) == (mpidr | i))
 					break;
 			}
 		}
@@ -540,11 +543,7 @@ static int msm_core_stats_init(struct device *dev, int cpu)
 	cpu_node = &activity[cpu];
 	cpu_stats[cpu].cpu = cpu;
 	cpu_stats[cpu].temp = cpu_node->temp;
-#ifdef CONFIG_SHSYS_CUST
-	cpu_stats[cpu].throttling = true;
-#else  /* CONFIG_SHSYS_CUST */
 	cpu_stats[cpu].throttling = false;
-#endif /* CONFIG_SHSYS_CUST */
 
 	cpu_stats[cpu].len = cpu_node->sp->num_of_freqs;
 	pstate = devm_kzalloc(dev,
@@ -557,6 +556,7 @@ static int msm_core_stats_init(struct device *dev, int cpu)
 		pstate[i].freq = cpu_node->sp->table[i].frequency;
 
 	per_cpu(ptable, cpu) = pstate;
+
 	return 0;
 }
 
@@ -981,7 +981,6 @@ static int uio_init(struct platform_device *pdev)
 		return ret;
 	}
 	dev_set_drvdata(&pdev->dev, info);
-	pr_info("Device created for client '%s'\n", clnt_res->name);
 
 	return 0;
 }
@@ -1015,6 +1014,7 @@ static int msm_core_dev_probe(struct platform_device *pdev)
 	ret = of_property_read_u32(node, key, &poll_ms);
 	if (ret)
 		pr_info("msm-core initialized without polling period\n");
+
 
 	ret = uio_init(pdev);
 	if (ret)

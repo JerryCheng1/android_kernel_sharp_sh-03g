@@ -274,7 +274,7 @@ obj-$(CONFIG_SND_SOC_MSM_STUB)  += snd-soc-msm-stub.o
 # Amp
 obj-$(CONFIG_SND_SOC_MAX9877)	+= snd-soc-max9877.o
 obj-$(CONFIG_SND_SOC_TPA6130A2)	+= snd-soc-tpa6130a2.o
-#/* SH_AUDIO_DRIVER -> */ /*14-061*/
+#/* SH_AUDIO_DRIVER -> */ /*20-009*/
 obj-$(CONFIG_SND_SOC_ES325)     += audience/
 obj-$(CONFIG_SND_SOC_ES_515)    += audience/
 obj-$(CONFIG_SND_SOC_ES705)     += audience/
@@ -284,4 +284,5 @@ obj-$(CONFIG_SND_SOC_ES804_ESCORE)     += audience/
 obj-$(CONFIG_SND_SOC_ES755)     += audience/
 obj-$(CONFIG_MQ100_SENSOR_HUB)     += audience/
 obj-$(CONFIG_SND_SOC_ES855)     += audience/
-#/* SH_AUDIO_DRIVER <- */ /*14-061*/
+#/* SH_AUDIO_DRIVER <- */ /*20-009*/
+

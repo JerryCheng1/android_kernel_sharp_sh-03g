@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -115,6 +115,9 @@ struct msm_isp_buf_ops {
 	int (*enqueue_buf) (struct msm_isp_buf_mgr *buf_mgr,
 		struct msm_isp_qbuf_info *info);
 
+	int (*dequeue_buf)(struct msm_isp_buf_mgr *buf_mgr,
+		struct msm_isp_qbuf_info *info);
+
 	int (*release_buf) (struct msm_isp_buf_mgr *buf_mgr,
 		uint32_t bufq_handle);
 
@@ -125,7 +128,8 @@ struct msm_isp_buf_ops {
 		uint32_t bufq_handle, uint32_t *buf_src);
 
 	int (*get_buf) (struct msm_isp_buf_mgr *buf_mgr, uint32_t id,
-		uint32_t bufq_handle, struct msm_isp_buffer **buf_info);
+		uint32_t bufq_handle, struct msm_isp_buffer **buf_info,
+		uint32_t *buf_cnt);
 
 	int (*get_buf_by_index) (struct msm_isp_buf_mgr *buf_mgr,
 		uint32_t bufq_handle, uint32_t buf_index,
@@ -152,12 +156,16 @@ struct msm_isp_buf_ops {
 	int (*buf_mgr_debug) (struct msm_isp_buf_mgr *buf_mgr);
 	struct msm_isp_bufq * (*get_bufq)(struct msm_isp_buf_mgr *buf_mgr,
 		uint32_t bufq_handle);
+	int (*update_put_buf_cnt)(struct msm_isp_buf_mgr *buf_mgr,
+		uint32_t bufq_handle, uint32_t buf_index,
+		uint32_t frame_id);
 };
 
 struct msm_isp_buf_mgr {
 	int init_done;
 	uint32_t open_count;
 	uint32_t pagefault_debug;
+	uint32_t frameId_mismatch_recovery;
 	uint16_t num_buf_q;
 	struct msm_isp_bufq *bufq;
 

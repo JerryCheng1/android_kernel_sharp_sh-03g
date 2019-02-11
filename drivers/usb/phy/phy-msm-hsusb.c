@@ -805,7 +805,7 @@ static int msm_hsphy_probe(struct platform_device *pdev)
 		phy->vddcx = devm_regulator_get(dev, "vddcx");
 		if (IS_ERR(phy->vddcx)) {
 			dev_err(dev, "unable to get vddcx supply\n");
-			ret = PTR_ERR(phy->vdd);
+			ret = PTR_ERR(phy->vddcx);
 			goto err_ret;
 		}
 	}

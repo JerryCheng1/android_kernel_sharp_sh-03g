@@ -15,8 +15,15 @@
 #include "msm_cci.h"
 
 #undef CDBG
+/* SHLOCAL_CAMERA_DRIVERS-> */
+#if 0
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
 #define S_I2C_DBG(fmt, args...) pr_debug(fmt, ##args)
+#else
+#define CDBG(fmt, args...) do { } while (0)
+#define S_I2C_DBG(fmt, args...) do { } while (0)
+#endif
+/* SHLOCAL_CAMERA_DRIVERS<- */
 
 #define I2C_COMPARE_MATCH 0
 #define I2C_COMPARE_MISMATCH 1
@@ -136,7 +143,7 @@ int32_t msm_camera_cci_i2c_write_seq(struct msm_camera_i2c_client *client,
 	uint32_t addr, uint8_t *data, uint32_t num_byte)
 {
 	int32_t rc = -EFAULT;
-	uint8_t i = 0;
+	uint32_t i = 0;
 	struct msm_camera_cci_ctrl cci_ctrl;
 	struct msm_camera_i2c_reg_array reg_conf_tbl[num_byte];
 

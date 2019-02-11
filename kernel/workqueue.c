@@ -53,15 +53,15 @@
 
 #ifdef CONFIG_SHSYS_CUST_DEBUG
 #include <linux/module.h>
-enum { 
-	SH_DEBUG_WORKQUEUE_EXPIRED = 1U << 0, 
+enum {
+	SH_DEBUG_WORKQUEUE_EXPIRED = 1U << 0,
 	SH_DEBUG_WORKQUEUE_STARTED = 1U << 1,
 };
 static int sh_debug_mask = 0;
 module_param_named(
 	sh_debug_mask, sh_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP
 	);
-#endif  
+#endif
 
 enum {
 	/*
@@ -1441,8 +1441,7 @@ void delayed_work_timer_fn(unsigned long __data)
 
 		BUG_ON(!timer->base);
 
-		deferrable = ((unsigned int)(unsigned long)timer->base & TIMER_DEFERRABLE);
-		
+		deferrable = ((unsigned int)(unsigned long)timer->base & TIMER_DEFERRABLE);	
 		if (lookup_symbol_name((unsigned long) dwork->work.func, symname) < 0) {
 			pr_info("%s: funcname %p,deferrable=%d\n", __func__,  dwork->work.func, deferrable);
 		}
@@ -1450,7 +1449,7 @@ void delayed_work_timer_fn(unsigned long __data)
 			pr_info("%s: funcname %s,deferrable=%d\n", __func__,  symname, deferrable);
 		}
 	}
-#endif /* CONFIG_SHSYS_CUST_DEBUG */  
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 	/* should have been called from irqsafe timer with irq already off */
 	__queue_work(dwork->cpu, dwork->wq, &dwork->work);
 }
@@ -1978,6 +1977,8 @@ static void maybe_create_worker(struct worker_pool *pool)
 __releases(&pool->lock)
 __acquires(&pool->lock)
 {
+	if (!need_to_create_worker(pool))
+		return;
 restart:
 	spin_unlock_irq(&pool->lock);
 
@@ -2023,15 +2024,9 @@ restart:
  * LOCKING:
  * spin_lock_irq(pool->lock) which may be released and regrabbed
  * multiple times.  Called only from manager.
- *
- * RETURNS:
- * %false if no action was taken and pool->lock stayed locked, %true
- * otherwise.
  */
-static bool maybe_destroy_workers(struct worker_pool *pool)
+static void maybe_destroy_workers(struct worker_pool *pool)
 {
-	bool ret = false;
-
 	while (too_many_workers(pool)) {
 		struct worker *worker;
 		unsigned long expires;
@@ -2045,10 +2040,7 @@ static bool maybe_destroy_workers(struct worker_pool *pool)
 		}
 
 		destroy_worker(worker);
-		ret = true;
 	}
-
-	return ret;
 }
 
 /**
@@ -2907,19 +2899,57 @@ bool flush_work(struct work_struct *work)
 }
 EXPORT_SYMBOL_GPL(flush_work);
 
+struct cwt_wait {
+	wait_queue_t		wait;
+	struct work_struct	*work;
+};
+
+static int cwt_wakefn(wait_queue_t *wait, unsigned mode, int sync, void *key)
+{
+	struct cwt_wait *cwait = container_of(wait, struct cwt_wait, wait);
+
+	if (cwait->work != key)
+		return 0;
+	return autoremove_wake_function(wait, mode, sync, key);
+}
+
 static bool __cancel_work_timer(struct work_struct *work, bool is_dwork)
 {
+	static DECLARE_WAIT_QUEUE_HEAD(cancel_waitq);
 	unsigned long flags;
 	int ret;
 
 	do {
 		ret = try_to_grab_pending(work, is_dwork, &flags);
 		/*
-		 * If someone else is canceling, wait for the same event it
-		 * would be waiting for before retrying.
+		 * If someone else is already canceling, wait for it to
+		 * finish.  flush_work() doesn't work for PREEMPT_NONE
+		 * because we may get scheduled between @work's completion
+		 * and the other canceling task resuming and clearing
+		 * CANCELING - flush_work() will return false immediately
+		 * as @work is no longer busy, try_to_grab_pending() will
+		 * return -ENOENT as @work is still being canceled and the
+		 * other canceling task won't be able to clear CANCELING as
+		 * we're hogging the CPU.
+		 *
+		 * Let's wait for completion using a waitqueue.  As this
+		 * may lead to the thundering herd problem, use a custom
+		 * wake function which matches @work along with exclusive
+		 * wait and wakeup.
 		 */
-		if (unlikely(ret == -ENOENT))
-			flush_work(work);
+		if (unlikely(ret == -ENOENT)) {
+			struct cwt_wait cwait;
+
+			init_wait(&cwait.wait);
+			cwait.wait.func = cwt_wakefn;
+			cwait.work = work;
+
+			prepare_to_wait_exclusive(&cancel_waitq, &cwait.wait,
+						  TASK_UNINTERRUPTIBLE);
+			if (work_is_canceling(work))
+				schedule();
+			finish_wait(&cancel_waitq, &cwait.wait);
+		}
 	} while (unlikely(ret < 0));
 
 	/* tell other tasks trying to grab @work to back off */
@@ -2928,6 +2958,16 @@ static bool __cancel_work_timer(struct work_struct *work, bool is_dwork)
 
 	flush_work(work);
 	clear_work_data(work);
+
+	/*
+	 * Paired with prepare_to_wait() above so that either
+	 * waitqueue_active() is visible here or !work_is_canceling() is
+	 * visible there.
+	 */
+	smp_mb();
+	if (waitqueue_active(&cancel_waitq))
+		__wake_up(&cancel_waitq, TASK_NORMAL, 1, work);
+
 	return ret;
 }
 

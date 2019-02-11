@@ -670,7 +670,7 @@ static int shdisp_pm_psals_power_manager(int user, int onoff)
     }
 
     if (shdisp_pm_ctx.bdic_status.power_status != SHDISP_DEV_STATE_ON) {
-        SHDISP_ERR("bdic is not active.");
+        SHDISP_WARN("bdic is not active.");
         return SHDISP_RESULT_FAILURE;
     }
 
@@ -688,6 +688,9 @@ static int shdisp_pm_psals_power_manager(int user, int onoff)
             if (ret != SHDISP_RESULT_SUCCESS) {
                 SHDISP_ERR("<RESULT_FAILURE> shdisp_pm_psals_power_on.");
                 return SHDISP_RESULT_FAILURE;
+            }
+            if (onoff == SHDISP_DEV_REQ_ON) {
+                shdisp_SYS_API_delay_us(10 * 1000);
             }
             break;
         }
@@ -727,7 +730,7 @@ static int shdisp_pm_psals_power_manager(int user, int onoff)
 /* ------------------------------------------------------------------------- */
 static const struct shdisp_pm_psals_state_row *shdisp_pm_psals_find_state_table(int user, int onoff)
 {
-    int i;
+    unsigned int i;
     const struct shdisp_pm_psals_state_row *state_row = NULL;
 
     for (i = 0; i < ARRAY_SIZE(shdisp_pm_psals_state_table); i++) {

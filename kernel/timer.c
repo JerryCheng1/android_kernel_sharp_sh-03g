@@ -49,6 +49,8 @@
 #include <asm/timex.h>
 #include <asm/io.h>
 
+#include "time/tick-internal.h"
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/timer.h>
 
@@ -93,6 +95,7 @@ EXPORT_SYMBOL(boot_tvec_bases);
 static DEFINE_PER_CPU(struct tvec_base *, tvec_bases) = &boot_tvec_bases;
 #ifdef CONFIG_SMP
 static struct tvec_base *tvec_base_deferral = &boot_tvec_bases;
+static atomic_t deferrable_pending;
 #endif
 
 #ifdef CONFIG_SHSYS_CUST_DEBUG
@@ -106,7 +109,7 @@ module_param_named(
 	sh_debug_mask, sh_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP
 );
 #endif
-     
+
 /* Functions below help us manage 'deferrable' flag */
 static inline unsigned int tbase_get_deferrable(struct tvec_base *base)
 {
@@ -1166,20 +1169,15 @@ static void call_timer_fn(struct timer_list *timer, void (*fn)(unsigned long),
 /**
  * __run_timers - run all expired timers (if any) on this CPU.
  * @base: the timer vector to be processed.
- * @try: try and just return if base's lock already acquired.
  *
  * This function cascades all vectors and executes all expired timer
  * vectors.
  */
-static inline void __run_timers(struct tvec_base *base, bool try)
+static inline void __run_timers(struct tvec_base *base)
 {
 	struct timer_list *timer;
 
-	if (!try)
-		spin_lock_irq(&base->lock);
-	else if (!spin_trylock_irq(&base->lock))
-		return;
-
+	spin_lock_irq(&base->lock);
 	while (time_after_eq(jiffies, base->timer_jiffies)) {
 		struct list_head work_list;
 		struct list_head *head = &work_list;
@@ -1345,6 +1343,30 @@ static unsigned long cmp_next_hrtimer_event(unsigned long now,
 	return expires;
 }
 
+#ifdef CONFIG_SMP
+/*
+ * check_pending_deferrable_timers - Check for unbound deferrable timer expiry.
+ * @cpu - Current CPU
+ *
+ * The function checks whether any global deferrable pending timers
+ * are exipired or not. This function does not check cpu bounded
+ * diferrable pending timers expiry.
+ *
+ * The function returns true when a cpu unbounded deferrable timer is expired.
+ */
+bool check_pending_deferrable_timers(int cpu)
+{
+	if (cpu == tick_do_timer_cpu ||
+		tick_do_timer_cpu == TICK_DO_TIMER_NONE) {
+		if (time_after_eq(jiffies, tvec_base_deferral->timer_jiffies)
+			&& !atomic_cmpxchg(&deferrable_pending, 0, 1)) {
+				return true;
+		}
+	}
+	return false;
+}
+#endif
+
 /**
  * get_next_timer_interrupt - return the jiffy of the next pending timer
  * @now: current time (in jiffies)
@@ -1407,16 +1429,17 @@ static void run_timer_softirq(struct softirq_action *h)
 	hrtimer_run_pending();
 
 #ifdef CONFIG_SMP
-	if (time_after_eq(jiffies, tvec_base_deferral->timer_jiffies))
-		/*
-		 * if other cpu is handling cpu unbound deferrable timer base,
-		 * current cpu doesn't need to handle it so pass try=true.
-		 */
-		__run_timers(tvec_base_deferral, true);
+	if (time_after_eq(jiffies, tvec_base_deferral->timer_jiffies)) {
+		if ((atomic_cmpxchg(&deferrable_pending, 1, 0) &&
+			tick_do_timer_cpu == TICK_DO_TIMER_NONE) ||
+			tick_do_timer_cpu == smp_processor_id())
+				__run_timers(tvec_base_deferral);
+
+	}
 #endif
 
 	if (time_after_eq(jiffies, base->timer_jiffies))
-		__run_timers(base, false);
+		__run_timers(base);
 }
 
 /*
@@ -1447,7 +1470,7 @@ static void process_timeout(unsigned long __data)
 	if ((sh_debug_mask & SH_DEBUG_SCHEDULE_TIMEOUT_EXPIRED) && (__data))
 		pr_info("%s: name %s, pid %d\n",
 			__func__, ((struct task_struct *)__data)->comm, ((struct task_struct *)__data)->pid);
-#endif /* CONFIG_SHSYS_CUST_DEBUG */  
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 	wake_up_process((struct task_struct *)__data);
 }
 
@@ -1518,7 +1541,7 @@ signed long __sched schedule_timeout(signed long timeout)
 		pr_info("%s: name %s, pid %d, time left %u (ms)\n",
 			__func__, current->comm, current->pid,
 			jiffies_to_msecs(timeout));
-#endif /* CONFIG_SHSYS_CUST_DEBUG */  
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 
 	setup_timer_on_stack(&timer, process_timeout, (unsigned long)current);
 	__mod_timer(&timer, expire, false, TIMER_NOT_PINNED);

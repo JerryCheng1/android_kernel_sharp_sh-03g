@@ -23,14 +23,14 @@
 #include <linux/compat.h>
 #include <linux/slab.h>
 
-#ifdef CONFIG_SH_AUDIO_DRIVER /* 14-005 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-005 */
 extern int msm_headset_hp_state(void);
 extern int msm_headset_bu_state(void);
 extern int tomtom_codec_set_bias_mode(int mode);
-#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 14-005 */
-#ifdef CONFIG_SH_AUDIO_DRIVER /* 14-023 */
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 18-005 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-023 */
 extern int msm_routing_set_a2dp_mode(int mode);
-#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 14-023 */
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 18-023 */
 
 struct snd_ctl_elem_list32 {
 	u32 offset;
@@ -100,7 +100,7 @@ struct snd_ctl_elem_info32 {
 	unsigned char reserved[64];
 } __attribute__((packed));
 
-#ifdef CONFIG_SH_AUDIO_DRIVER /* 14-005 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-005 */
 static int snd_ctl_hp_state_compat(struct snd_ctl_elem_hp_state __user *_state)
 {
 
@@ -124,9 +124,9 @@ static int snd_ctl_set_bias_mode_compat(int __user *_state)
 	tomtom_codec_set_bias_mode(mode);
 	return 0;
 }
-#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 14-005 */
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 18-005 */
 
-#ifdef CONFIG_SH_AUDIO_DRIVER /* 14-023 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-023 */
 static int snd_ctl_set_mode_a2dp(int __user *_state)
 {
 	int mode;
@@ -138,7 +138,7 @@ static int snd_ctl_set_mode_a2dp(int __user *_state)
 
 	return 0;
 }
-#endif /* CONFIG_SH_AUDIO_DRIVER *//* 14-023 */
+#endif /* CONFIG_SH_AUDIO_DRIVER *//* 18-023 */
 
 static int snd_ctl_elem_info_compat(struct snd_ctl_file *ctl,
 				    struct snd_ctl_elem_info32 __user *data32)
@@ -483,16 +483,16 @@ static inline long snd_ctl_ioctl_compat(struct file *file, unsigned int cmd, uns
 		return snd_ctl_elem_add_compat(ctl, argp, 0);
 	case SNDRV_CTL_IOCTL_ELEM_REPLACE32:
 		return snd_ctl_elem_add_compat(ctl, argp, 1);
-#ifdef CONFIG_SH_AUDIO_DRIVER /* 14-005 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-005 */
 	case SNDRV_CTL_IOCTL_HP_STATE:
 		return snd_ctl_hp_state_compat(argp);
 	case SNDRV_CTL_IOCTL_SET_BIAS_MODE:
 		return snd_ctl_set_bias_mode_compat(ip);
-#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 14-005 */
-#ifdef CONFIG_SH_AUDIO_DRIVER /* 14-023 */
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 18-005 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-023 */
 	case SNDRV_CTL_IOCTL_SET_MODE_A2DP:
 		return snd_ctl_set_mode_a2dp(ip);
-#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 14-023 */
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 18-023 */
 	}
 
 	down_read(&snd_ioctl_rwsem);

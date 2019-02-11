@@ -28,7 +28,6 @@
 
 #ifdef CONFIG_SHSYS_CUST
 #include <sharp/shdisp_kerl.h>
-#include <../sharp/shdisp/shdisp_type.h>
 #endif /* CONFIG_SHSYS_CUST */
 
 struct cpu_sync {
@@ -387,21 +386,26 @@ static void do_input_boost(struct work_struct *work)
 }
 
 #ifdef CONFIG_SHSYS_CUST
-static int is_ignorable_event(unsigned int type, unsigned int code)
+static int is_ignorable_event(struct input_handle *handle,
+		unsigned int type, unsigned int code, int value)
 {
+	struct input_dev *dev = handle->dev;
+
 	if (shdisp_api_get_main_disp_status() == SHDISP_MAIN_DISP_OFF) {
-		if (((type == EV_KEY) && (code == KEY_POWER))   ||
+		if (((type == EV_KEY) && (code == KEY_POWER) && (value == 1))	||
 #ifdef CONFIG_SENSOR_SHGRIP
-			((type == EV_SW)  && (code == SW_GRIP_00))  ||
+			((type == EV_SW)  && (code == SW_GRIP_00) && (value == 1))	||
 #endif /* CONFIG_SENSOR_SHGRIP */
-			((type == EV_KEY) && (code == KEY_SWEEPON)) ||
-			((type == EV_ABS) && (code == ABS_DISTANCE))||
-			((type == EV_SW)  && (code == SW_LID))) {
-			pr_debug("start clock boosted by input event type = %d code = %d disp_status = %d\n", type, code, shdisp_api_get_main_disp_status());
+			((type == EV_KEY) && (code == KEY_SWEEPON))					||
+			((type == EV_KEY) && (code == KEY_DOUBLETAP))				||
+			((type == EV_ABS) && (code == ABS_DISTANCE) && (value == 7))||
+			((type == EV_SW)  && (code == SW_LID) && (value == 0))		||
+			(!strcmp(dev->name, "shub_ex_notify") && (type == EV_ABS) && (code == ABS_Y) && (value & 0x100))) {
+			pr_debug("start clock boosted by input event dev_name = %s type = %d code = %d value = %d disp_status = %d\n", dev->name, type, code, value, shdisp_api_get_main_disp_status());
 			return false;
 		}
 	}
-	pr_debug("ignore input event type = %d code = %d disp_status = %d\n", type, code, shdisp_api_get_main_disp_status());
+	pr_debug("ignore input event dev_name = %s type = %d code = %d value = %d disp_status = %d\n", dev->name, type, code, value, shdisp_api_get_main_disp_status());
 	return true;
 }
 #endif /* CONFIG_SHSYS_CUST */
@@ -419,7 +423,7 @@ static void cpuboost_input_event(struct input_handle *handle,
 		return;
 
 #ifdef CONFIG_SHSYS_CUST
-	if (is_ignorable_event(type, code))
+	if (is_ignorable_event(handle, type, code, value))
 		return;
 #endif /* CONFIG_SHSYS_CUST */
 	if (work_pending(&input_boost_work))
@@ -513,6 +517,14 @@ static const struct input_device_id cpuboost_ids[] = {
 			INPUT_DEVICE_ID_MATCH_SWBIT,
 		.evbit = { BIT_MASK(EV_SW) },
 		.swbit = { BIT_MASK(SW_LID) },
+	},
+	/* pick up */
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
+			INPUT_DEVICE_ID_MATCH_ABSBIT,
+		.evbit = { BIT_MASK(EV_ABS) },
+		.absbit = { [BIT_WORD( ABS_Y)] =
+			BIT_MASK( ABS_Y) },
 	},
 #endif /* CONFIG_SHSYS_CUST */
 	{ },

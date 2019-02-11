@@ -30,6 +30,7 @@
 #include <linux/suspend.h>
 #include <linux/cpuidle.h>
 #include <linux/timer.h>
+#include <linux/wakeup_reason.h>
 
 #include "../base.h"
 #include "power.h"
@@ -762,7 +763,7 @@ void dpm_resume(pm_message_t state)
 	}
 #ifdef CONFIG_SHSYS_CUST_DEBUG
     pr_info( "%s(): Executing resume callbacks is started.\n", __func__ );
-#endif /* CONFIG_SHSYS_CUST_DEBUG */  
+#endif /* CONFIG_SHSYS_CUST_DEBUG */ 
 
 	while (!list_empty(&dpm_suspended_list)) {
 		dev = to_device(dpm_suspended_list.next);
@@ -953,6 +954,7 @@ static int device_suspend_noirq(struct device *dev, pm_message_t state)
 static int dpm_suspend_noirq(pm_message_t state)
 {
 	ktime_t starttime = ktime_get();
+	char suspend_abort[MAX_SUSPEND_ABORT_LEN];
 	int error = 0;
 
 	cpuidle_pause();
@@ -980,6 +982,9 @@ static int dpm_suspend_noirq(pm_message_t state)
 		put_device(dev);
 
 		if (pm_wakeup_pending()) {
+			pm_get_active_wakeup_sources(suspend_abort,
+				MAX_SUSPEND_ABORT_LEN);
+			log_suspend_abort_reason(suspend_abort);
 			error = -EBUSY;
 			break;
 		}
@@ -1003,6 +1008,7 @@ static int device_suspend_late(struct device *dev, pm_message_t state)
 {
 	pm_callback_t callback = NULL;
 	char *info = NULL;
+	int error = 0;
 
 	__pm_runtime_disable(dev, false);
 
@@ -1028,7 +1034,15 @@ static int device_suspend_late(struct device *dev, pm_message_t state)
 		callback = pm_late_early_op(dev->driver->pm, state);
 	}
 
-	return dpm_run_callback(callback, dev, state, info);
+	error = dpm_run_callback(callback, dev, state, info);
+	if (error)
+		/*
+		 * dpm_resume_early wouldn't be run for this failed device,
+		 * hence enable runtime_pm now
+		 */
+		pm_runtime_enable(dev);
+
+	return error;
 }
 
 /**
@@ -1038,6 +1052,7 @@ static int device_suspend_late(struct device *dev, pm_message_t state)
 static int dpm_suspend_late(pm_message_t state)
 {
 	ktime_t starttime = ktime_get();
+	char suspend_abort[MAX_SUSPEND_ABORT_LEN];
 	int error = 0;
 
 	mutex_lock(&dpm_list_mtx);
@@ -1063,6 +1078,9 @@ static int dpm_suspend_late(pm_message_t state)
 		put_device(dev);
 
 		if (pm_wakeup_pending()) {
+			pm_get_active_wakeup_sources(suspend_abort,
+				MAX_SUSPEND_ABORT_LEN);
+			log_suspend_abort_reason(suspend_abort);
 			error = -EBUSY;
 			break;
 		}
@@ -1130,6 +1148,7 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 	char *info = NULL;
 	int error = 0;
 	struct dpm_watchdog wd;
+	char suspend_abort[MAX_SUSPEND_ABORT_LEN];
 
 	dpm_wait_for_children(dev, async);
 
@@ -1146,6 +1165,9 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 		pm_wakeup_event(dev, 0);
 
 	if (pm_wakeup_pending()) {
+		pm_get_active_wakeup_sources(suspend_abort,
+			MAX_SUSPEND_ABORT_LEN);
+		log_suspend_abort_reason(suspend_abort);
 		async_error = -EBUSY;
 		goto Complete;
 	}
@@ -1263,7 +1285,7 @@ int dpm_suspend(pm_message_t state)
 	async_error = 0;
 #ifdef CONFIG_SHSYS_CUST_DEBUG
    pr_info( "%s(): Executing suspend callbacks is started.\n", __func__ );
-#endif /* CONFIG_SHSYS_CUST_DEBUG */  
+#endif /* CONFIG_SHSYS_CUST_DEBUG */ 
 
 	while (!list_empty(&dpm_prepared_list)) {
 		struct device *dev = to_device(dpm_prepared_list.prev);

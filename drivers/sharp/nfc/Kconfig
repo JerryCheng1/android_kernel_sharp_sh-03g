@@ -1,14 +1,48 @@
 #
-# NFC device configuration
+# TOSHIBA NFC Chip driver Support
 #
 
-menu "NFC driver"
+menu "NFC Chip Driver Support"
 
-comment "SHARP NFC device drivers"
+choice
+    prompt "NFC Choice"
+    default NFC_8992
+config NFC_8992
+    bool "TOSHIBA_NFC"
+config NFC_8994
+    bool "SAMSUNG NFC"
+endchoice
+
+
+config TOSHIBA_NFC
+    bool
+    default n
+
+config TOSHIBA_NFC_GPIO
+    bool "TOSHIBA_NFC GPIO Driver"
+    select TOSHIBA_NFC
+    depends on NFC_8992
+    default n
+    ---help---
+      Enable the TOSHIBA_NFC GPIO driver for NFC
+
+config TOSHIBA_NFC_I2C
+    bool "TOSHIBA_NFC I2C Driver"
+    select TOSHIBA_NFC
+    default n
+    depends on I2C
+    depends on NFC_8992
+    ---help---
+      Enable the TOSHIBA_NFC I2C driver for NFC
+
+
+
+
 
 config SHNFC3
 	bool "NFC device drivers"
 	depends on SERIAL_MSM_HSL && I2C
+        depends on NFC_8994
 	default n
 	help
 	  Enable NFC(Faver3.0) driver.
@@ -16,6 +50,7 @@ config SHNFC3
 config SEC_NFC
     bool "Samsung NFC driver"
 	depends on SHNFC3
+        depends on NFC_8994
     default n
     help
       SAMSUNG NFC Driver.
@@ -45,5 +80,7 @@ config SEC_NFC_I2C
     bool "I2C"
 endchoice
 
-endmenu
 
+
+
+endmenu

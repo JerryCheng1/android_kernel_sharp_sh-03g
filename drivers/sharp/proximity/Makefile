@@ -1,7 +1,8 @@
 ifdef CONFIG_SENSORS_PROXIMITY
 
-obj-$(CONFIG_PROXIMITY_INT_IR) += proximity.o
-
-obj-$(CONFIG_PROXIMITY_INT_HOST) += proximity_cal.o
-
+ifeq ($(CONFIG_PROXIMITY_DRV_MSM8992),y)
+    obj-$(CONFIG_SENSORS_PROXIMITY) += platform_01/
+else
+    obj-$(CONFIG_SENSORS_PROXIMITY) += platform_02/
+endif
 endif

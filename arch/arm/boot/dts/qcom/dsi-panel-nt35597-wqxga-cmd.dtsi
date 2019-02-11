@@ -44,6 +44,9 @@
 		qcom,mdss-dsi-lane-1-state;
 		qcom,mdss-dsi-lane-2-state;
 		qcom,mdss-dsi-lane-3-state;
+		qcom,mdss-dsi-te-pin-select = <1>;
+		qcom,mdss-dsi-te-check-enable;
+		qcom,mdss-dsi-te-using-te-pin;
 		qcom,mdss-dsi-panel-timings = [C4 2E 20 00 5C 5E 24 32 24 03
 								04 00];
 

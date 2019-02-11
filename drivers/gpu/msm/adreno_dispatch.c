@@ -173,7 +173,7 @@ static inline bool _isidle(struct kgsl_device *device)
 	unsigned int i;
 	unsigned int reg_rbbm_status;
 
-	if (!kgsl_pwrctrl_isenabled(device))
+	if (!kgsl_state_is_awake(device))
 		goto ret;
 
 	adreno_readreg(adreno_dev, ADRENO_REG_RBBM_STATUS,
@@ -267,6 +267,27 @@ static void _retire_marker(struct kgsl_cmdbatch *cmdbatch)
 	kgsl_cmdbatch_destroy(cmdbatch);
 }
 
+static int _check_context_queue(struct adreno_context *drawctxt)
+{
+	int ret;
+
+	spin_lock(&drawctxt->lock);
+
+	/*
+	 * Wake up if there is room in the context or if the whole thing got
+	 * invalidated while we were asleep
+	 */
+
+	if (kgsl_context_invalid(&drawctxt->base))
+		ret = 1;
+	else
+		ret = drawctxt->queued < _context_cmdqueue_size ? 1 : 0;
+
+	spin_unlock(&drawctxt->lock);
+
+	return ret;
+}
+
 /*
  * return true if this is a marker command and the dependent timestamp has
  * retired
@@ -289,7 +310,6 @@ static struct kgsl_cmdbatch *_get_cmdbatch(struct adreno_context *drawctxt)
 {
 	struct kgsl_cmdbatch *cmdbatch = NULL;
 	bool pending = false;
-	unsigned long flags;
 
 	if (drawctxt->cmdqueue_head == drawctxt->cmdqueue_tail)
 		return NULL;
@@ -319,10 +339,15 @@ static struct kgsl_cmdbatch *_get_cmdbatch(struct adreno_context *drawctxt)
 			pending = true;
 	}
 
-	spin_lock_irqsave(&cmdbatch->lock, flags);
+	/*
+	 * We may have cmdbatch timer running, which also uses same lock,
+	 * take a lock with software interrupt disabled (bh) to avoid
+	 * spin lock recursion.
+	 */
+	spin_lock_bh(&cmdbatch->lock);
 	if (!list_empty(&cmdbatch->synclist))
 		pending = true;
-	spin_unlock_irqrestore(&cmdbatch->lock, flags);
+	spin_unlock_bh(&cmdbatch->lock);
 
 	/*
 	 * If changes are pending and the canary timer hasn't been
@@ -333,17 +358,13 @@ static struct kgsl_cmdbatch *_get_cmdbatch(struct adreno_context *drawctxt)
 		 * If syncpoints are pending start the canary timer if
 		 * it hasn't already been started
 		 */
-		if (!timer_pending(&cmdbatch->timer))
-			mod_timer(&cmdbatch->timer, jiffies + (5 * HZ));
+		if (!cmdbatch->timeout_jiffies) {
+			cmdbatch->timeout_jiffies = jiffies + 5 * HZ;
+			mod_timer(&cmdbatch->timer, cmdbatch->timeout_jiffies);
+		}
 
 		return ERR_PTR(-EAGAIN);
 	}
-
-	/*
-	 * Otherwise, delete the timer to make sure it is good
-	 * and dead before queuing the buffer
-	 */
-	del_timer_sync(&cmdbatch->timer);
 
 	_pop_cmdbatch(drawctxt);
 	return cmdbatch;
@@ -363,6 +384,14 @@ static struct kgsl_cmdbatch *adreno_dispatcher_get_cmdbatch(
 	spin_lock(&drawctxt->lock);
 	cmdbatch = _get_cmdbatch(drawctxt);
 	spin_unlock(&drawctxt->lock);
+
+	/*
+	 * Delete the timer and wait for timer handler to finish executing
+	 * on another core before queueing the buffer. We must do this
+	 * without holding any spin lock that the timer handler might be using
+	 */
+	if (!IS_ERR_OR_NULL(cmdbatch))
+		del_timer_sync(&cmdbatch->timer);
 
 	return cmdbatch;
 }
@@ -388,7 +417,7 @@ static inline int adreno_dispatcher_requeue_cmdbatch(
 		spin_unlock(&drawctxt->lock);
 		/* get rid of this cmdbatch since the context is bad */
 		kgsl_cmdbatch_destroy(cmdbatch);
-		return -EINVAL;
+		return -ENOENT;
 	}
 
 	prev = drawctxt->cmdqueue_head == 0 ?
@@ -465,6 +494,11 @@ static int sendcmd(struct adreno_device *adreno_dev,
 		return -EBUSY;
 	}
 
+	if (kgsl_context_detached(cmdbatch->context)) {
+		mutex_unlock(&device->mutex);
+		return -ENOENT;
+	}
+
 	dispatcher->inflight++;
 	dispatch_q->inflight++;
 
@@ -474,6 +508,7 @@ static int sendcmd(struct adreno_device *adreno_dev,
 		ret = kgsl_active_count_get(device);
 		if (ret) {
 			dispatcher->inflight--;
+			dispatch_q->inflight--;
 			mutex_unlock(&device->mutex);
 			return ret;
 		}
@@ -514,8 +549,16 @@ static int sendcmd(struct adreno_device *adreno_dev,
 	if (ret) {
 		dispatcher->inflight--;
 		dispatch_q->inflight--;
-		KGSL_DRV_ERR(device,
-			"Unable to submit command to the ringbuffer %d\n", ret);
+
+		/*
+		 * -ENOENT means that the context was detached before the
+		 *  command was submitted - don't log a message in that case
+		 */
+
+		if (ret != -ENOENT)
+			KGSL_DRV_ERR(device,
+				"Unable to submit command to the ringbuffer %d\n",
+				ret);
 		return ret;
 	}
 
@@ -623,16 +666,25 @@ static int dispatcher_context_sendcmds(struct adreno_device *adreno_dev,
 		ret = sendcmd(adreno_dev, cmdbatch);
 
 		/*
-		 * There are various reasons why we can't submit a command (no
-		 * memory for the commands, full ringbuffer, etc) but none of
-		 * these are actually the current command's fault.  Requeue it
-		 * back on the context and let it come back around again if
-		 * conditions improve
+		 * On error from sendcmd() try to requeue the command batch
+		 * unless we got back -ENOENT which means that the context has
+		 * been detached and there will be no more deliveries from here
 		 */
-		if (ret) {
-			if (adreno_dispatcher_requeue_cmdbatch(drawctxt,
-				cmdbatch))
-				ret = -EINVAL;
+		if (ret != 0) {
+			/* Destroy the cmdbatch on -ENOENT */
+			if (ret == -ENOENT)
+				kgsl_cmdbatch_destroy(cmdbatch);
+			else {
+				/*
+				 * If the requeue returns an error, return that
+				 * instead of whatever sendcmd() sent us
+				 */
+				int r = adreno_dispatcher_requeue_cmdbatch(
+					drawctxt, cmdbatch);
+				if (r)
+					ret = r;
+			}
+
 			break;
 		}
 
@@ -642,12 +694,11 @@ static int dispatcher_context_sendcmds(struct adreno_device *adreno_dev,
 	}
 
 	/*
-	 * If the context successfully submitted commands there will be room
-	 * in the context queue so wake up any snoozing threads that want to
-	 * submit commands
+	 * Wake up any snoozing threads if we have consumed any real commands
+	 * or marker commands and we have room in the context queue.
 	 */
 
-	if (count)
+	if (_check_context_queue(drawctxt))
 		wake_up_all(&drawctxt->wq);
 
 	if (!ret)
@@ -664,7 +715,7 @@ static int dispatcher_context_sendcmds(struct adreno_device *adreno_dev,
  * Issue as many commands as possible (up to inflight) from the pending contexts
  * This function assumes the dispatcher mutex has been locked.
  */
-static int _adreno_dispatcher_issuecmds(struct adreno_device *adreno_dev)
+static void _adreno_dispatcher_issuecmds(struct adreno_device *adreno_dev)
 {
 	struct adreno_dispatcher *dispatcher = &adreno_dev->dispatcher;
 	struct adreno_context *drawctxt, *next;
@@ -673,7 +724,7 @@ static int _adreno_dispatcher_issuecmds(struct adreno_device *adreno_dev)
 
 	/* Leave early if the dispatcher isn't in a happy state */
 	if (adreno_gpu_fault(adreno_dev) != 0)
-			return 0;
+		return;
 
 	plist_head_init(&requeue);
 	plist_head_init(&busy_list);
@@ -711,19 +762,21 @@ static int _adreno_dispatcher_issuecmds(struct adreno_device *adreno_dev)
 
 		ret = dispatcher_context_sendcmds(adreno_dev, drawctxt);
 
-		if (ret != 0) {
+		/* Don't bother requeuing on -ENOENT - context is detached */
+		if (ret != 0 && ret != -ENOENT) {
 			spin_lock(&dispatcher->plist_lock);
 
 			/*
 			 * Check to seen if the context had been requeued while
 			 * we were processing it (probably by another thread
-			 * pushing commands). If it has then do a put to make
-			 * sure the reference counting stays accurate.
-			 * If the dispatch_q is full then put it on the
-			 * busy list so it gets first preference when space
-			 * becomes available.
-			 * Otherwise put it on the requeue list since it may
-			 * have more commands.
+			 * pushing commands). If it has then shift it to the
+			 * requeue list if it was not able to submit commands
+			 * due to the dispatch_q being full. Also, do a put to
+			 * make sure the reference counting stays accurate.
+			 * If the node is empty then we will put it on the
+			 * requeue list and not touch the refcount since we
+			 * already hold it from the first time it went on the
+			 * list.
 			 */
 
 			if (!plist_node_empty(&drawctxt->pending)) {
@@ -764,8 +817,6 @@ static int _adreno_dispatcher_issuecmds(struct adreno_device *adreno_dev)
 	}
 
 	spin_unlock(&dispatcher->plist_lock);
-
-	return 0;
 }
 
 /**
@@ -774,42 +825,18 @@ static int _adreno_dispatcher_issuecmds(struct adreno_device *adreno_dev)
  *
  * Lock the dispatcher and call _adreno_dispatcher_issueibcmds
  */
-static int adreno_dispatcher_issuecmds(struct adreno_device *adreno_dev)
+static void adreno_dispatcher_issuecmds(struct adreno_device *adreno_dev)
 {
 	struct adreno_dispatcher *dispatcher = &adreno_dev->dispatcher;
-	int ret;
 
 	/* If the dispatcher is busy then schedule the work for later */
 	if (!mutex_trylock(&dispatcher->mutex)) {
 		adreno_dispatcher_schedule(&adreno_dev->dev);
-		return 0;
+		return;
 	}
 
-	ret = _adreno_dispatcher_issuecmds(adreno_dev);
+	_adreno_dispatcher_issuecmds(adreno_dev);
 	mutex_unlock(&dispatcher->mutex);
-
-	return ret;
-}
-
-static int _check_context_queue(struct adreno_context *drawctxt)
-{
-	int ret;
-
-	spin_lock(&drawctxt->lock);
-
-	/*
-	 * Wake up if there is room in the context or if the whole thing got
-	 * invalidated while we were asleep
-	 */
-
-	if (kgsl_context_invalid(&drawctxt->base))
-		ret = 1;
-	else
-		ret = drawctxt->queued < _context_cmdqueue_size ? 1 : 0;
-
-	spin_unlock(&drawctxt->lock);
-
-	return ret;
 }
 
 /**
@@ -868,7 +895,7 @@ int adreno_dispatcher_queue_cmd(struct adreno_device *adreno_dev,
 
 	if (kgsl_context_detached(&drawctxt->base)) {
 		spin_unlock(&drawctxt->lock);
-		return -EINVAL;
+		return -ENOENT;
 	}
 
 	/*
@@ -949,7 +976,7 @@ int adreno_dispatcher_queue_cmd(struct adreno_device *adreno_dev,
 	}
 	if (kgsl_context_detached(&drawctxt->base)) {
 		spin_unlock(&drawctxt->lock);
-		return -EINVAL;
+		return -ENOENT;
 	}
 
 	ret = get_timestamp(drawctxt, cmdbatch, timestamp);
@@ -1609,9 +1636,14 @@ static int dispatcher_do_fault(struct kgsl_device *device)
 		 * For certain faults like h/w fault the interrupts are
 		 * turned off, re-enable here
 		 */
-		if (kgsl_pwrctrl_isenabled(device))
-			kgsl_pwrctrl_irq(device, KGSL_PWRFLAGS_ON);
-		return 0;
+		mutex_lock(&device->mutex);
+		if (device->state == KGSL_STATE_AWARE)
+			ret = kgsl_pwrctrl_change_state(device,
+				KGSL_STATE_ACTIVE);
+		else
+			ret = 0;
+		mutex_unlock(&device->mutex);
+		return ret;
 	}
 
 	/* Turn off all the timers */

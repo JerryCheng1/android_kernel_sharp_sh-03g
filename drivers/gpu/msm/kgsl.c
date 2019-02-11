@@ -608,13 +608,12 @@ EXPORT_SYMBOL(kgsl_context_init);
  * detached by checking the KGSL_CONTEXT_PRIV_DETACHED bit in
  * context->priv.
  */
-int kgsl_context_detach(struct kgsl_context *context)
+static void kgsl_context_detach(struct kgsl_context *context)
 {
-	int ret;
 	struct kgsl_device *device;
 
 	if (context == NULL)
-		return -EINVAL;
+		return;
 
 	/*
 	 * Mark the context as detached to keep others from using
@@ -622,7 +621,7 @@ int kgsl_context_detach(struct kgsl_context *context)
 	 * we don't try to detach twice.
 	 */
 	if (test_and_set_bit(KGSL_CONTEXT_PRIV_DETACHED, &context->priv))
-		return -EINVAL;
+		return;
 
 	device = context->device;
 
@@ -630,7 +629,7 @@ int kgsl_context_detach(struct kgsl_context *context)
 
 	/* we need to hold device mutex to detach */
 	mutex_lock(&device->mutex);
-	ret = context->device->ftbl->drawctxt_detach(context);
+	context->device->ftbl->drawctxt_detach(context);
 	mutex_unlock(&device->mutex);
 
 	/*
@@ -644,8 +643,6 @@ int kgsl_context_detach(struct kgsl_context *context)
 	kgsl_del_event_group(&context->events);
 
 	kgsl_context_put(context);
-
-	return ret;
 }
 
 void
@@ -1067,8 +1064,7 @@ static int kgsl_close_device(struct kgsl_device *device)
 		/* Fail if the wait times out */
 		BUG_ON(atomic_read(&device->active_cnt) > 0);
 
-		result = device->ftbl->stop(device);
-		kgsl_pwrctrl_change_state(device, KGSL_STATE_INIT);
+		result = kgsl_pwrctrl_change_state(device, KGSL_STATE_INIT);
 	}
 	mutex_unlock(&device->mutex);
 	return result;
@@ -1159,8 +1155,10 @@ static int kgsl_open_device(struct kgsl_device *device)
 	}
 	device->open_count++;
 err:
-	if (result)
+	if (result) {
+		kgsl_pwrctrl_change_state(device, KGSL_STATE_INIT);
 		atomic_dec(&device->active_cnt);
+	}
 
 	mutex_unlock(&device->mutex);
 	return result;
@@ -1595,62 +1593,30 @@ static void _kgsl_cmdbatch_timer(unsigned long data)
 	struct kgsl_device *device;
 	struct kgsl_cmdbatch *cmdbatch = (struct kgsl_cmdbatch *) data;
 	struct kgsl_cmdbatch_sync_event *event;
-	struct adreno_context *drawctxt;
 
 	if (cmdbatch == NULL || cmdbatch->context == NULL)
 		return;
-
-	drawctxt = ADRENO_CONTEXT(cmdbatch->context);
-	/* We are in timer context, this can be non-bh */
-	spin_lock(&drawctxt->lock);
-	set_bit(ADRENO_CONTEXT_CMDBATCH_FLAG_FENCE_LOG,
-		&drawctxt->flags);
-	spin_lock(&cmdbatch->lock);
-	if (list_empty(&cmdbatch->synclist))
-		goto done;
 
 	device = cmdbatch->context->device;
 
 	dev_err(device->dev,
 		"kgsl: possible gpu syncpoint deadlock for context %d timestamp %d\n",
 		cmdbatch->context->id, cmdbatch->timestamp);
-	dev_err(device->dev, " Active sync points:\n");
 
-	/* Print all the pending sync objects */
+	set_bit(CMDBATCH_FLAG_FENCE_LOG, &cmdbatch->priv);
+	kgsl_context_dump(cmdbatch->context);
+	clear_bit(CMDBATCH_FLAG_FENCE_LOG, &cmdbatch->priv);
+
+	spin_lock(&cmdbatch->lock);
+	/* Print all the fences */
 	list_for_each_entry(event, &cmdbatch->synclist, node) {
-		switch (event->type) {
-		case KGSL_CMD_SYNCPOINT_TYPE_TIMESTAMP: {
-			unsigned int retired;
-
-			kgsl_readtimestamp(event->device,
-				event->context, KGSL_TIMESTAMP_RETIRED,
-					&retired);
-
-			dev_err(device->dev,
-				"  [timestamp] context %d timestamp %d (retired %d)\n",
-				event->context->id, event->timestamp, retired);
-			break;
-		}
-		case KGSL_CMD_SYNCPOINT_TYPE_FENCE:
-			if (event->handle && event->handle->fence) {
-				set_bit(CMDBATCH_FLAG_FENCE_LOG,
-					&cmdbatch->priv);
-				kgsl_sync_fence_log(event->handle->fence);
-				clear_bit(CMDBATCH_FLAG_FENCE_LOG,
-					&cmdbatch->priv);
-			} else
-				dev_err(device->dev, "  fence: invalid\n");
-			break;
-		}
+		if (KGSL_CMD_SYNCPOINT_TYPE_FENCE == event->type &&
+			event->handle && event->handle->fence)
+			kgsl_sync_fence_log(event->handle->fence);
 	}
-
-done:
 	spin_unlock(&cmdbatch->lock);
-	clear_bit(ADRENO_CONTEXT_CMDBATCH_FLAG_FENCE_LOG,
-		&drawctxt->flags);
-	spin_unlock(&drawctxt->lock);
+	dev_err(device->dev, "--gpu syncpoint deadlock print end--\n");
 }
-
 /**
  * kgsl_cmdbatch_sync_event_destroy() - Destroy a sync event object
  * @kref: Pointer to the kref structure for this object
@@ -1705,9 +1671,13 @@ static void kgsl_cmdbatch_sync_expire(struct kgsl_device *device,
 	struct kgsl_cmdbatch_sync_event *e, *tmp;
 	int sched = 0;
 	int removed = 0;
-	unsigned long flags;
 
-	spin_lock_irqsave(&event->cmdbatch->lock, flags);
+	/*
+	 * We may have cmdbatch timer running, which also uses same lock,
+	 * take a lock with software interrupt disabled (bh) to avoid
+	 * spin lock recursion.
+	 */
+	spin_lock_bh(&event->cmdbatch->lock);
 
 	/*
 	 * sync events that are contained by a cmdbatch which has been
@@ -1723,7 +1693,7 @@ static void kgsl_cmdbatch_sync_expire(struct kgsl_device *device,
 	}
 
 	sched = list_empty(&event->cmdbatch->synclist) ? 1 : 0;
-	spin_unlock_irqrestore(&event->cmdbatch->lock, flags);
+	spin_unlock_bh(&event->cmdbatch->lock);
 
 	/* If the list is empty delete the canary timer */
 	if (sched)
@@ -1789,6 +1759,7 @@ void kgsl_cmdbatch_destroy(struct kgsl_cmdbatch *cmdbatch)
 	/* Zap the canary timer */
 	del_timer_sync(&cmdbatch->timer);
 
+	/* non-bh because we just destroyed timer */
 	spin_lock(&cmdbatch->lock);
 
 	/* Empty the synclist before canceling events */
@@ -1877,7 +1848,6 @@ static int kgsl_cmdbatch_add_sync_fence(struct kgsl_device *device,
 {
 	struct kgsl_cmd_syncpoint_fence *sync = priv;
 	struct kgsl_cmdbatch_sync_event *event;
-	unsigned long flags;
 
 	event = kzalloc(sizeof(*event), GFP_KERNEL);
 
@@ -1905,9 +1875,11 @@ static int kgsl_cmdbatch_add_sync_fence(struct kgsl_device *device,
 	 */
 
 	kref_get(&event->refcount);
-	spin_lock_irqsave(&cmdbatch->lock, flags);
+
+	/* non-bh because, we haven't started cmdbatch timer yet */
+	spin_lock(&cmdbatch->lock);
 	list_add(&event->node, &cmdbatch->synclist);
-	spin_unlock_irqrestore(&cmdbatch->lock, flags);
+	spin_unlock(&cmdbatch->lock);
 
 	/*
 	 * Increment the reference count for the async callback.
@@ -1928,9 +1900,9 @@ static int kgsl_cmdbatch_add_sync_fence(struct kgsl_device *device,
 		kgsl_cmdbatch_sync_event_put(event);
 
 		/* Remove event from the synclist */
-		spin_lock_irqsave(&cmdbatch->lock, flags);
+		spin_lock(&cmdbatch->lock);
 		list_del(&event->node);
-		spin_unlock_irqrestore(&cmdbatch->lock, flags);
+		spin_unlock(&cmdbatch->lock);
 		kgsl_cmdbatch_sync_event_put(event);
 
 		/* Event no longer needed by this function */
@@ -2021,6 +1993,7 @@ static int kgsl_cmdbatch_add_sync_timestamp(struct kgsl_device *device,
 	kref_init(&event->refcount);
 	kref_get(&event->refcount);
 
+	/* non-bh because, we haven't started cmdbatch timer yet */
 	spin_lock(&cmdbatch->lock);
 	list_add(&event->node, &cmdbatch->synclist);
 	spin_unlock(&cmdbatch->lock);
@@ -2604,14 +2577,15 @@ long kgsl_ioctl_drawctxt_destroy(struct kgsl_device_private *dev_priv,
 {
 	struct kgsl_drawctxt_destroy *param = data;
 	struct kgsl_context *context;
-	long result;
 
 	context = kgsl_context_get_owner(dev_priv, param->drawctxt_id);
+	if (context == NULL)
+		return -EINVAL;
 
-	result = kgsl_context_detach(context);
+	kgsl_context_detach(context);
 
 	kgsl_context_put(context);
-	return result;
+	return 0;
 }
 
 static long _sharedmem_free_entry(struct kgsl_mem_entry *entry)
@@ -3125,7 +3099,7 @@ long kgsl_ioctl_map_user_mem(struct kgsl_device_private *dev_priv,
 		if (!kgsl_mmu_is_secured(&dev_priv->device->mmu)) {
 			dev_WARN_ONCE(dev_priv->device->dev, 1,
 				"Secure buffer not supported");
-			return -EINVAL;
+			return -EOPNOTSUPP;
 		}
 
 		/* Can't use CPU map with secure buffers */
@@ -3543,7 +3517,7 @@ _gpumem_alloc(struct kgsl_device_private *dev_priv,
 			(flags & KGSL_MEMFLAGS_SECURE)) {
 		dev_WARN_ONCE(dev_priv->device->dev, 1,
 				"Secure memory not supported");
-		return -EINVAL;
+		return -EOPNOTSUPP;
 	}
 
 	/* Cap the alignment bits to the highest number we can handle */
@@ -4406,7 +4380,7 @@ kgsl_get_unmapped_area(struct file *file, unsigned long addr,
 
 put:
 	if (IS_ERR_VALUE(ret))
-		KGSL_MEM_ERR(device,
+		KGSL_MEM_ERR_RATELIMITED(device,
 				"pid %d pgoff %lx len %ld failed error %ld\n",
 				private->pid, pgoff, len, ret);
 	kgsl_mem_entry_put(entry);
@@ -4510,12 +4484,12 @@ bool kgsl_is_working(void)
 	case KGSL_STATE_INIT:
 	case KGSL_STATE_ACTIVE:
 	case KGSL_STATE_NAP:
+	case KGSL_STATE_AWARE:
 		is_working = true;
 		break;
 	case KGSL_STATE_NONE:
 	case KGSL_STATE_SLEEP:
 	case KGSL_STATE_SUSPEND:
-	case KGSL_STATE_HUNG:
 	case KGSL_STATE_SLUMBER:
 	default:
 		is_working = false;

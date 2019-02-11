@@ -272,7 +272,8 @@ static int __ref bcl_cpu_ctrl_callback(struct notifier_block *nfb,
 {
 	uint32_t cpu = (uintptr_t)hcpu;
 
-	if (action == CPU_UP_PREPARE || action == CPU_UP_PREPARE_FROZEN) {
+	switch (action & ~CPU_TASKS_FROZEN) {
+	case CPU_UP_PREPARE:
 		if (!cpumask_test_and_set_cpu(cpu, bcl_cpu_online_mask))
 			pr_debug("BCL online Mask: %u\n",
 				cpumask_weight(bcl_cpu_online_mask));
@@ -282,6 +283,15 @@ static int __ref bcl_cpu_ctrl_callback(struct notifier_block *nfb,
 		} else {
 			pr_debug("voting for CPU%d to be online\n", cpu);
 		}
+		break;
+	case CPU_ONLINE:
+		if (bcl_hotplug_enabled && (bcl_hotplug_request & BIT(cpu))) {
+			pr_debug("CPU%d online. reevaluate hotplug\n", cpu);
+			schedule_work(&bcl_hotplug_work);
+		}
+		break;
+	default:
+		break;
 	}
 
 	return NOTIFY_OK;
@@ -693,6 +703,12 @@ static void bcl_periph_mode_set(enum bcl_device_mode mode)
 	int ret = 0;
 
 	if (mode == BCL_DEVICE_ENABLED) {
+		/*
+		 * Power supply monitor wont send a callback till the
+		 * power state changes. Make sure we read the current SoC
+		 * and mitigate.
+		 */
+		power_supply_callback(&bcl_psy);
 		ret = power_supply_register(gbcl->dev, &bcl_psy);
 		if (ret < 0) {
 			pr_err("Unable to register bcl_psy rc = %d\n", ret);
@@ -743,7 +759,7 @@ static void bcl_periph_mode_set(enum bcl_device_mode mode)
 		bcl_soc_state = BCL_THRESHOLD_DISABLED;
 		bcl_vph_notify(BCL_HIGH_THRESHOLD);
 		bcl_ibat_notify(BCL_LOW_THRESHOLD);
-		bcl_hotplug_request = 0;
+		bcl_handle_hotplug(NULL);
 	}
 }
 
@@ -928,8 +944,8 @@ mode_store(struct device *dev, struct device_attribute *attr,
 		return -EPERM;
 
 	if (!strcmp(buf, "enable")) {
-		bcl_mode_set(BCL_DEVICE_ENABLED);
 		bcl_update_online_mask();
+		bcl_mode_set(BCL_DEVICE_ENABLED);
 		pr_info("bcl enabled\n");
 	} else if (!strcmp(buf, "disable")) {
 		bcl_mode_set(BCL_DEVICE_DISABLED);

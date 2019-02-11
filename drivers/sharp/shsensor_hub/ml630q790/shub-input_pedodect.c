@@ -246,10 +246,13 @@ static long shub_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 // SHMDS_HUB_1101_01 add S
 static long shub_ioctl_wrapper(struct file *filp, unsigned int cmd, unsigned long arg)
 {
+    SHUB_DBG_TIME_INIT     /* SHMDS_HUB_1801_01 add */
     long ret = 0;
 
     shub_qos_start();
+    SHUB_DBG_TIME_START    /* SHMDS_HUB_1801_01 add */
     ret = shub_ioctl(filp, cmd , arg);
+    SHUB_DBG_TIME_END(cmd) /* SHMDS_HUB_1801_01 add */
     shub_qos_end();
 
     return ret;
@@ -267,12 +270,14 @@ void shub_input_report_stepdetect(int32_t *data)
 // SHMDS_HUB_0701_01 add E
 
 #if 1  // SHMDS_HUB_0601_01 mod S
+    SHUB_INPUT_VAL_CLEAR(shub_idev, ABS_Z, data[INDEX_STPS]); /* SHMDS_HUB_0603_01 add */ /* SHMDS_HUB_0603_02 add */
     input_report_abs(shub_idev, ABS_Z, data[INDEX_STPS]);
     input_report_abs(shub_idev, ABS_HAT2Y, data[INDEX_TM]);
     input_report_abs(shub_idev, ABS_HAT2X, data[INDEX_TMNS]);
     shub_input_sync_init(shub_idev); /* SHMDS_HUB_0602_01 mod */
     input_event(shub_idev, EV_SYN, SYN_REPORT, SHUB_INPUT_PEDODET);
 #else
+    SHUB_INPUT_VAL_CLEAR(shub_idev, ABS_X, data[INDEX_STPS]); /* SHMDS_HUB_0603_01 add */ /* SHMDS_HUB_0603_02 add */
     input_report_abs(shub_idev, ABS_X, data[INDEX_STPS]);
     input_report_abs(shub_idev, ABS_MISC, data[INDEX_TM]);
     input_report_abs(shub_idev, ABS_VOLUME, data[INDEX_TMNS]);

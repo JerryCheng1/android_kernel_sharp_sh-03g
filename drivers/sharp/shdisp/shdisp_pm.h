@@ -27,20 +27,21 @@
 /* ------------------------------------------------------------------------- */
 /* MACROS                                                                    */
 /* ------------------------------------------------------------------------- */
-#define SHDISP_DEV_TYPE_NONE        (0x00000000)
-#define SHDISP_DEV_TYPE_LCD         (0x00000001)
-#define SHDISP_DEV_TYPE_BKL         (0x00000002)
-#define SHDISP_DEV_TYPE_LED         (0x00000004)
-#define SHDISP_DEV_TYPE_ALS         (0x00000008)
-#define SHDISP_DEV_TYPE_PS          (0x00000010)
-#define SHDISP_DEV_TYPE_LED2        (0x00000020)
-#define SHDISP_DEV_TYPE_ALS_APP     (0x00000100)
-#define SHDISP_DEV_TYPE_CAMERA      (0x00000200)
-#define SHDISP_DEV_TYPE_KEYLED      (0x00000400)
-#define SHDISP_DEV_TYPE_DIAG        (0x00000800)
-#define SHDISP_DEV_TYPE_SENSORHUB   (0x00001000)
-#define SHDISP_DEV_TYPE_RECOVERY    (0x01000000)
-#define SHDISP_DEV_TYPE_DEBUG       (0x10000000)
+#define SHDISP_DEV_TYPE_NONE            (0x00000000)
+#define SHDISP_DEV_TYPE_LCD             (0x00000001)
+#define SHDISP_DEV_TYPE_BKL             (0x00000002)
+#define SHDISP_DEV_TYPE_LED             (0x00000004)
+#define SHDISP_DEV_TYPE_ALS             (0x00000008)
+#define SHDISP_DEV_TYPE_PS              (0x00000010)
+#define SHDISP_DEV_TYPE_LED2            (0x00000020)
+#define SHDISP_DEV_TYPE_ALS_APP         (0x00000100)
+#define SHDISP_DEV_TYPE_CAMERA          (0x00000200)
+#define SHDISP_DEV_TYPE_KEYLED          (0x00000400)
+#define SHDISP_DEV_TYPE_DIAG            (0x00000800)
+#define SHDISP_DEV_TYPE_SENSORHUB       (0x00001000)
+#define SHDISP_DEV_TYPE_LED_AUTO_LOW    (0x00002000)
+#define SHDISP_DEV_TYPE_RECOVERY        (0x01000000)
+#define SHDISP_DEV_TYPE_DEBUG           (0x10000000)
 
 #define SHDISP_DEV_TYPE_BDIC_MASK   (SHDISP_DEV_TYPE_LCD       | \
                                      SHDISP_DEV_TYPE_BKL       | \
@@ -56,13 +57,14 @@
 
 #define SHDISP_DEV_TYPE_PS_MASK     (SHDISP_DEV_TYPE_PS)
 
-#define SHDISP_DEV_TYPE_ALS_MASK    (SHDISP_DEV_TYPE_LCD       | \
-                                     SHDISP_DEV_TYPE_BKL       | \
-                                     SHDISP_DEV_TYPE_ALS_APP   | \
-                                     SHDISP_DEV_TYPE_CAMERA    | \
-                                     SHDISP_DEV_TYPE_KEYLED    | \
-                                     SHDISP_DEV_TYPE_DIAG      | \
-                                     SHDISP_DEV_TYPE_SENSORHUB | \
+#define SHDISP_DEV_TYPE_ALS_MASK    (SHDISP_DEV_TYPE_LCD            | \
+                                     SHDISP_DEV_TYPE_BKL            | \
+                                     SHDISP_DEV_TYPE_ALS_APP        | \
+                                     SHDISP_DEV_TYPE_CAMERA         | \
+                                     SHDISP_DEV_TYPE_KEYLED         | \
+                                     SHDISP_DEV_TYPE_DIAG           | \
+                                     SHDISP_DEV_TYPE_SENSORHUB      | \
+                                     SHDISP_DEV_TYPE_LED_AUTO_LOW   | \
                                      SHDISP_DEV_TYPE_DEBUG)
 
 /* ------------------------------------------------------------------------- */

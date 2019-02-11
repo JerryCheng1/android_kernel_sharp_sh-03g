@@ -96,7 +96,7 @@ typedef enum shbatt_api_to_tsk_command_tag
 /* [SHPWR][#33176] 2015.02.13 START */
 	SHBATT_TASK_CMD_GET_BATTERY_LOG_INFO,
 /* [SHPWR][#33176] 2015.02.13 END   */
-	SHBATT_TASK_CMD_GET_BATTERY_LOG_INFO_ASYNC,
+	SHBATT_TASK_CMD_BATTLOG_EVENT,
 /*| TODO: New API add point */
 	NUM_SHBATT_TASK_CMD,
 } shbatt_api_to_tsk_command_t;

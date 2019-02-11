@@ -104,7 +104,9 @@ typedef enum {
 /*| @ STRUCT & UNION DECLARE :                                                  |*/
 /*+-----------------------------------------------------------------------------+*/
 
-/* NONE.. */
+#ifdef CONFIG_BATTERY_SH
+#define SHPWR_DBG_KERNEL_FILE_CHECK_POINTER_ALWAYS_OK ((void *)1)
+#endif /* CONFIG_BATTERY_SH */
 
 /*+-----------------------------------------------------------------------------+*/
 /*| @ PUBLIC VARIABLE :                                                         |*/
@@ -118,7 +120,11 @@ typedef enum {
 
 #ifdef CONFIG_BATTERY_SH
 shpwr_log_level shpwr_log_current_level( shpwr_log_type type );
-/*| TODO: New API add point */
+void shpwr_dbg_log_init(void);
+void shpwr_add_dbg_log(char *fmt, ...);
+
+void shpwr_dump_reg_init(void);
+void shpwr_add_dump_reg(bool force_save_flg, char *fmt, ...);
 #endif /* CONFIG_BATTERY_SH */
 
 /*+-----------------------------------------------------------------------------+*/

@@ -203,6 +203,13 @@ struct ufs_qcom_ice_data {
 	bool crypto_engine_err;
 };
 
+/* Host controller hardware version: major.minor.step */
+struct ufs_hw_version {
+	u16 step;
+	u16 minor;
+	u8 major;
+};
+
 #ifdef CONFIG_DEBUG_FS
 struct qcom_debugfs_files {
 	struct dentry *debugfs_root;
@@ -232,6 +239,9 @@ struct ufs_qcom_host {
 	bool is_lane_clks_enabled;
 	bool sec_cfg_updated;
 	struct ufs_qcom_ice_data ice;
+	void __iomem *dev_ref_clk_ctrl_mmio;
+	bool is_dev_ref_clk_enabled;
+	struct ufs_hw_version hw_ver;
 #ifdef CONFIG_DEBUG_FS
 	struct qcom_debugfs_files debugfs_files;
 #endif

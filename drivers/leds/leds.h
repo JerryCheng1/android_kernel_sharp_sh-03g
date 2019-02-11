@@ -59,5 +59,4 @@ ssize_t led_trigger_store(struct device *dev, struct device_attribute *attr,
 			const char *buf, size_t count);
 ssize_t led_trigger_show(struct device *dev, struct device_attribute *attr,
 			char *buf);
-
 #endif	/* __LEDS_H_INCLUDED */

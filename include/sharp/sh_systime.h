@@ -1,6 +1,6 @@
 /* include/sharp/sh_systime.h
  *
- * Copyright (C) 2014 Sharp Corporation
+ * Copyright (C) 2013 Sharp Corporation
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,7 +18,7 @@
 
 
 /* 
- * ref. boot_images/core/boot/secboot3/hw/msm8994/msmhwioreg.h
+ * ref. boot_images/core/boot/secboot3/hw/msm8992/msmhwioreg.h
  *
  * #define HWIO_MPM2_MPM_SLEEP_TIMETICK_COUNT_VAL_ADDR
  *
@@ -27,7 +27,7 @@
 
 
 /* 
- * ref. boot_images/core/boot/secboot3/hw/msm8994/boot_target.h
+ * ref. boot_images/core/boot/secboot3/hw/msm8992/boot_target.h
  *
  * >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> 
  */
@@ -41,7 +41,7 @@
 #define TIMETICK_CLK_SPEED_INT       30
 
 /*=========================================================================== 
-  MPM Sleep Clock frequency is 32.768 KHz
+  Clock frequency is 32.768 KHz
   The number of microseconds per cycle is:
   1 / (32.768 KHz) = 30.52ms
   we round 0.52 to 1/2.
@@ -55,11 +55,6 @@
  * <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< 
  */
 
-
-/* 
- * ref. LINUX/android/bootable/bootloader/lk/platform/msm8994/include/platform/iomap.h
- */
-#define MSM_SHARED_BASE             0x06A00000
 
 /* 
  * ref. LINUX/android/bootable/bootloader/lk/platform/msm_shared/smem.h
@@ -85,24 +80,21 @@ struct smem_alloc_info {
 	unsigned allocated;
 	unsigned offset;
 	unsigned size;
-	unsigned base_ext;
+	unsigned reserved;
 };
 
 typedef enum {
 	SMEM_SPINLOCK_ARRAY = 7,
+
 	SMEM_AARM_PARTITION_TABLE = 9,
-	SMEM_CHANNEL_ALLOC_TBL = 13,
-	SMEM_SMD_BASE_ID = 14,
 
 	SMEM_SLEEP_POWER_COLLAPSE_DISABLED = 89,
-	
+
 	SMEM_APPS_BOOT_MODE = 106,
 
 	SMEM_SHARP_ID_LOCATION = 134,
 
 	SMEM_BOARD_INFO_LOCATION = 137,
-
-	SMEM_SMD_FIFO_BASE_ID = 338,
 
 	SMEM_USABLE_RAM_PARTITION_TABLE = 402,
 

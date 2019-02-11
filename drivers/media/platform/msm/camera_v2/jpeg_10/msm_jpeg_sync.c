@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -719,7 +719,8 @@ int __msm_jpeg_open(struct msm_jpeg_device *pgmn_dev)
 		return -EBUSY;
 	}
 	pgmn_dev->open_count++;
-	mutex_unlock(&pgmn_dev->lock);
+	if (pgmn_dev->open_count == 1)
+		pgmn_dev->state = MSM_JPEG_INIT;
 
 	msm_jpeg_core_irq_install(msm_jpeg_irq);
 	if (pgmn_dev->core_type == MSM_JPEG_CORE_CODEC)
@@ -733,6 +734,7 @@ int __msm_jpeg_open(struct msm_jpeg_device *pgmn_dev)
 	if (rc) {
 		JPEG_PR_ERR("%s:%d] platform_init fail %d\n", __func__,
 			__LINE__, rc);
+		mutex_unlock(&pgmn_dev->lock);
 		return rc;
 	}
 
@@ -750,6 +752,7 @@ int __msm_jpeg_open(struct msm_jpeg_device *pgmn_dev)
 	msm_jpeg_core_init(pgmn_dev);
 
 	JPEG_DBG("%s:%d] success\n", __func__, __LINE__);
+	mutex_unlock(&pgmn_dev->lock);
 	return rc;
 }
 
@@ -763,7 +766,6 @@ int __msm_jpeg_release(struct msm_jpeg_device *pgmn_dev)
 		return -EINVAL;
 	}
 	pgmn_dev->open_count--;
-	mutex_unlock(&pgmn_dev->lock);
 
 	msm_jpeg_core_release(pgmn_dev, pgmn_dev->domain_num);
 	msm_jpeg_q_cleanup(&pgmn_dev->evt_q);
@@ -782,6 +784,7 @@ int __msm_jpeg_release(struct msm_jpeg_device *pgmn_dev)
 		pgmn_dev->irq, pgmn_dev);
 
 	JPEG_DBG("%s:%d]\n", __func__, __LINE__);
+	mutex_unlock(&pgmn_dev->lock);
 	return 0;
 }
 
@@ -1539,7 +1542,7 @@ int __msm_jpeg_init(struct msm_jpeg_device *pgmn_dev)
 		JPEG_DBG("%s:%d] name %s", __func__, __LINE__, iommu_name[j]);
 		JPEG_DBG("%s:%d] ctx 0x%lx", __func__, __LINE__,
 			(unsigned long)pgmn_dev->iommu_ctx_arr[i]);
-		if (!pgmn_dev->iommu_ctx_arr[i]) {
+		if (IS_ERR_OR_NULL(pgmn_dev->iommu_ctx_arr[i])) {
 			JPEG_PR_ERR("%s: No iommu fw context found\n",
 					__func__);
 			goto error;

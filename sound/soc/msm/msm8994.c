@@ -19,6 +19,7 @@
 #include <linux/qpnp/clkdiv.h>
 #include <linux/regulator/consumer.h>
 #include <linux/io.h>
+#include <linux/input.h>
 #include <linux/module.h>
 #include <linux/switch.h>
 #include <sound/core.h>
@@ -35,11 +36,15 @@
 #include "../codecs/wcd9xxx-common.h"
 #include "../codecs/wcd9330.h"
 
-#ifdef CONFIG_SH_AUDIO_DRIVER /* 14-002 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-079 */
+#include <sharp/shub_driver.h>
+#endif  /* CONFIG_SH_AUDIO_DRIVER */ /* 18-079 */
+
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-002 */
 #ifdef CONFIG_SH_AUDIO_SMARTAMP
 #include <sharp/shsmartamp_ssm4329.h>
 #endif	/* CONFIG_SH_AUDIO_SMARTAMP */
-#endif  /* CONFIG_SH_AUDIO_DRIVER */ /* 14-002 */
+#endif  /* CONFIG_SH_AUDIO_DRIVER */ /* 18-002 */
 
 #define DRV_NAME "msm8994-asoc-snd"
 
@@ -98,6 +103,7 @@ struct msm8994_asoc_mach_data {
 };
 
 static int slim0_rx_sample_rate = SAMPLING_RATE_48KHZ;
+static int slim0_tx_sample_rate = SAMPLING_RATE_48KHZ;
 static int slim0_rx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int slim0_tx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int hdmi_rx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
@@ -180,11 +186,11 @@ static struct wcd9xxx_mbhc_config mbhc_cfg = {
 	.anc_micbias = MBHC_MICBIAS2,
 	.mclk_cb_fn = msm_snd_enable_codec_ext_clk,
 	.mclk_rate = TOMTOM_EXT_CLK_RATE,
-#ifdef CONFIG_SH_AUDIO_DRIVER /* 14-004 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-004 */
 	.gpio_level_insert = 0,
-#else
+#else /* CONFIG_SH_AUDIO_DRIVER */
 	.gpio_level_insert = 1,
-#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 14-004 */
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 18-004 */
 	.detect_extn_cable = true,
 	.micbias_enable_flags = 1 << MBHC_MICBIAS_ENABLE_THRESHOLD_HEADSET,
 	.insert_detect = true,
@@ -197,6 +203,14 @@ static struct wcd9xxx_mbhc_config mbhc_cfg = {
 	.use_vddio_meas = true,
 	.enable_anc_mic_detect = false,
 	.hw_jack_type = SIX_POLE_JACK,
+	.key_code[0] = KEY_MEDIA,
+	.key_code[1] = KEY_VOICECOMMAND,
+	.key_code[2] = KEY_VOLUMEUP,
+	.key_code[3] = KEY_VOLUMEDOWN,
+	.key_code[4] = 0,
+	.key_code[5] = 0,
+	.key_code[6] = 0,
+	.key_code[7] = 0,
 };
 
 static struct afe_clk_cfg mi2s_tx_clk = {
@@ -386,7 +400,7 @@ static int msm8994_liquid_dock_notify_handler(struct notifier_block *this,
 		if (ret < 0) {
 			pr_err("%s: Request Irq Failed err = %d\n",
 				__func__, ret);
-			goto fail_dock_gpio;
+			goto fail_gpio_irq;
 		}
 
 		switch_set_state(&msm8994_liquid_dock_dev->audio_sdev,
@@ -404,9 +418,10 @@ static int msm8994_liquid_dock_notify_handler(struct notifier_block *this,
 	}
 	return NOTIFY_OK;
 
-fail_dock_gpio:
+fail_gpio_irq:
 	gpio_free(msm8994_liquid_dock_dev->plug_gpio);
 
+fail_dock_gpio:
 	return NOTIFY_DONE;
 }
 
@@ -454,18 +469,6 @@ exit:
 	msm8994_liquid_dock_dev = NULL;
 	return ret;
 }
-
-#ifdef CONFIG_SH_AUDIO_DRIVER /* 14-002 */
-#ifdef CONFIG_SH_AUDIO_SMARTAMP
-static void msm8994_spk_power_smartamp_control(u32 on)
-{
-	shsmartamp_control(on);
-
-	pr_debug("%s() Smart AMP %s\n",
-			 __func__, (on == 1) ? "Enable" : "Disable");
-}
-#endif	/* CONFIG_SH_AUDIO_SMARTAMP */
-#endif  /* CONFIG_SH_AUDIO_DRIVER */ /* 14-002 */
 
 static void apq8094_db_device_irq_work(struct work_struct *work)
 {
@@ -536,6 +539,18 @@ static int apq8094_db_device_init(void)
 	return ret;
 }
 
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-002 */
+#ifdef CONFIG_SH_AUDIO_SMARTAMP
+static void msm8994_spk_power_smartamp_control(u32 on)
+{
+	shsmartamp_control(on);
+
+	pr_debug("%s() Smart AMP %s\n",
+		__func__, (on == 1) ? "Enable" : "Disable");
+}
+#endif	/* CONFIG_SH_AUDIO_SMARTAMP */
+#endif  /* CONFIG_SH_AUDIO_DRIVER */ /* 18-002 */
+
 static void msm8994_ext_control(struct snd_soc_codec *codec)
 {
 	struct snd_soc_dapm_context *dapm = &codec->dapm;
@@ -543,27 +558,33 @@ static void msm8994_ext_control(struct snd_soc_codec *codec)
 	mutex_lock(&dapm->codec->mutex);
 	pr_debug("%s: msm8994_spk_control = %d", __func__, msm8994_spk_control);
 	if (msm8994_spk_control == MSM8994_SPK_ON) {
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-079 */
+		shub_api_stop_pedometer_func(SHUB_STOP_PED_TYPE_SPE);
+#endif  /* CONFIG_SH_AUDIO_DRIVER */ /* 18-079 */
 		snd_soc_dapm_enable_pin(dapm, "Lineout_1 amp");
-#ifdef CONFIG_SH_AUDIO_DRIVER /* 14-002 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-002 */
 		snd_soc_dapm_enable_pin(dapm, "Lineout_3 amp");
 #ifdef CONFIG_SH_AUDIO_SMARTAMP
 		msm8994_spk_power_smartamp_control(1);
-#endif	/* CONFIG_SH_AUDIO_SMARTAMP */
-#else	/* CONFIG_SH_AUDIO_DRIVER */ /* 14-002 */
+#endif  /* CONFIG_SH_AUDIO_SMARTAMP */
+#else   /* CONFIG_SH_AUDIO_DRIVER */ /* 18-002 */
 		snd_soc_dapm_enable_pin(dapm, "Lineout_2 amp");
-#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 14-002 */
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 18-002 */
 	} else {
-#ifdef CONFIG_SH_AUDIO_DRIVER /* 14-002 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-002 */
 #ifdef CONFIG_SH_AUDIO_SMARTAMP
 		msm8994_spk_power_smartamp_control(0);
-#endif	/* CONFIG_SH_AUDIO_SMARTAMP */
-#endif  /* CONFIG_SH_AUDIO_DRIVER */ /* 14-002 */
+#endif  /* CONFIG_SH_AUDIO_SMARTAMP */
+#endif  /* CONFIG_SH_AUDIO_DRIVER */ /* 18-002 */
 		snd_soc_dapm_disable_pin(dapm, "Lineout_1 amp");
-#ifdef CONFIG_SH_AUDIO_DRIVER /* 14-002 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-002 */
 		snd_soc_dapm_disable_pin(dapm, "Lineout_3 amp");
-#else	/* CONFIG_SH_AUDIO_DRIVER */ /* 14-002 */
+#else   /* CONFIG_SH_AUDIO_DRIVER */ /* 18-002 */
 		snd_soc_dapm_disable_pin(dapm, "Lineout_2 amp");
-#endif  /* CONFIG_SH_AUDIO_DRIVER */ /* 14-002 */
+#endif  /* CONFIG_SH_AUDIO_DRIVER */ /* 18-002 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 18-079 */
+		shub_api_restart_pedometer_func(SHUB_STOP_PED_TYPE_SPE);
+#endif  /* CONFIG_SH_AUDIO_DRIVER */ /* 18-079 */
 	}
 	mutex_unlock(&dapm->codec->mutex);
 	snd_soc_dapm_sync(dapm);
@@ -714,13 +735,13 @@ static const struct snd_soc_dapm_widget msm8994_dapm_widgets[] = {
 	SND_SOC_DAPM_SPK("ultrasound amp", msm_ext_ultrasound_event),
 	SND_SOC_DAPM_MIC("Handset Mic", NULL),
 	SND_SOC_DAPM_MIC("Headset Mic", NULL),
-	SND_SOC_DAPM_MIC("ANCRight Headset Mic", NULL),
-	SND_SOC_DAPM_MIC("ANCLeft Headset Mic", NULL),
-#ifdef CONFIG_SH_AUDIO_DRIVER /* 14-001 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 20-001 */
 	SND_SOC_DAPM_MIC("Primary Mic", NULL),
 	SND_SOC_DAPM_MIC("Secondary Mic", NULL),
 	SND_SOC_DAPM_MIC("Tertiary Mic", NULL),
-#endif  /* CONFIG_SH_AUDIO_DRIVER */ /* 14-001 */
+#endif  /* CONFIG_SH_AUDIO_DRIVER */ /* 20-001 */
+	SND_SOC_DAPM_MIC("ANCRight Headset Mic", NULL),
+	SND_SOC_DAPM_MIC("ANCLeft Headset Mic", NULL),
 	SND_SOC_DAPM_MIC("Analog Mic4", NULL),
 	SND_SOC_DAPM_MIC("Analog Mic5", NULL),
 	SND_SOC_DAPM_MIC("Analog Mic6", NULL),
@@ -840,6 +861,105 @@ static int msm_slim_0_rx_ch_put(struct snd_kcontrol *kcontrol,
 	pr_debug("%s: msm_slim_0_rx_ch = %d\n", __func__,
 		 msm_slim_0_rx_ch);
 	return 1;
+}
+
+static int slim0_tx_sample_rate_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	int sample_rate_val = 0;
+
+	switch (slim0_tx_sample_rate) {
+	case SAMPLING_RATE_192KHZ:
+		sample_rate_val = 2;
+		break;
+	case SAMPLING_RATE_96KHZ:
+		sample_rate_val = 1;
+		break;
+	case SAMPLING_RATE_48KHZ:
+	default:
+		sample_rate_val = 0;
+		break;
+	}
+
+	ucontrol->value.integer.value[0] = sample_rate_val;
+	pr_debug("%s: slim0_tx_sample_rate = %d\n", __func__,
+				slim0_tx_sample_rate);
+
+	return 0;
+}
+
+static int slim0_tx_sample_rate_put(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	int rc = 0;
+
+	pr_debug("%s: ucontrol value = %ld\n", __func__,
+			ucontrol->value.integer.value[0]);
+
+	switch (ucontrol->value.integer.value[0]) {
+	case 2:
+		slim0_tx_sample_rate = SAMPLING_RATE_192KHZ;
+		break;
+	case 1:
+		slim0_tx_sample_rate = SAMPLING_RATE_96KHZ;
+		break;
+	case 0:
+		slim0_tx_sample_rate = SAMPLING_RATE_48KHZ;
+		break;
+	default:
+		rc = -EINVAL;
+		pr_err("%s: invalid sample rate being passed\n", __func__);
+		break;
+	}
+
+	pr_debug("%s: slim0_tx_sample_rate = %d\n", __func__,
+			slim0_tx_sample_rate);
+
+	return rc;
+}
+
+static int slim0_tx_bit_format_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+
+	switch (slim0_tx_bit_format) {
+	case SNDRV_PCM_FORMAT_S24_LE:
+		ucontrol->value.integer.value[0] = 1;
+		break;
+
+	case SNDRV_PCM_FORMAT_S16_LE:
+	default:
+		ucontrol->value.integer.value[0] = 0;
+		break;
+	}
+
+	pr_debug("%s: slim0_tx_bit_format = %d, ucontrol value = %ld\n",
+			 __func__, slim0_tx_bit_format,
+			ucontrol->value.integer.value[0]);
+
+	return 0;
+}
+
+static int slim0_tx_bit_format_put(struct snd_kcontrol *kcontrol,
+				   struct snd_ctl_elem_value *ucontrol)
+{
+	int rc = 0;
+
+	switch (ucontrol->value.integer.value[0]) {
+	case 1:
+		slim0_tx_bit_format = SNDRV_PCM_FORMAT_S24_LE;
+		break;
+	case 0:
+		slim0_tx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
+		break;
+	default:
+		pr_err("%s: invalid value %ld\n", __func__,
+		       ucontrol->value.integer.value[0]);
+		rc = -EINVAL;
+		break;
+	}
+
+	return rc;
 }
 
 static int msm_slim_0_tx_ch_get(struct snd_kcontrol *kcontrol,
@@ -1547,7 +1667,7 @@ static int msm_slim_0_tx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	pr_debug("%s()\n", __func__);
 	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
 				   slim0_tx_bit_format);
-	rate->min = rate->max = 48000;
+	rate->min = rate->max = slim0_tx_sample_rate;
 	channels->min = channels->max = msm_slim_0_tx_ch;
 
 	return 0;
@@ -1659,6 +1779,10 @@ static const struct snd_kcontrol_new msm_snd_controls[] = {
 		     msm_btsco_rate_get, msm_btsco_rate_put),
 	SOC_ENUM_EXT("HDMI_RX SampleRate", msm_snd_enum[7],
 			hdmi_rx_sample_rate_get, hdmi_rx_sample_rate_put),
+	SOC_ENUM_EXT("SLIM_0_TX Format", msm_snd_enum[4],
+			slim0_tx_bit_format_get, slim0_tx_bit_format_put),
+	SOC_ENUM_EXT("SLIM_0_TX SampleRate", msm_snd_enum[5],
+			slim0_tx_sample_rate_get, slim0_tx_sample_rate_put),
 };
 
 static bool msm8994_swap_gnd_mic(struct snd_soc_codec *codec)
@@ -2012,21 +2136,21 @@ static void *def_codec_mbhc_cal(void)
 	btn_high = wcd9xxx_mbhc_cal_btn_det_mp(btn_cfg,
 					       MBHC_BTN_DET_V_BTN_HIGH);
 	btn_low[0] = -50;
-	btn_high[0] = 20;
-	btn_low[1] = 21;
-	btn_high[1] = 61;
-	btn_low[2] = 62;
-	btn_high[2] = 104;
-	btn_low[3] = 105;
-	btn_high[3] = 148;
-	btn_low[4] = 149;
-	btn_high[4] = 189;
-	btn_low[5] = 190;
-	btn_high[5] = 228;
-	btn_low[6] = 229;
-	btn_high[6] = 269;
-	btn_low[7] = 270;
-	btn_high[7] = 500;
+	btn_high[0] = 90;
+	btn_low[1] = 130;
+	btn_high[1] = 220;
+	btn_low[2] = 235;
+	btn_high[2] = 335;
+	btn_low[3] = 375;
+	btn_high[3] = 655;
+	btn_low[4] = 656;
+	btn_high[4] = 660;
+	btn_low[5] = 661;
+	btn_high[5] = 670;
+	btn_low[6] = 671;
+	btn_high[6] = 680;
+	btn_low[7] = 681;
+	btn_high[7] = 690;
 	n_ready = wcd9xxx_mbhc_cal_btn_det_mp(btn_cfg, MBHC_BTN_DET_N_READY);
 	n_ready[0] = 80;
 	n_ready[1] = 68;
@@ -2824,6 +2948,20 @@ static struct snd_soc_dai_link msm8994_common_dai_links[] = {
 		.ignore_pmdown_time = 1,
 		.codec_dai_name = "tomtom_mad1",
 		.codec_name = "tomtom_codec",
+	},
+	{
+		.name = "MultiMedia3 Record",
+		.stream_name = "MultiMedia3 Capture",
+		.cpu_dai_name = "MultiMedia3",
+		.platform_name = "msm-pcm-dsp.0",
+		.dynamic = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			    SND_SOC_DPCM_TRIGGER_POST},
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA3,
 	},
 	/* End of FE DAI LINK */
 	/* Backend FM DAI Links */

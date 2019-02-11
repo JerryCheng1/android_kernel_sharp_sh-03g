@@ -1,6 +1,6 @@
 /* drivers/sharp/shsys/sh_smem.c
  *
- * Copyright (C) 2013 Sharp Corporation
+ * Copyright (C) 2015 Sharp Corporation
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,9 +18,7 @@
 #include <linux/kernel.h>
 #include <linux/moduleparam.h>
 
-//#include <../../../arch/arm/mach-msm/smd_private.h>
-#include <../../../include/soc/qcom/smem.h>
-
+#include <../../../drivers/soc/qcom/smd_private.h>
 #include <sharp/sh_smem.h>
 
 static int sh_smem_get_softupdate_flg_to_user(char *buffer, const struct kernel_param *kp);
@@ -74,34 +72,6 @@ unsigned long *sh_smem_get_sleep_power_collapse_disabled_address( void )
     return p_smem_sleep_power_collapse_disabled;
 }
 EXPORT_SYMBOL(sh_smem_get_sleep_power_collapse_disabled_address);
-
-/*=============================================================================
-
-FUNCTION sh_smem_get_100hflg
-
-DESCRIPTION
-
-DEPENDENCIES
-  None
-
-RETURN VALUE
-
-SIDE EFFECTS
-  None
-
-NOTE
-  None
-
-=============================================================================*/
-unsigned char sh_smem_get_100hflg( void )
-{
-    if (p_sharp_smem_common_type == NULL) {
-        p_sharp_smem_common_type = sh_smem_get_common_address();
-    }
-    
-    return p_sharp_smem_common_type->sh_100hflg;
-}
-EXPORT_SYMBOL(sh_smem_get_100hflg);
 
 /*=============================================================================
 

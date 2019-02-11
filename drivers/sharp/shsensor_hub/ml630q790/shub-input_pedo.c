@@ -257,10 +257,13 @@ static long shub_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 // SHMDS_HUB_1101_01 add S
 static long shub_ioctl_wrapper(struct file *filp, unsigned int cmd, unsigned long arg)
 {
+    SHUB_DBG_TIME_INIT     /* SHMDS_HUB_1801_01 add */
     long ret = 0;
 
     shub_qos_start();
+    SHUB_DBG_TIME_START    /* SHMDS_HUB_1801_01 add */
     ret =  shub_ioctl(filp, cmd , arg);
+    SHUB_DBG_TIME_END(cmd) /* SHMDS_HUB_1801_01 add */
     shub_qos_end();
 
     return ret;
@@ -276,6 +279,7 @@ static void shub_sensor_poll_work_func(struct work_struct *work)
 // SHMDS_HUB_0701_01 add S
     DBG_PEDO_DATA("data Step_Cnt=%d\n", data[INDEX_STPS]);
 // SHMDS_HUB_0701_01 add E
+    SHUB_INPUT_VAL_CLEAR(shub_idev, ABS_X, data[INDEX_STPS]); /* SHMDS_HUB_0603_01 add */ /* SHMDS_HUB_0603_02 add */
     input_report_abs(shub_idev, ABS_X, data[INDEX_STPS]);
     input_report_abs(shub_idev, ABS_MISC, data[INDEX_TM]);
     input_report_abs(shub_idev, ABS_VOLUME, data[INDEX_TMNS]);
@@ -305,6 +309,7 @@ void shub_input_report_stepcnt(int32_t *data)
     DBG_PEDO_DATA("data Step_Cnt=%d, t(s)=%d, t(ns)=%d\n", data[INDEX_STPS],data[INDEX_TM],data[INDEX_TMNS]);
 // SHMDS_HUB_0701_01 add E
 
+    SHUB_INPUT_VAL_CLEAR(shub_idev, ABS_X, (uint32_t)data[INDEX_STPS]); /* SHMDS_HUB_0603_01 add */ /* SHMDS_HUB_0603_02 add */
     input_report_abs(shub_idev, ABS_X, (uint32_t)data[INDEX_STPS]);
     input_report_abs(shub_idev, ABS_MISC, data[INDEX_TM]);
     input_report_abs(shub_idev, ABS_VOLUME, data[INDEX_TMNS]);

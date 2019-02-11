@@ -459,8 +459,8 @@ static int __init shrlog_set_fixed_info( void )
     fixed_info.log_oops_buf_addr       = get_log_oops_buf_addr();
     fixed_info.log_oops_first_seq_addr = get_log_oops_first_seq_addr();
     fixed_info.log_oops_last_seq_addr  = get_log_oops_last_seq_addr();
-    fixed_info.buf_log_main_addr       = get_buf_log_main_addr();
-    fixed_info.buf_log_events_addr     = get_buf_log_events_addr();
+    fixed_info.buf_log_main_addr       = 0; /* get_buf_log_main_addr() */
+    fixed_info.buf_log_events_addr     = 0; /* get_buf_log_events_addr() */
     fixed_info._text_addr              = (unsigned long)(_text);
     fixed_info._stext_addr             = (unsigned long)(_stext);
     fixed_info._etext_addr             = (unsigned long)(_etext);

@@ -67,11 +67,13 @@
 #define SHDISP_BDIC_TRI_LED_MODE_AURORA         (9)
 #define SHDISP_BDIC_TRI_LED_MODE_RAINBOW       (10)
 #define SHDISP_BDIC_TRI_LED_MODE_EMOPATTERN    (11)
-#define SHDISP_BDIC_TRI_LED_MODE_PATTERN1      (12)
-#define SHDISP_BDIC_TRI_LED_MODE_PATTERN2      (13)
+#define SHDISP_BDIC_TRI_LED_MODE_TRIPLE_COLOR  (12)
 
 
 #define SHDISP_BDIC_REGSET(x)               (shdisp_bdic_API_seq_regset(x, ARRAY_SIZE(x)))
+
+#define NO_CURRENT_SET                          (0)
+#define CURRENT_SET                             (1)
 
 /* ------------------------------------------------------------------------- */
 /* TYPES                                                                     */
@@ -81,8 +83,13 @@
 /* PROTOTYPES                                                                */
 /* ------------------------------------------------------------------------- */
 static void shdisp_led_status_init(void);
-static int  shdisp_bdic_seq_led_off(void);
-static int  shdisp_bdic_seq_led_normal_on(unsigned char color);
+static int shdisp_bdic_seq_led_off(void);
+static int shdisp_bdic_seq_led_normal_on(unsigned char color);
+#ifdef SHDISP_SYSFS_LED
+static int shdisp_bdic_seq_led_on(int no, struct shdisp_tri_led led);
+static int shdisp_bdic_seq_leds_off(int no);
+static void shdisp_bdic_seq_led_current_on(void);
+#endif /* SHDISP_SYSFS_LED */
 static void shdisp_bdic_seq_led_blink_on(unsigned char color, int ontime, int interval, int count);
 static void shdisp_bdic_seq_led_firefly_on(unsigned char color, int ontime, int interval, int count);
 #ifdef SHDISP_ANIME_COLOR_LED
@@ -96,15 +103,18 @@ static void shdisp_bdic_seq_led_flash_on(unsigned char color, int interval, int 
 static void shdisp_bdic_seq_led_aurora_on(int interval, int count);
 static void shdisp_bdic_seq_led_rainbow_on(int interval, int count);
 #endif /* SHDISP_ILLUMI_COLOR_LED */
-#ifdef SHDISP_EXTEND_COLOR_LED
-static void shdisp_bdic_seq_led_pattern1_on(int interval, int count);
-static void shdisp_bdic_seq_led_pattern2_on(int interval, int count);
-#endif  /* SHDISP_EXTEND_COLOR_LED */
 static void shdisp_bdic_seq_led_emopattern_on(int interval, int count);
 #endif  /* SHDISP_ANIME_COLOR_LED */
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+static void shdisp_bdic_seq_illumi_cancel_and_clear(void);
+static void shdisp_bdic_seq_illumi_triple_color_on(struct shdisp_illumi_triple_color illumi_triple_color);
+static void shdisp_bdic_seq_illumi_triple_color(unsigned char first_color);
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
+
 #ifdef SHDISP_TRI_LED2
-static int  shdisp_bdic_seq_led_off2(void);
-static int  shdisp_bdic_seq_led_normal_on2(unsigned char color);
+static int shdisp_bdic_seq_led_off2(void);
+static int shdisp_bdic_seq_led_normal_on2(unsigned char color);
 static void shdisp_bdic_seq_led_blink_on2(unsigned char color, int ontime, int interval, int count);
 static void shdisp_bdic_seq_led_firefly_on2(unsigned char color, int ontime, int interval, int count);
 #ifdef SHDISP_ANIME_COLOR_LED
@@ -117,16 +127,28 @@ static void shdisp_bdic_seq_led_flash_on2(unsigned char color, int interval, int
 static void shdisp_bdic_seq_led_aurora_on2(int interval, int count);
 static void shdisp_bdic_seq_led_rainbow_on2(int interval, int count);
 static void shdisp_bdic_seq_led_emopattern_on2(int interval, int count);
-#ifdef SHDISP_EXTEND_COLOR_LED
-static void shdisp_bdic_seq_led_pattern1_on2(int interval, int count);
-static void shdisp_bdic_seq_led_pattern2_on2(int interval, int count);
-#endif  /* SHDISP_EXTEND_COLOR_LED */
 #endif  /* SHDISP_ANIME_COLOR_LED */
 #endif  /* SHDISP_TRI_LED2 */
 static void shdisp_bdic_LD_set_led_fix_on_table(int clr_vari, int color);
 
+static void shdisp_bdic_LD_set_led_on_table(unsigned char *rgb_current);
+#ifdef SHDISP_COLOR_LED_TWIN
+static void shdisp_bdic_LD_set_led_on_table_twin(unsigned char *rgb_current);
+#endif /* SHDISP_COLOR_LED_TWIN */
+
+#ifdef SHDISP_SYSFS_LED
+static bool shdisp_bdic_is_led_current_mode(void);
+static bool shdisp_bdic_is_led_current_mode_no(int no);
+static void shdisp_bdic_clear_current_param(void);
+static void shdisp_bdic_LD_set_led_fix_current_table(unsigned char *rgb_current);
+#ifdef SHDISP_COLOR_LED_TWIN
+static void shdisp_bdic_LD_set_led_fix_current_table_twin(unsigned char *rgb_current);
+#endif /* SHDISP_COLOR_LED_TWIN */
+#endif /* SHDISP_SYSFS_LED */
+
 static void shdisp_bdic_seq_bdic_active_for_led(int);
 static void shdisp_bdic_seq_bdic_standby_for_led(int);
+static unsigned char shdisp_bdic_get_color_index_and_reedit(struct shdisp_tri_led *tri_led);
 static void shdisp_bdic_PD_TRI_LED_control(unsigned char request, int param);
 static void shdisp_bdic_PD_TRI_LED_set_anime(void);
 static void shdisp_bdic_PD_TRI_LED_set_chdig(void);
@@ -138,7 +160,10 @@ static void shdisp_bdic_PD_TRI_LED_set_anime_twin(void);
 static void shdisp_bdic_PD_TRI_LED_set_chdig_twin(void);
 static void shdisp_bdic_LD_set_led_fix_on_table_twin(int clr_vari, int color);
 #if defined(CONFIG_ANDROID_ENGINEERING)
-static void shdisp_bdic_API_TRI_LED_INFO_output_twin(void);
+static void shdisp_bdic_TRI_LED_INFO_output_twin(void);
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+static void shdisp_bdic_illumi_triple_color_INFO_output(void);
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
 #endif /* CONFIG_ANDROID_ENGINEERING */
 #endif /* SHDISP_COLOR_LED_TWIN */
 
@@ -147,6 +172,16 @@ static void shdisp_bdic_PD_TRI_LED_control2(unsigned char request, int param);
 static void shdisp_bdic_PD_TRI_LED_set_chdig2(void);
 static void shdisp_bdic_PD_TRI_LED_set_anime2(void);
 #endif  /* SHDISP_TRI_LED2 */
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+static void shdisp_bdic_cancel_illumi_work(void);
+static void shdisp_bdic_clear_illumi_state(void);
+static void shdisp_bdic_illumi_color_set_a2(void);
+static void shdisp_workqueue_handler_illumi_set_b2(struct work_struct *work);
+static void shdisp_workqueue_handler_illumi_set_c2(struct work_struct *work);
+static void shdisp_workqueue_handler_illumi_set_a3(struct work_struct *work);
+static void shdisp_workqueue_handler_illumi_set_anime_stop(struct work_struct *work);
+static void shdisp_workqueue_handler_illumi_restart(struct work_struct *work);
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
 
 /* ------------------------------------------------------------------------- */
 /* VARIABLES                                                                 */
@@ -163,6 +198,25 @@ static int shdisp_bdic_tri_led_count;
 static int shdisp_bdic_tri_led_mode_twin;
 static int shdisp_bdic_tri_led_before_mode_twin;
 #endif /* SHDISP_COLOR_LED_TWIN */
+
+#ifdef SHDISP_SYSFS_LED
+static unsigned char rgb_current1[SHDISP_RGB];
+#ifdef SHDISP_COLOR_LED_TWIN
+static unsigned char rgb_current2[SHDISP_RGB];
+#endif /* SHDISP_COLOR_LED_TWIN */
+#endif /* SHDISP_SYSFS_LED */
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+struct shdisp_illumi_state illumi_state;
+static int shdisp_illumi_delayed_times[ILLUMI_STATE_MAX] = {
+     576730 + (1000000/HZ),
+    1153460 + (1000000/HZ),
+    1730190 + (1000000/HZ),
+    3460380 + (1000000/HZ),
+    3965900 + (1000000/HZ),
+};
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
+
 
 #ifdef SHDISP_TRI_LED2
 static int shdisp_bdic_tri_led_mode2;
@@ -240,77 +294,12 @@ int shdisp_bdic_API_TRI_LED_off2(void)
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_get_color_index_and_reedit                        */
 /* ------------------------------------------------------------------------- */
-unsigned char shdisp_bdic_API_TRI_LED_get_color_index_and_reedit(struct shdisp_tri_led *tri_led )
+unsigned char shdisp_bdic_API_TRI_LED_get_color_index_and_reedit(struct shdisp_tri_led *tri_led)
 {
-    unsigned int i;
-    unsigned char color = 0xFF;
+    unsigned char color=0;
 
-#ifdef SHDISP_EXTEND_COLOR_LED
-    struct shdisp_bdic_led_color_index extend_cloler_index[SHDISP_TRI_LED_EXTEND_COLOR_TBL_NUM];
+    color = shdisp_bdic_get_color_index_and_reedit(tri_led);
 
-    if ((tri_led->red <= 5) && (tri_led->green <= 5) && (tri_led->blue <= 5)) {
-        if ((tri_led->red >= 3) || (tri_led->green >= 3) || (tri_led->blue >= 3)) {
-            if (tri_led->red == 0x00) {
-                memcpy(extend_cloler_index, shdisp_triple_led_extend_color_index_tbl0, sizeof(extend_cloler_index));
-            } else if (tri_led->red == 0x03) {
-                memcpy(extend_cloler_index, shdisp_triple_led_extend_color_index_tbl3, sizeof(extend_cloler_index));
-            } else if (tri_led->red == 0x04) {
-                memcpy(extend_cloler_index, shdisp_triple_led_extend_color_index_tbl4, sizeof(extend_cloler_index));
-            } else if (tri_led->red == 0x05) {
-                memcpy(extend_cloler_index, shdisp_triple_led_extend_color_index_tbl5, sizeof(extend_cloler_index));
-            }
-
-            for (i = 0; i < ARRAY_SIZE(extend_cloler_index); i++) {
-                if (extend_cloler_index[i].green == tri_led->green   &&
-                    extend_cloler_index[i].blue  == tri_led->blue) {
-                    color = extend_cloler_index[i].color;
-                    break;
-                }
-            }
-        } else {
-            for (i = 0; i < ARRAY_SIZE(shdisp_triple_led_color_index_tbl); i++) {
-                if (shdisp_triple_led_color_index_tbl[i].red   == tri_led->red     &&
-                    shdisp_triple_led_color_index_tbl[i].green == tri_led->green   &&
-                    shdisp_triple_led_color_index_tbl[i].blue  == tri_led->blue) {
-                    color = shdisp_triple_led_color_index_tbl[i].color;
-                    break;
-                }
-            }
-        }
-    }
-#else /* SHDISP_EXTEND_COLOR_LED */
-    for (i = 0; i < ARRAY_SIZE(shdisp_triple_led_color_index_tbl); i++) {
-        if (shdisp_triple_led_color_index_tbl[i].red   == tri_led->red     &&
-            shdisp_triple_led_color_index_tbl[i].green == tri_led->green   &&
-            shdisp_triple_led_color_index_tbl[i].blue  == tri_led->blue) {
-            color = shdisp_triple_led_color_index_tbl[i].color;
-            break;
-        }
-    }
-#endif /* SHDISP_EXTEND_COLOR_LED */
-
-    if (color == 0xFF) {
-        if (tri_led->red > 1) {
-            tri_led->red = 1;
-        }
-        if (tri_led->green > 1) {
-            tri_led->green = 1;
-        }
-        if (tri_led->blue > 1) {
-            tri_led->blue = 1;
-        }
-        for (i = 0; i < ARRAY_SIZE(shdisp_triple_led_color_index_tbl); i++) {
-            if (shdisp_triple_led_color_index_tbl[i].red   == tri_led->red     &&
-                shdisp_triple_led_color_index_tbl[i].green == tri_led->green   &&
-                shdisp_triple_led_color_index_tbl[i].blue  == tri_led->blue) {
-                color = shdisp_triple_led_color_index_tbl[i].color;
-                break;
-            }
-        }
-        if (color == 0xFF) {
-            color = 0;
-        }
-    }
     return color;
 }
 
@@ -323,6 +312,30 @@ int shdisp_bdic_API_TRI_LED_normal_on(unsigned char color)
     ret = shdisp_bdic_seq_led_normal_on(color);
     return ret;
 }
+
+#ifdef SHDISP_SYSFS_LED
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_API_LED_on                                                    */
+/* ------------------------------------------------------------------------- */
+int shdisp_bdic_API_LED_on(int no, struct shdisp_tri_led led)
+{
+    int ret;
+    ret = shdisp_bdic_seq_led_on(no, led);
+
+    return ret;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_API_LED_off                                                   */
+/* ------------------------------------------------------------------------- */
+int shdisp_bdic_API_LED_off(int no)
+{
+    int ret;
+
+    ret = shdisp_bdic_seq_leds_off(no);
+    return ret;
+}
+#endif /* SHDISP_SYSFS_LED */
 
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_blink_on                                          */
@@ -347,7 +360,6 @@ void shdisp_bdic_API_TRI_LED_firefly_on(unsigned char color, int ontime, int int
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_high_speed_on                                     */
 /* ------------------------------------------------------------------------- */
-
 void shdisp_bdic_API_TRI_LED_high_speed_on(unsigned char color, int interval, int count)
 {
     shdisp_bdic_seq_led_high_speed_on(color, SHDISP_BDIC_TRI_LED_INTERVAL_HISPEED, count);
@@ -357,7 +369,6 @@ void shdisp_bdic_API_TRI_LED_high_speed_on(unsigned char color, int interval, in
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_standard_on                                       */
 /* ------------------------------------------------------------------------- */
-
 void shdisp_bdic_API_TRI_LED_standard_on(unsigned char color, int interval, int count)
 {
     shdisp_bdic_seq_led_standard_on(color, SHDISP_BDIC_TRI_LED_INTERVAL_STANDARD, count);
@@ -367,7 +378,6 @@ void shdisp_bdic_API_TRI_LED_standard_on(unsigned char color, int interval, int 
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_breath_on                                         */
 /* ------------------------------------------------------------------------- */
-
 void shdisp_bdic_API_TRI_LED_breath_on(unsigned char color, int interval, int count)
 {
     shdisp_bdic_seq_led_breath_on(color, SHDISP_BDIC_TRI_LED_INTERVAL_BREATH, count);
@@ -377,7 +387,6 @@ void shdisp_bdic_API_TRI_LED_breath_on(unsigned char color, int interval, int co
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_long_breath_on                                    */
 /* ------------------------------------------------------------------------- */
-
 void shdisp_bdic_API_TRI_LED_long_breath_on(unsigned char color, int interval, int count)
 {
     shdisp_bdic_seq_led_long_breath_on(color, SHDISP_BDIC_TRI_LED_INTERVAL_LONG_BREATH, count);
@@ -387,7 +396,6 @@ void shdisp_bdic_API_TRI_LED_long_breath_on(unsigned char color, int interval, i
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_wave_on                                           */
 /* ------------------------------------------------------------------------- */
-
 void shdisp_bdic_API_TRI_LED_wave_on(unsigned char color, int interval, int count)
 {
     shdisp_bdic_seq_led_wave_on(color, SHDISP_BDIC_TRI_LED_INTERVAL_WAVE, count);
@@ -397,7 +405,6 @@ void shdisp_bdic_API_TRI_LED_wave_on(unsigned char color, int interval, int coun
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_flash_on                                          */
 /* ------------------------------------------------------------------------- */
-
 void shdisp_bdic_API_TRI_LED_flash_on(unsigned char color, int interval, int count)
 {
     shdisp_bdic_seq_led_flash_on(color, SHDISP_BDIC_TRI_LED_INTERVAL_FLASH, count);
@@ -407,7 +414,6 @@ void shdisp_bdic_API_TRI_LED_flash_on(unsigned char color, int interval, int cou
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_aurora_on                                         */
 /* ------------------------------------------------------------------------- */
-
 void shdisp_bdic_API_TRI_LED_aurora_on(int interval, int count)
 {
     shdisp_bdic_seq_led_aurora_on(SHDISP_BDIC_TRI_LED_INTERVAL_AURORA, count);
@@ -417,7 +423,6 @@ void shdisp_bdic_API_TRI_LED_aurora_on(int interval, int count)
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_rainbow_on                                        */
 /* ------------------------------------------------------------------------- */
-
 void shdisp_bdic_API_TRI_LED_rainbow_on(int interval, int count)
 {
     shdisp_bdic_seq_led_rainbow_on(SHDISP_BDIC_TRI_LED_INTERVAL_RAINBOW, count);
@@ -425,27 +430,33 @@ void shdisp_bdic_API_TRI_LED_rainbow_on(int interval, int count)
 }
 #endif /* SHDISP_ILLUMI_COLOR_LED */
 
-#ifdef SHDISP_EXTEND_COLOR_LED
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
 /* ------------------------------------------------------------------------- */
-/* shdisp_bdic_API_TRI_LED_pattern1_on                                       */
+/* shdisp_bdic_API_LED_set_illumi_triple_color                               */
 /* ------------------------------------------------------------------------- */
-
-void shdisp_bdic_API_TRI_LED_pattern1_on(int interval, int count)
+void shdisp_bdic_API_LED_set_illumi_triple_color(struct shdisp_illumi_triple_color illumi_triple_color)
 {
-    shdisp_bdic_seq_led_pattern1_on(SHDISP_BDIC_TRI_LED_INTERVAL_PATTERN1, count);
+    shdisp_bdic_seq_illumi_triple_color_on(illumi_triple_color);
     return;
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_bdic_API_TRI_LED_pattern2_on                                       */
+/* shdisp_bdic_API_LED_clear_illumi_triple_color                             */
 /* ------------------------------------------------------------------------- */
-
-void shdisp_bdic_API_TRI_LED_pattern2_on(int interval, int count)
+void shdisp_bdic_API_LED_clear_illumi_triple_color(void)
 {
-    shdisp_bdic_seq_led_pattern2_on(SHDISP_BDIC_TRI_LED_INTERVAL_PATTERN2, count);
+    shdisp_bdic_seq_illumi_cancel_and_clear();
     return;
 }
-#endif  /* SHDISP_EXTEND_COLOR_LED */
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_API_LED_is_running_illumi_triple_color                        */
+/* ------------------------------------------------------------------------- */
+bool shdisp_bdic_API_LED_is_running_illumi_triple_color(void)
+{
+    return illumi_state.running_state;
+}
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
 
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_emopattern_on                                     */
@@ -490,7 +501,6 @@ void shdisp_bdic_API_TRI_LED_firefly_on2(unsigned char color, int ontime, int in
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_high_speed_on2                                    */
 /* ------------------------------------------------------------------------- */
-
 void shdisp_bdic_API_TRI_LED_high_speed_on2(unsigned char color, int interval, int count)
 {
     shdisp_bdic_seq_led_high_speed_on2(color, SHDISP_BDIC_TRI_LED_INTERVAL_HISPEED, count);
@@ -498,7 +508,7 @@ void shdisp_bdic_API_TRI_LED_high_speed_on2(unsigned char color, int interval, i
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_bdic_API_TRI_LED_standard_on2                                       */
+/* shdisp_bdic_API_TRI_LED_standard_on2                                      */
 /* ------------------------------------------------------------------------- */
 
 void shdisp_bdic_API_TRI_LED_standard_on2(unsigned char color, int interval, int count)
@@ -510,7 +520,6 @@ void shdisp_bdic_API_TRI_LED_standard_on2(unsigned char color, int interval, int
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_breath_on2                                        */
 /* ------------------------------------------------------------------------- */
-
 void shdisp_bdic_API_TRI_LED_breath_on2(unsigned char color, int interval, int count)
 {
     shdisp_bdic_seq_led_breath_on2(color, SHDISP_BDIC_TRI_LED_INTERVAL_BREATH, count);
@@ -520,7 +529,6 @@ void shdisp_bdic_API_TRI_LED_breath_on2(unsigned char color, int interval, int c
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_long_breath_on2                                   */
 /* ------------------------------------------------------------------------- */
-
 void shdisp_bdic_API_TRI_LED_long_breath_on2(unsigned char color, int interval, int count)
 {
     shdisp_bdic_seq_led_long_breath_on2(color, SHDISP_BDIC_TRI_LED_INTERVAL_LONG_BREATH, count);
@@ -530,7 +538,6 @@ void shdisp_bdic_API_TRI_LED_long_breath_on2(unsigned char color, int interval, 
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_wave_on2                                          */
 /* ------------------------------------------------------------------------- */
-
 void shdisp_bdic_API_TRI_LED_wave_on2(unsigned char color, int interval, int count)
 {
     shdisp_bdic_seq_led_wave_on2(color, SHDISP_BDIC_TRI_LED_INTERVAL_WAVE, count);
@@ -540,7 +547,6 @@ void shdisp_bdic_API_TRI_LED_wave_on2(unsigned char color, int interval, int cou
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_flash_on2                                         */
 /* ------------------------------------------------------------------------- */
-
 void shdisp_bdic_API_TRI_LED_flash_on2(unsigned char color, int interval, int count)
 {
     shdisp_bdic_seq_led_flash_on2(color, SHDISP_BDIC_TRI_LED_INTERVAL_FLASH, count);
@@ -550,7 +556,6 @@ void shdisp_bdic_API_TRI_LED_flash_on2(unsigned char color, int interval, int co
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_aurora_on2                                        */
 /* ------------------------------------------------------------------------- */
-
 void shdisp_bdic_API_TRI_LED_aurora_on2(int interval, int count)
 {
     shdisp_bdic_seq_led_aurora_on2(SHDISP_BDIC_TRI_LED_INTERVAL_AURORA, count);
@@ -560,7 +565,6 @@ void shdisp_bdic_API_TRI_LED_aurora_on2(int interval, int count)
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_API_TRI_LED_rainbow_on2                                       */
 /* ------------------------------------------------------------------------- */
-
 void shdisp_bdic_API_TRI_LED_rainbow_on2(int interval, int count)
 {
     shdisp_bdic_seq_led_rainbow_on2(SHDISP_BDIC_TRI_LED_INTERVAL_RAINBOW, count);
@@ -575,30 +579,20 @@ void shdisp_bdic_API_TRI_LED_emopattern_on2(int interval, int count)
     shdisp_bdic_seq_led_emopattern_on2(SHDISP_BDIC_TRI_LED_INTERVAL_EMOPATTERN, SHDISP_BDIC_TRI_LED_COUNT_EMOPATTERN);
     return;
 }
-
-#ifdef SHDISP_EXTEND_COLOR_LED
-/* ------------------------------------------------------------------------- */
-/* shdisp_bdic_API_TRI_LED_pattern1_on2                                      */
-/* ------------------------------------------------------------------------- */
-
-void shdisp_bdic_API_TRI_LED_pattern1_on2(int interval, int count)
-{
-    shdisp_bdic_seq_led_pattern1_on2(SHDISP_BDIC_TRI_LED_INTERVAL_PATTERN1, count);
-    return;
-}
-
-/* ------------------------------------------------------------------------- */
-/* shdisp_bdic_API_TRI_LED_pattern2_on2                                      */
-/* ------------------------------------------------------------------------- */
-
-void shdisp_bdic_API_TRI_LED_pattern2_on2(int interval, int count)
-{
-    shdisp_bdic_seq_led_pattern2_on2(SHDISP_BDIC_TRI_LED_INTERVAL_PATTERN2, count);
-    return;
-}
-#endif /* SHDISP_EXTEND_COLOR_LED */
 #endif /* SHDISP_ANIME_COLOR_LED */
 #endif /* SHDISP_TRI_LED2 */
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_API_TRI_LED_exit                                              */
+/* ------------------------------------------------------------------------- */
+void shdisp_bdic_API_TRI_LED_exit(void)
+{
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+    if (illumi_state.workqueue) {
+        destroy_workqueue(illumi_state.workqueue);
+        illumi_state.workqueue = NULL;
+    }
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
+}
 
 #if defined(CONFIG_ANDROID_ENGINEERING)
 /* ------------------------------------------------------------------------- */
@@ -632,6 +626,12 @@ void shdisp_bdic_API_TRI_LED_INFO_output(void)
     printk("[SHDISP] shdisp_bdic_tri_led_interval      = %d.\n", shdisp_bdic_tri_led_interval);
     printk("[SHDISP] shdisp_bdic_tri_led_count         = %d.\n", shdisp_bdic_tri_led_count);
 
+#ifdef SHDISP_SYSFS_LED
+    printk("[SHDISP] rgb_current1[0]                   = %d.\n", rgb_current1[0]);
+    printk("[SHDISP] rgb_current1[1]                   = %d.\n", rgb_current1[1]);
+    printk("[SHDISP] rgb_current1[2]                   = %d.\n", rgb_current1[2]);
+#endif /* SHDISP_SYSFS_LED */
+
     p = pbuf;
     printk("[SHDISP] BDIC_REG_TIMER_SETTING 0x%2X: %02x %02x %02x\n", BDIC_REG_SEQ_ANIME, *p, *(p + 1), *(p + 2));
     p += 3;
@@ -646,8 +646,12 @@ void shdisp_bdic_API_TRI_LED_INFO_output(void)
     printk("[SHDISP] TRI-LED INFO <<-\n");
 
 #ifdef SHDISP_COLOR_LED_TWIN
-    shdisp_bdic_API_TRI_LED_INFO_output_twin();
+    shdisp_bdic_TRI_LED_INFO_output_twin();
 #endif /* SHDISP_COLOR_LED_TWIN */
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+    shdisp_bdic_illumi_triple_color_INFO_output();
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
 
     return;
 }
@@ -742,9 +746,126 @@ static void shdisp_led_status_init(void)
     shdisp_bdic_tri_led_count2          = 0;
 #endif  /* SHDISP_TRI_LED2 */
 
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+    memset(&illumi_state, 0, sizeof(illumi_state));
+    illumi_state.illumi_state = ILLUMI_STATE_STOP;
+    illumi_state.running_state = false;
+
+    illumi_state.workqueue = create_singlethread_workqueue("shdisp_illumi");
+    if (!illumi_state.workqueue) {
+        SHDISP_ERR("create shdisp_illumi workqueue failed.");
+    } else {
+        INIT_DELAYED_WORK(&illumi_state.works[ILLUMI_STATE_WAIT_SET_B2_AREA],   shdisp_workqueue_handler_illumi_set_b2);
+        INIT_DELAYED_WORK(&illumi_state.works[ILLUMI_STATE_WAIT_SET_C2_AREA],   shdisp_workqueue_handler_illumi_set_c2);
+        INIT_DELAYED_WORK(&illumi_state.works[ILLUMI_STATE_WAIT_SET_A3_AREA],   shdisp_workqueue_handler_illumi_set_a3);
+        INIT_DELAYED_WORK(&illumi_state.works[ILLUMI_STATE_WAIT_ANIME_BREAK],   shdisp_workqueue_handler_illumi_set_anime_stop);
+        INIT_DELAYED_WORK(&illumi_state.works[ILLUMI_STATE_WAIT_RESTART],       shdisp_workqueue_handler_illumi_restart);
+    }
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
     SHDISP_TRACE("out")
     return;
 }
+
+#ifdef SHDISP_SYSFS_LED
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_seq_led_on                                                    */
+/* ------------------------------------------------------------------------- */
+static int shdisp_bdic_seq_led_on(int no, struct shdisp_tri_led led)
+{
+    bool is_led_current_mode;
+
+    SHDISP_TRACE("in no:%d", no);
+
+    is_led_current_mode = shdisp_bdic_is_led_current_mode();
+
+    SHDISP_DEBUG("is_led_current_mode:%d", is_led_current_mode);
+
+    if (no == SYSFS_LED_SH_LED_1) {
+#ifdef SHDISP_BDIC_PROHIBIT
+        rgb_current1[0] = shdisp_bdic_API_correct_proh_val(led.red);
+        rgb_current1[1] = shdisp_bdic_API_correct_proh_val(led.green);
+        rgb_current1[2] = shdisp_bdic_API_correct_proh_val(led.blue);
+#else /* SHDISP_BDIC_PROHIBIT */
+        rgb_current1[0] = led.red;
+        rgb_current1[1] = led.green;
+        rgb_current1[2] = led.blue;
+#endif /* SHDISP_BDIC_PROHIBIT */
+#ifdef SHDISP_COLOR_LED_TWIN
+    } else {
+#ifdef SHDISP_BDIC_PROHIBIT
+        rgb_current2[0] = shdisp_bdic_API_correct_proh_val(led.red);
+        rgb_current2[1] = shdisp_bdic_API_correct_proh_val(led.green);
+        rgb_current2[2] = shdisp_bdic_API_correct_proh_val(led.blue);
+#else /* SHDISP_BDIC_PROHIBIT */
+        rgb_current2[0] = led.red;
+        rgb_current2[1] = led.green;
+        rgb_current2[2] = led.blue;
+#endif /* SHDISP_BDIC_PROHIBIT */
+#endif /* SHDISP_COLOR_LED_TWIN */
+    }
+
+    if (!is_led_current_mode) {
+        shdisp_bdic_seq_led_current_on();
+    } else {
+        if (no == SYSFS_LED_SH_LED_1) {
+            shdisp_bdic_LD_set_led_fix_current_table(rgb_current1);
+#ifdef SHDISP_COLOR_LED_TWIN
+        } else {
+            shdisp_bdic_LD_set_led_fix_current_table_twin(rgb_current2);
+#endif /* SHDISP_COLOR_LED_TWIN */
+        }
+    }
+    SHDISP_TRACE("out");
+    return SHDISP_RESULT_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_seq_leds_off                                                  */
+/* ------------------------------------------------------------------------- */
+static int shdisp_bdic_seq_leds_off(int no)
+{
+    SHDISP_TRACE("in no:%d", no);
+
+    if (!shdisp_bdic_is_led_current_mode_no(no)) {
+        shdisp_bdic_seq_led_off();
+        shdisp_bdic_clear_current_param();
+    } else {
+        if (no == SYSFS_LED_SH_LED_1) {
+            memset(rgb_current1, 0x00, sizeof(rgb_current1));
+            shdisp_bdic_LD_set_led_fix_current_table(rgb_current1);
+#ifdef SHDISP_COLOR_LED_TWIN
+        } else {
+            memset(rgb_current2, 0x00, sizeof(rgb_current2));
+            shdisp_bdic_LD_set_led_fix_current_table_twin(rgb_current2);
+#endif /* SHDISP_COLOR_LED_TWIN */
+        }
+    }
+
+    SHDISP_TRACE("out");
+    return SHDISP_RESULT_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_seq_led_current_on                                            */
+/* ------------------------------------------------------------------------- */
+static void shdisp_bdic_seq_led_current_on(void)
+{
+    SHDISP_TRACE("in");
+
+    shdisp_bdic_seq_bdic_active_for_led(SHDISP_DEV_TYPE_LED);
+    shdisp_bdic_PD_TRI_LED_control(SHDISP_BDIC_REQ_TRI_LED_SET_MODE_NORMAL, 0);
+    shdisp_bdic_PD_TRI_LED_control(SHDISP_BDIC_REQ_TRI_LED_START, CURRENT_SET);
+
+#ifdef SHDISP_COLOR_LED_TWIN
+    shdisp_bdic_PD_TRI_LED_control_twin(SHDISP_BDIC_REQ_TRI_LED_SET_MODE_NORMAL, 0);
+    shdisp_bdic_PD_TRI_LED_control_twin(SHDISP_BDIC_REQ_TRI_LED_START, CURRENT_SET);
+#endif /* SHDISP_COLOR_LED_TWIN */
+
+    SHDISP_TRACE("out");
+    return;
+}
+
+#endif /* SHDISP_SYSFS_LED */
 
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_seq_led_off                                                   */
@@ -1045,7 +1166,7 @@ static void shdisp_bdic_seq_led_aurora_on(int interval, int count)
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_bdic_seq_led_rainbow_on                                         */
+/* shdisp_bdic_seq_led_rainbow_on                                            */
 /* ------------------------------------------------------------------------- */
 static void shdisp_bdic_seq_led_rainbow_on(int interval, int count)
 {
@@ -1072,64 +1193,6 @@ static void shdisp_bdic_seq_led_rainbow_on(int interval, int count)
     SHDISP_TRACE("out");
 }
 #endif /* SHDISP_ILLUMI_COLOR_LED */
-
-#ifdef SHDISP_EXTEND_COLOR_LED
-/* ------------------------------------------------------------------------- */
-/* shdisp_bdic_seq_led_pattern1_on                                           */
-/* ------------------------------------------------------------------------- */
-static void shdisp_bdic_seq_led_pattern1_on(int interval, int count)
-{
-    SHDISP_TRACE("in");
-
-    shdisp_bdic_seq_bdic_active_for_led(SHDISP_DEV_TYPE_LED);
-    shdisp_bdic_PD_TRI_LED_control(SHDISP_BDIC_REQ_TRI_LED_SET_MODE_PATTERN1, SHDISP_BDIC_TRI_LED_COLOR_WHITE);
-    shdisp_bdic_PD_TRI_LED_control(SHDISP_BDIC_REQ_TRI_LED_SET_INTERVAL,     interval);
-    shdisp_bdic_PD_TRI_LED_control(SHDISP_BDIC_REQ_TRI_LED_SET_COUNT,        count);
-    shdisp_bdic_PD_TRI_LED_control(SHDISP_BDIC_REQ_TRI_LED_START, 0);
-
-#ifdef SHDISP_COLOR_LED_TWIN
-    shdisp_bdic_PD_TRI_LED_control_twin(SHDISP_BDIC_REQ_TRI_LED_SET_MODE_PATTERN1, SHDISP_BDIC_TRI_LED_COLOR_WHITE);
-    shdisp_bdic_PD_TRI_LED_control_twin(SHDISP_BDIC_REQ_TRI_LED_SET_INTERVAL,     interval);
-    shdisp_bdic_PD_TRI_LED_control_twin(SHDISP_BDIC_REQ_TRI_LED_SET_COUNT,        count);
-    shdisp_bdic_PD_TRI_LED_control_twin(SHDISP_BDIC_REQ_TRI_LED_START, 0);
-#endif /* SHDISP_COLOR_LED_TWIN */
-
-    if (led_state_str.bdic_chipver >= SHDISP_BDIC_CHIPVER_1) {
-        if (interval != 0) {
-            shdisp_bdic_seq_bdic_standby_for_led(SHDISP_DEV_TYPE_LED);
-        }
-    }
-    SHDISP_TRACE("out");
-}
-
-/* ------------------------------------------------------------------------- */
-/* shdisp_bdic_seq_led_pattern2_on                                           */
-/* ------------------------------------------------------------------------- */
-static void shdisp_bdic_seq_led_pattern2_on(int interval, int count)
-{
-    SHDISP_TRACE("in");
-
-    shdisp_bdic_seq_bdic_active_for_led(SHDISP_DEV_TYPE_LED);
-    shdisp_bdic_PD_TRI_LED_control(SHDISP_BDIC_REQ_TRI_LED_SET_MODE_PATTERN2, SHDISP_BDIC_TRI_LED_COLOR_WHITE);
-    shdisp_bdic_PD_TRI_LED_control(SHDISP_BDIC_REQ_TRI_LED_SET_INTERVAL,     interval);
-    shdisp_bdic_PD_TRI_LED_control(SHDISP_BDIC_REQ_TRI_LED_SET_COUNT,        count);
-    shdisp_bdic_PD_TRI_LED_control(SHDISP_BDIC_REQ_TRI_LED_START, 0);
-
-#ifdef SHDISP_COLOR_LED_TWIN
-    shdisp_bdic_PD_TRI_LED_control_twin(SHDISP_BDIC_REQ_TRI_LED_SET_MODE_PATTERN2, SHDISP_BDIC_TRI_LED_COLOR_WHITE);
-    shdisp_bdic_PD_TRI_LED_control_twin(SHDISP_BDIC_REQ_TRI_LED_SET_INTERVAL,     interval);
-    shdisp_bdic_PD_TRI_LED_control_twin(SHDISP_BDIC_REQ_TRI_LED_SET_COUNT,        count);
-    shdisp_bdic_PD_TRI_LED_control_twin(SHDISP_BDIC_REQ_TRI_LED_START, 0);
-#endif /* SHDISP_COLOR_LED_TWIN */
-
-    if (led_state_str.bdic_chipver >= SHDISP_BDIC_CHIPVER_1) {
-        if (interval != 0) {
-            shdisp_bdic_seq_bdic_standby_for_led(SHDISP_DEV_TYPE_LED);
-        }
-    }
-    SHDISP_TRACE("out");
-}
-#endif  /* SHDISP_EXTEND_COLOR_LED */
 
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_seq_led_emopattern_on                                         */
@@ -1159,6 +1222,88 @@ static void shdisp_bdic_seq_led_emopattern_on(int interval, int count)
     SHDISP_TRACE("out");
 }
 #endif  /* SHDISP_ANIME_COLOR_LED */
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_seq_illumi_triple_color                                       */
+/* ------------------------------------------------------------------------- */
+static void shdisp_bdic_seq_illumi_triple_color(unsigned char first_color)
+{
+    SHDISP_TRACE("in color:%d", first_color);
+
+    shdisp_bdic_seq_bdic_active_for_led(SHDISP_DEV_TYPE_LED);
+    shdisp_bdic_PD_TRI_LED_control(SHDISP_BDIC_REQ_ILLUMI_TRIPLE_COLOR, first_color);
+    shdisp_bdic_PD_TRI_LED_control(SHDISP_BDIC_REQ_TRI_LED_START, 0);
+
+#ifdef SHDISP_COLOR_LED_TWIN
+    shdisp_bdic_PD_TRI_LED_control_twin(SHDISP_BDIC_REQ_ILLUMI_TRIPLE_COLOR, first_color);
+    shdisp_bdic_PD_TRI_LED_control_twin(SHDISP_BDIC_REQ_TRI_LED_START, 0);
+#endif /* SHDISP_COLOR_LED_TWIN */
+
+    SHDISP_TRACE("out");
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_seq_illumi_triple_color_on                                    */
+/* ------------------------------------------------------------------------- */
+static void shdisp_bdic_seq_illumi_triple_color_on(struct shdisp_illumi_triple_color illumi_triple_color)
+{
+    struct shdisp_tri_led tri_led;
+    int i;
+    int work_count;
+
+    SHDISP_TRACE("in");
+    if (!illumi_state.workqueue) {
+        SHDISP_ERR("illumi_state.workqueue does not exist err.");
+        return;
+    }
+
+    for (i = 0; i != ILLUMI_FRAME_MAX; i++) {
+        tri_led.red   = illumi_triple_color.colors[i].red;
+        tri_led.green = illumi_triple_color.colors[i].green;
+        tri_led.blue  = illumi_triple_color.colors[i].blue;
+        illumi_state.colors[i] = shdisp_bdic_get_color_index_and_reedit(&tri_led);
+    }
+    illumi_state.count = illumi_triple_color.count;
+    illumi_state.running_state = true;
+
+    shdisp_bdic_seq_illumi_triple_color(illumi_state.colors[ILLUMI_FRAME_FIRST]);
+
+    work_count = (illumi_state.count == SHDISP_TRI_LED_COUNT_NONE) ? ILLUMI_STATE_MAX : ILLUMI_STATE_MAX - 1;
+    SHDISP_DEBUG("queue delay_works = %d isonshot = %d", work_count, illumi_state.count);
+    for (i = 0; i != work_count; ++i) {
+        queue_delayed_work(illumi_state.workqueue, &illumi_state.works[i], usecs_to_jiffies(shdisp_illumi_delayed_times[i]));
+        SHDISP_DEBUG("delay_works[%d] was queued", i);
+    }
+
+    shdisp_SYS_API_msleep(10);
+    shdisp_bdic_illumi_color_set_a2();
+    SHDISP_TRACE("out");
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_seq_illumi_cancel_and_clear                                   */
+/* ------------------------------------------------------------------------- */
+void shdisp_bdic_seq_illumi_cancel_and_clear(void)
+{
+    SHDISP_TRACE("in");
+
+    SHDISP_DEBUG("illumi_state.running_state = %d", illumi_state.running_state);
+    if (illumi_state.running_state) {
+        shdisp_API_semaphore_start();
+        illumi_state.running_state = false;
+        shdisp_API_semaphore_end();
+
+        shdisp_bdic_cancel_illumi_work();
+
+        shdisp_API_semaphore_start();
+        shdisp_bdic_clear_illumi_state();
+        shdisp_API_semaphore_end();
+    }
+
+    SHDISP_TRACE("out");
+}
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
 
 #ifdef SHDISP_TRI_LED2
 /* ------------------------------------------------------------------------- */
@@ -1403,48 +1548,378 @@ static void shdisp_bdic_seq_led_emopattern_on2(int interval, int count)
     SHDISP_TRACE("out");
 }
 
-#ifdef SHDISP_EXTEND_COLOR_LED
-/* ------------------------------------------------------------------------- */
-/* shdisp_bdic_seq_led_pattern1_on2                                          */
-/* ------------------------------------------------------------------------- */
-static void shdisp_bdic_seq_led_pattern1_on2(int interval, int count)
-{
-    SHDISP_TRACE("in");
-
-    shdisp_bdic_seq_bdic_active_for_led(SHDISP_DEV_TYPE_LED2);
-    shdisp_bdic_PD_TRI_LED_control2(SHDISP_BDIC_REQ_TRI_LED_SET_MODE_PATTERN1, SHDISP_BDIC_TRI_LED_COLOR_WHITE);
-    shdisp_bdic_PD_TRI_LED_control2(SHDISP_BDIC_REQ_TRI_LED_SET_INTERVAL,    interval);
-    shdisp_bdic_PD_TRI_LED_control2(SHDISP_BDIC_REQ_TRI_LED_SET_COUNT,       count);
-    shdisp_bdic_PD_TRI_LED_control2(SHDISP_BDIC_REQ_TRI_LED_START, 0);
-
-    if (led_state_str.bdic_chipver >= SHDISP_BDIC_CHIPVER_1) {
-        shdisp_bdic_seq_bdic_standby_for_led(SHDISP_DEV_TYPE_LED2);
-    }
-    SHDISP_TRACE("out");
-}
-
-/* ------------------------------------------------------------------------- */
-/* shdisp_bdic_seq_led_pattern2_on2                                          */
-/* ------------------------------------------------------------------------- */
-static void shdisp_bdic_seq_led_pattern2_on2(int interval, int count)
-{
-    SHDISP_TRACE("in");
-
-    shdisp_bdic_seq_bdic_active_for_led(SHDISP_DEV_TYPE_LED2);
-    shdisp_bdic_PD_TRI_LED_control2(SHDISP_BDIC_REQ_TRI_LED_SET_MODE_PATTERN2, SHDISP_BDIC_TRI_LED_COLOR_WHITE);
-    shdisp_bdic_PD_TRI_LED_control2(SHDISP_BDIC_REQ_TRI_LED_SET_INTERVAL,     interval);
-    shdisp_bdic_PD_TRI_LED_control2(SHDISP_BDIC_REQ_TRI_LED_SET_COUNT,        count);
-    shdisp_bdic_PD_TRI_LED_control2(SHDISP_BDIC_REQ_TRI_LED_START, 0);
-
-    if (led_state_str.bdic_chipver >= SHDISP_BDIC_CHIPVER_1) {
-        shdisp_bdic_seq_bdic_standby_for_led(SHDISP_DEV_TYPE_LED2);
-    }
-    SHDISP_TRACE("out");
-}
-#endif  /* SHDISP_EXTEND_COLOR_LED */
 #endif  /* SHDISP_ANIME_COLOR_LED */
 #endif  /* SHDISP_TRI_LED2 */
 
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_write_illumi_triple_color_top                                 */
+/* ------------------------------------------------------------------------- */
+static void shdisp_bdic_write_illumi_triple_color_top(char reg, int color_index)
+{
+    char color_rgb[3];
+    unsigned char extend_color_index;
+    int clrvari = led_state_str.bdic_clrvari_index;
+#ifdef SHDISP_COLOR_LED_TWIN
+    char reg_twin = 0;
+    char color_rgb_twin[3];
+#endif
+
+#ifdef SHDISP_COLOR_LED_TWIN
+    switch (reg) {
+    case BDIC_REG_CH0_A:
+       reg_twin = BDIC_REG_CH3_A;
+       break;
+    case BDIC_REG_CH0_B:
+       reg_twin = BDIC_REG_CH3_B;
+       break;
+    case BDIC_REG_CH0_C:
+    default:
+       reg_twin = BDIC_REG_CH3_C;
+    }
+#endif
+
+#ifdef SHDISP_EXTEND_COLOR_LED
+    if (color_index > SHDISP_TRI_LED_COLOR_NUM) {
+        extend_color_index = color_index - SHDISP_TRI_LED_COLOR_NUM;
+        color_rgb[0] = shdisp_triple_led_extend_anime_tbl[clrvari][1][extend_color_index][0];
+        color_rgb[1] = shdisp_triple_led_extend_anime_tbl[clrvari][1][extend_color_index][1];
+        color_rgb[2] = shdisp_triple_led_extend_anime_tbl[clrvari][1][extend_color_index][2];
+#ifdef SHDISP_COLOR_LED_TWIN
+        color_rgb_twin[0] = shdisp_triple_led_extend_anime_tbl[clrvari][1][extend_color_index][0];
+        color_rgb_twin[1] = shdisp_triple_led_extend_anime_tbl[clrvari][1][extend_color_index][1];
+        color_rgb_twin[2] = shdisp_triple_led_extend_anime_tbl[clrvari][1][extend_color_index][2];
+#endif
+    } else {
+        color_rgb[0] = shdisp_triple_led_anime_tbl[clrvari][1][color_index][0];
+        color_rgb[1] = shdisp_triple_led_anime_tbl[clrvari][1][color_index][1];
+        color_rgb[2] = shdisp_triple_led_anime_tbl[clrvari][1][color_index][2];
+#ifdef SHDISP_COLOR_LED_TWIN
+        color_rgb_twin[0] = shdisp_triple_led_anime_tbl_twin[clrvari][1][color_index][0];
+        color_rgb_twin[1] = shdisp_triple_led_anime_tbl_twin[clrvari][1][color_index][1];
+        color_rgb_twin[2] = shdisp_triple_led_anime_tbl_twin[clrvari][1][color_index][2];
+#endif
+    }
+#else /* SHDISP_EXTEND_COLOR_LED */
+    color_rgb[0] = shdisp_triple_led_anime_tbl[clrvari][1][color_index][0];
+    color_rgb[1] = shdisp_triple_led_anime_tbl[clrvari][1][color_index][1];
+    color_rgb[2] = shdisp_triple_led_anime_tbl[clrvari][1][color_index][2];
+#ifdef SHDISP_COLOR_LED_TWIN
+    color_rgb_twin[0] = shdisp_triple_led_anime_tbl_twin[clrvari][1][color_index][0];
+    color_rgb_twin[1] = shdisp_triple_led_anime_tbl_twin[clrvari][1][color_index][1];
+    color_rgb_twin[2] = shdisp_triple_led_anime_tbl_twin[clrvari][1][color_index][2];
+#endif
+#endif /* SHDISP_EXTEND_COLOR_LED */
+
+    shdisp_bdic_API_IO_multi_write_reg(reg, color_rgb, 3);
+#ifdef SHDISP_COLOR_LED_TWIN
+    shdisp_bdic_API_IO_multi_write_reg(reg_twin, color_rgb_twin, 3);
+#endif
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_write_illumi_triple_color_bottom                              */
+/* ------------------------------------------------------------------------- */
+static void shdisp_bdic_write_illumi_triple_color_bottom(char reg, int color_index)
+{
+    char color_rgb[3];
+#ifdef SHDISP_COLOR_LED_TWIN
+    char reg_twin = 0;
+#endif
+    memset(color_rgb, 0, sizeof(color_rgb));
+
+#ifdef SHDISP_COLOR_LED_TWIN
+    switch (reg) {
+    case BDIC_REG_CH0_A:
+       reg_twin = BDIC_REG_CH3_A;
+       break;
+    case BDIC_REG_CH0_B:
+       reg_twin = BDIC_REG_CH3_B;
+       break;
+    case BDIC_REG_CH0_C:
+    default:
+       reg_twin = BDIC_REG_CH3_C;
+    }
+#endif
+
+    shdisp_bdic_API_IO_multi_write_reg(reg, color_rgb, 3);
+#ifdef SHDISP_COLOR_LED_TWIN
+    shdisp_bdic_API_IO_multi_write_reg(reg_twin, color_rgb, 3);
+#endif
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_cancel_illumi_work                                            */
+/* ------------------------------------------------------------------------- */
+static void shdisp_bdic_cancel_illumi_work(void)
+{
+
+    int i;
+    int queued_tail;
+    int queued_head = illumi_state.illumi_state;
+
+    if (queued_head == ILLUMI_STATE_STOP) {
+        return;
+    }
+
+    queued_tail = (illumi_state.count == SHDISP_TRI_LED_COUNT_NONE) ? ILLUMI_STATE_MAX : ILLUMI_STATE_MAX -1;
+    i = illumi_state.illumi_state;
+
+    for (; i != queued_tail; i++) {
+        SHDISP_DEBUG("cancel work[%d]", i);
+        cancel_delayed_work_sync(&illumi_state.works[i]);
+    }
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_clear_illumi_state                                            */
+/* ------------------------------------------------------------------------- */
+static void shdisp_bdic_clear_illumi_state(void)
+{
+    illumi_state.colors[ILLUMI_FRAME_FIRST] = illumi_state.colors[ILLUMI_FRAME_SECOND] = illumi_state.colors[ILLUMI_FRAME_THIRD] = 0;
+    illumi_state.count = SHDISP_TRI_LED_COUNT_NONE;
+    illumi_state.illumi_state = ILLUMI_STATE_STOP;
+    illumi_state.running_state = false;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_illumi_color_set_a2                                           */
+/* ------------------------------------------------------------------------- */
+static void shdisp_bdic_illumi_color_set_a2(void)
+{
+    SHDISP_TRACE("in");
+
+    shdisp_bdic_write_illumi_triple_color_top(BDIC_REG_CH0_A, illumi_state.colors[ILLUMI_FRAME_SECOND]);
+    illumi_state.illumi_state = ILLUMI_STATE_WAIT_SET_B2_AREA;
+
+    SHDISP_TRACE("out");
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_workqueue_handler_illumi_set_b2                                    */
+/* ------------------------------------------------------------------------- */
+static void shdisp_workqueue_handler_illumi_set_b2(struct work_struct *work)
+{
+    SHDISP_TRACE("in");
+
+    shdisp_API_semaphore_start();
+
+    if (!illumi_state.running_state) {
+        SHDISP_DEBUG("out running_state = %d", illumi_state.running_state);
+        shdisp_API_semaphore_end();
+        return;
+    }
+
+    shdisp_bdic_write_illumi_triple_color_bottom(BDIC_REG_CH0_B, ILLUMI_FRAME_SECOND);
+
+    illumi_state.illumi_state = ILLUMI_STATE_WAIT_SET_C2_AREA;
+
+    shdisp_API_semaphore_end();
+
+    SHDISP_TRACE("out");
+
+
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_workqueue_handler_illumi_set_c2                                    */
+/* ------------------------------------------------------------------------- */
+static void shdisp_workqueue_handler_illumi_set_c2(struct work_struct *work)
+{
+    SHDISP_TRACE("in");
+
+    shdisp_API_semaphore_start();
+
+    if (!illumi_state.running_state) {
+        SHDISP_DEBUG("out running_state = %d", illumi_state.running_state);
+        shdisp_API_semaphore_end();
+        return;
+    }
+
+    shdisp_bdic_write_illumi_triple_color_top(BDIC_REG_CH0_C, illumi_state.colors[ILLUMI_FRAME_THIRD]);
+
+    illumi_state.illumi_state = ILLUMI_STATE_WAIT_SET_A3_AREA;
+
+    shdisp_API_semaphore_end();
+
+    SHDISP_TRACE("out");
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_workqueue_handler_illumi_set_a3                                    */
+/* ------------------------------------------------------------------------- */
+static void shdisp_workqueue_handler_illumi_set_a3(struct work_struct *work)
+{
+    SHDISP_TRACE("in");
+
+    shdisp_API_semaphore_start();
+
+    if (!illumi_state.running_state) {
+        SHDISP_DEBUG("out running_state = %d", illumi_state.running_state);
+        shdisp_API_semaphore_end();
+        return;
+    }
+
+    shdisp_bdic_write_illumi_triple_color_bottom(BDIC_REG_CH0_A, ILLUMI_FRAME_THIRD);
+
+    illumi_state.illumi_state = ILLUMI_STATE_WAIT_ANIME_BREAK;
+
+    shdisp_API_semaphore_end();
+
+    SHDISP_TRACE("out");
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_workqueue_handler_illumi_set_anime_stop                            */
+/* ------------------------------------------------------------------------- */
+static void shdisp_workqueue_handler_illumi_set_anime_stop(struct work_struct *work)
+{
+    SHDISP_TRACE("in");
+
+    shdisp_API_semaphore_start();
+
+    if (!illumi_state.running_state) {
+        SHDISP_DEBUG("out running_state = %d", illumi_state.running_state);
+        shdisp_API_semaphore_end();
+        return;
+    }
+
+    shdisp_bdic_API_IO_write_reg(BDIC_REG_SYSTEM7, 0x00);
+
+    if (illumi_state.count == SHDISP_TRI_LED_COUNT_1) {
+        shdisp_bdic_clear_illumi_state();
+        shdisp_bdic_seq_bdic_standby_for_led(SHDISP_DEV_TYPE_LED);
+    } else {
+        illumi_state.illumi_state = ILLUMI_STATE_WAIT_RESTART;
+    }
+
+    shdisp_API_semaphore_end();
+
+    SHDISP_TRACE("out");
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_workqueue_handler_illumi_restart                                   */
+/* ------------------------------------------------------------------------- */
+static void shdisp_workqueue_handler_illumi_restart(struct work_struct *work)
+{
+    int clrvari = led_state_str.bdic_clrvari_index;
+    int i;
+    int work_count;
+    unsigned char color_rgb[9];
+#ifdef SHDISP_COLOR_LED_TWIN
+    unsigned char color_rgb_twin[9];
+#endif
+    unsigned char color_index;
+
+    SHDISP_TRACE("in");
+
+    shdisp_API_semaphore_start();
+
+    if (!illumi_state.running_state) {
+        SHDISP_DEBUG("out running_state = %d", illumi_state.running_state);
+        shdisp_API_semaphore_end();
+        return;
+    }
+
+#ifdef SHDISP_EXTEND_COLOR_LED
+    if (illumi_state.colors[ILLUMI_FRAME_FIRST] > SHDISP_TRI_LED_COLOR_NUM) {
+        color_index = illumi_state.colors[ILLUMI_FRAME_FIRST] - SHDISP_TRI_LED_COLOR_NUM;
+        color_rgb[0] = 0;
+        color_rgb[1] = 0;
+        color_rgb[2] = 0;
+        color_rgb[3] = shdisp_triple_led_extend_anime_tbl[clrvari][1][color_index][0];
+        color_rgb[4] = shdisp_triple_led_extend_anime_tbl[clrvari][1][color_index][1];
+        color_rgb[5] = shdisp_triple_led_extend_anime_tbl[clrvari][1][color_index][2];
+        color_rgb[6] = 0;
+        color_rgb[7] = 0;
+        color_rgb[8] = 0;
+#ifdef SHDISP_COLOR_LED_TWIN
+        color_rgb_twin[0] = 0;
+        color_rgb_twin[1] = 0;
+        color_rgb_twin[2] = 0;
+        color_rgb_twin[3] = shdisp_triple_led_extend_anime_tbl[clrvari][1][color_index][0];
+        color_rgb_twin[4] = shdisp_triple_led_extend_anime_tbl[clrvari][1][color_index][1];
+        color_rgb_twin[5] = shdisp_triple_led_extend_anime_tbl[clrvari][1][color_index][2];
+        color_rgb_twin[6] = 0;
+        color_rgb_twin[7] = 0;
+        color_rgb_twin[8] = 0;
+#endif
+    } else {
+        color_index = illumi_state.colors[ILLUMI_FRAME_FIRST];
+        color_rgb[0] = 0;
+        color_rgb[1] = 0;
+        color_rgb[2] = 0;
+        color_rgb[3] = shdisp_triple_led_anime_tbl[clrvari][1][color_index][0];
+        color_rgb[4] = shdisp_triple_led_anime_tbl[clrvari][1][color_index][1];
+        color_rgb[5] = shdisp_triple_led_anime_tbl[clrvari][1][color_index][2];
+        color_rgb[6] = 0;
+        color_rgb[7] = 0;
+        color_rgb[8] = 0;
+#ifdef SHDISP_COLOR_LED_TWIN
+        color_rgb_twin[0] = 0;
+        color_rgb_twin[1] = 0;
+        color_rgb_twin[2] = 0;
+        color_rgb_twin[3] = shdisp_triple_led_anime_tbl_twin[clrvari][1][color_index][0];
+        color_rgb_twin[4] = shdisp_triple_led_anime_tbl_twin[clrvari][1][color_index][1];
+        color_rgb_twin[5] = shdisp_triple_led_anime_tbl_twin[clrvari][1][color_index][2];
+        color_rgb_twin[6] = 0;
+        color_rgb_twin[7] = 0;
+        color_rgb_twin[8] = 0;
+#endif
+    }
+#else /* SHDISP_EXTEND_COLOR_LED */
+    color_index = illumi_state.colors[ILLUMI_FRAME_FIRST];
+    color_rgb[0] = 0;
+    color_rgb[1] = 0;
+    color_rgb[2] = 0;
+    color_rgb[3] = shdisp_triple_led_anime_tbl[clrvari][1][color_index][0];
+    color_rgb[4] = shdisp_triple_led_anime_tbl[clrvari][1][color_index][1];
+    color_rgb[5] = shdisp_triple_led_anime_tbl[clrvari][1][color_index][2];
+    color_rgb[6] = 0;
+    color_rgb[7] = 0;
+    color_rgb[8] = 0;
+#ifdef SHDISP_COLOR_LED_TWIN
+    color_rgb_twin[0] = 0;
+    color_rgb_twin[1] = 0;
+    color_rgb_twin[2] = 0;
+    color_rgb_twin[3] = shdisp_triple_led_anime_tbl_twin[clrvari][1][color_index][0];
+    color_rgb_twin[4] = shdisp_triple_led_anime_tbl_twin[clrvari][1][color_index][1];
+    color_rgb_twin[5] = shdisp_triple_led_anime_tbl_twin[clrvari][1][color_index][2];
+    color_rgb_twin[6] = 0;
+    color_rgb_twin[7] = 0;
+    color_rgb_twin[8] = 0;
+#endif
+#endif /* SHDISP_EXTEND_COLOR_LED */
+
+    shdisp_bdic_API_IO_multi_write_reg(BDIC_REG_CH0_A, color_rgb, 9);
+#ifdef SHDISP_COLOR_LED_TWIN
+    shdisp_bdic_API_IO_multi_write_reg(BDIC_REG_CH3_A, color_rgb_twin, 9);
+#endif
+
+#ifdef SHDISP_COLOR_LED_TWIN
+    shdisp_bdic_API_IO_write_reg(BDIC_REG_SYSTEM7, 0x05);
+#else
+    shdisp_bdic_API_IO_write_reg(BDIC_REG_SYSTEM7, 0x01);
+#endif
+
+    work_count = (illumi_state.count == SHDISP_TRI_LED_COUNT_NONE) ? ILLUMI_STATE_MAX : ILLUMI_STATE_MAX - 1;
+    SHDISP_DEBUG("restart queue delay_works = %d isonshot = %d", work_count, illumi_state.count);
+    for (i = 0; i != work_count; ++i) {
+        queue_delayed_work(illumi_state.workqueue, &illumi_state.works[i], usecs_to_jiffies(shdisp_illumi_delayed_times[i]));
+        SHDISP_DEBUG("delay_works[%d] was queued", i);
+    }
+
+    shdisp_SYS_API_msleep(10);
+    shdisp_bdic_illumi_color_set_a2();
+
+    illumi_state.illumi_state = ILLUMI_STATE_WAIT_SET_B2_AREA;
+
+    shdisp_API_semaphore_end();
+
+    SHDISP_TRACE("out");
+}
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
 
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_LD_set_led_fix_on_table                                       */
@@ -1452,9 +1927,6 @@ static void shdisp_bdic_seq_led_pattern2_on2(int interval, int count)
 static void shdisp_bdic_LD_set_led_fix_on_table(int clr_vari, int color)
 {
     unsigned char *pTriLed;
-    shdisp_bdicRegSetting_t led_fix_on[ARRAY_SIZE(shdisp_bdic_led_fix_on)];
-
-    memcpy(led_fix_on, shdisp_bdic_led_fix_on, sizeof(shdisp_bdic_led_fix_on));
 
 #ifdef SHDISP_EXTEND_COLOR_LED
     unsigned char extend_color_index;
@@ -1469,11 +1941,101 @@ static void shdisp_bdic_LD_set_led_fix_on_table(int clr_vari, int color)
     pTriLed = (unsigned char *)(&(shdisp_triple_led_tbl[clr_vari][color]));
 #endif /* SHDISP_EXTEND_COLOR_LED */
 
+    shdisp_bdic_LD_set_led_on_table(pTriLed);
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_LD_set_led_on_table                                           */
+/* ------------------------------------------------------------------------- */
+static void shdisp_bdic_LD_set_led_on_table(unsigned char *rgb_current)
+{
+    unsigned char *pTriLed;
+    shdisp_bdicRegSetting_t led_fix_on[ARRAY_SIZE(shdisp_bdic_led_fix_on)];
+
+    memcpy(led_fix_on, shdisp_bdic_led_fix_on, sizeof(shdisp_bdic_led_fix_on));
+
+    pTriLed = (unsigned char *)rgb_current;
+
     led_fix_on[0].data = *(pTriLed + 0);
     led_fix_on[1].data = *(pTriLed + 1);
     led_fix_on[2].data = *(pTriLed + 2);
     SHDISP_BDIC_REGSET(led_fix_on);
 }
+
+#ifdef SHDISP_SYSFS_LED
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_LD_set_led_fix_current_table                                  */
+/* ------------------------------------------------------------------------- */
+static void shdisp_bdic_LD_set_led_fix_current_table(unsigned char *rgb_current)
+{
+    unsigned char *pTriLed;
+    shdisp_bdicRegSetting_t led_current[ARRAY_SIZE(shdisp_bdic_led_current)];
+
+    memcpy(led_current, shdisp_bdic_led_current, sizeof(shdisp_bdic_led_current));
+
+    pTriLed = (unsigned char *)rgb_current;
+
+    led_current[0].data = *(pTriLed + 0);
+    led_current[1].data = *(pTriLed + 1);
+    led_current[2].data = *(pTriLed + 2);
+    SHDISP_BDIC_REGSET(led_current);
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_is_led_current_mode                                           */
+/* ------------------------------------------------------------------------- */
+static bool shdisp_bdic_is_led_current_mode(void)
+{
+    int i;
+
+    for (i = 0; i < SHDISP_RGB; i++) {
+#ifdef SHDISP_COLOR_LED_TWIN
+        if (rgb_current1[i] || rgb_current2[i]) {
+#else /* SHDISP_COLOR_LED_TWIN */
+        if (rgb_current1[i]) {
+#endif /* SHDISP_COLOR_LED_TWIN */
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_is_led_current_mode_no                                        */
+/* ------------------------------------------------------------------------- */
+static bool shdisp_bdic_is_led_current_mode_no(int no)
+{
+#ifdef SHDISP_COLOR_LED_TWIN
+    int i;
+    unsigned char *chk_current = ((no == SYSFS_LED_SH_LED_1) ? rgb_current2 : rgb_current1);
+
+    for (i = 0; i < SHDISP_RGB; i++) {
+        if (chk_current[i]) {
+            return true;
+        }
+    }
+#else /* SHDISP_COLOR_LED_TWIN */
+    if (no != SYSFS_LED_SH_LED_1)
+        return true;
+#endif /* SHDISP_COLOR_LED_TWIN */
+    return false;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_clear_current_param                                           */
+/* ------------------------------------------------------------------------- */
+static void shdisp_bdic_clear_current_param(void)
+{
+    SHDISP_TRACE("in");
+    memset(rgb_current1, 0x00, sizeof(rgb_current1));
+#ifdef SHDISP_COLOR_LED_TWIN
+    memset(rgb_current2, 0x00, sizeof(rgb_current2));
+#endif /* SHDISP_COLOR_LED_TWIN */
+    SHDISP_TRACE("out");
+    return;
+}
+#endif /* SHDISP_SYSFS_LED */
 
 /* ------------------------------------------------------------------------- */
 /* shdisp_bdic_seq_bdic_active_for_led                                       */
@@ -1496,6 +2058,83 @@ static void shdisp_bdic_seq_bdic_standby_for_led(int dev_type)
 }
 
 /* ------------------------------------------------------------------------- */
+/* shdisp_bdic_get_color_index_and_reedit                                    */
+/* ------------------------------------------------------------------------- */
+static unsigned char shdisp_bdic_get_color_index_and_reedit(struct shdisp_tri_led *tri_led)
+{
+    unsigned int i;
+    unsigned char color = 0xFF;
+
+#ifdef SHDISP_EXTEND_COLOR_LED
+    struct shdisp_bdic_led_color_index extend_cloler_index[SHDISP_TRI_LED_EXTEND_COLOR_TBL_NUM];
+
+    if ((tri_led->red <= 5) && (tri_led->green <= 5) && (tri_led->blue <= 5)) {
+        if ((tri_led->red >= 3) || (tri_led->green >= 3) || (tri_led->blue >= 3)) {
+            if (tri_led->red == 0x00) {
+                memcpy(extend_cloler_index, shdisp_triple_led_extend_color_index_tbl0, sizeof(extend_cloler_index));
+            } else if (tri_led->red == 0x03) {
+                memcpy(extend_cloler_index, shdisp_triple_led_extend_color_index_tbl3, sizeof(extend_cloler_index));
+            } else if (tri_led->red == 0x04) {
+                memcpy(extend_cloler_index, shdisp_triple_led_extend_color_index_tbl4, sizeof(extend_cloler_index));
+            } else if (tri_led->red == 0x05) {
+                memcpy(extend_cloler_index, shdisp_triple_led_extend_color_index_tbl5, sizeof(extend_cloler_index));
+            }
+
+            for (i = 0; i < ARRAY_SIZE(extend_cloler_index); i++) {
+                if (extend_cloler_index[i].green == tri_led->green   &&
+                    extend_cloler_index[i].blue  == tri_led->blue) {
+                    color = extend_cloler_index[i].color;
+                    break;
+                }
+            }
+        } else {
+            for (i = 0; i < ARRAY_SIZE(shdisp_triple_led_color_index_tbl); i++) {
+                if (shdisp_triple_led_color_index_tbl[i].red   == tri_led->red     &&
+                    shdisp_triple_led_color_index_tbl[i].green == tri_led->green   &&
+                    shdisp_triple_led_color_index_tbl[i].blue  == tri_led->blue) {
+                    color = shdisp_triple_led_color_index_tbl[i].color;
+                    break;
+                }
+            }
+        }
+    }
+#else /* SHDISP_EXTEND_COLOR_LED */
+    for (i = 0; i < ARRAY_SIZE(shdisp_triple_led_color_index_tbl); i++) {
+        if (shdisp_triple_led_color_index_tbl[i].red   == tri_led->red     &&
+            shdisp_triple_led_color_index_tbl[i].green == tri_led->green   &&
+            shdisp_triple_led_color_index_tbl[i].blue  == tri_led->blue) {
+            color = shdisp_triple_led_color_index_tbl[i].color;
+            break;
+        }
+    }
+#endif /* SHDISP_EXTEND_COLOR_LED */
+
+    if (color == 0xFF) {
+        if (tri_led->red > 1) {
+            tri_led->red = 1;
+        }
+        if (tri_led->green > 1) {
+            tri_led->green = 1;
+        }
+        if (tri_led->blue > 1) {
+            tri_led->blue = 1;
+        }
+        for (i = 0; i < ARRAY_SIZE(shdisp_triple_led_color_index_tbl); i++) {
+            if (shdisp_triple_led_color_index_tbl[i].red   == tri_led->red     &&
+                shdisp_triple_led_color_index_tbl[i].green == tri_led->green   &&
+                shdisp_triple_led_color_index_tbl[i].blue  == tri_led->blue) {
+                color = shdisp_triple_led_color_index_tbl[i].color;
+                break;
+            }
+        }
+        if (color == 0xFF) {
+            color = 0;
+        }
+    }
+    return color;
+}
+
+/* ------------------------------------------------------------------------- */
 /* shdisp_bdic_PD_TRI_LED_control                                            */
 /* ------------------------------------------------------------------------- */
 static void shdisp_bdic_PD_TRI_LED_control(unsigned char request, int param)
@@ -1510,6 +2149,11 @@ static void shdisp_bdic_PD_TRI_LED_control(unsigned char request, int param)
     case SHDISP_BDIC_REQ_TRI_LED_START:
         SHDISP_DEBUG("SHDISP_BDIC_REQ_TRI_LED_START tri_led_mode=%d, led_before_mode=%d"
                        , shdisp_bdic_tri_led_mode, shdisp_bdic_tri_led_before_mode);
+#ifdef SHDISP_SYSFS_LED
+        if (param == NO_CURRENT_SET) {
+            shdisp_bdic_clear_current_param();
+        }
+#endif /* SHDISP_SYSFS_LED */
         shdisp_bdic_API_IO_bank_set(0x00);
         switch (shdisp_bdic_tri_led_before_mode) {
         case SHDISP_BDIC_TRI_LED_MODE_NORMAL:
@@ -1532,8 +2176,7 @@ static void shdisp_bdic_PD_TRI_LED_control(unsigned char request, int param)
         case SHDISP_BDIC_TRI_LED_MODE_AURORA:
         case SHDISP_BDIC_TRI_LED_MODE_RAINBOW:
         case SHDISP_BDIC_TRI_LED_MODE_EMOPATTERN:
-        case SHDISP_BDIC_TRI_LED_MODE_PATTERN1:
-        case SHDISP_BDIC_TRI_LED_MODE_PATTERN2:
+        case SHDISP_BDIC_TRI_LED_MODE_TRIPLE_COLOR:
         default:
             SHDISP_BDIC_REGSET(shdisp_bdic_led_off);
             shdisp_bdic_PD_TRI_LED_lposc_off();
@@ -1541,6 +2184,11 @@ static void shdisp_bdic_PD_TRI_LED_control(unsigned char request, int param)
         }
 
         if (shdisp_bdic_tri_led_mode == SHDISP_BDIC_TRI_LED_MODE_NORMAL) {
+#ifdef SHDISP_SYSFS_LED
+            if (param == CURRENT_SET) {
+                shdisp_bdic_LD_set_led_on_table(rgb_current1);
+            } else
+#endif /* SHDISP_SYSFS_LED */
             shdisp_bdic_LD_set_led_fix_on_table(led_state_str.bdic_clrvari_index, shdisp_bdic_tri_led_color);
         } else {
             SHDISP_BDIC_REGSET(shdisp_bdic_led_lposc_enable);
@@ -1617,16 +2265,11 @@ static void shdisp_bdic_PD_TRI_LED_control(unsigned char request, int param)
         shdisp_bdic_tri_led_mode  = SHDISP_BDIC_TRI_LED_MODE_RAINBOW;
         shdisp_bdic_tri_led_color = (unsigned char)param;
         break;
-#ifdef SHDISP_EXTEND_COLOR_LED
-    case SHDISP_BDIC_REQ_TRI_LED_SET_MODE_PATTERN1:
-        shdisp_bdic_tri_led_mode  = SHDISP_BDIC_TRI_LED_MODE_PATTERN1;
+    case SHDISP_BDIC_REQ_ILLUMI_TRIPLE_COLOR:
+        shdisp_bdic_tri_led_mode  = SHDISP_BDIC_TRI_LED_MODE_TRIPLE_COLOR;
         shdisp_bdic_tri_led_color = (unsigned char)param;
         break;
-    case SHDISP_BDIC_REQ_TRI_LED_SET_MODE_PATTERN2:
-        shdisp_bdic_tri_led_mode  = SHDISP_BDIC_TRI_LED_MODE_PATTERN2;
-        shdisp_bdic_tri_led_color = (unsigned char)param;
-        break;
-#endif  /* SHDISP_EXTEND_COLOR_LED */
+
 #endif  /* SHDISP_ANIME_COLOR_LED */
 
     case SHDISP_BDIC_REQ_TRI_LED_SET_ONTIME:
@@ -1736,17 +2379,10 @@ static void shdisp_bdic_PD_TRI_LED_set_anime(void)
         shdisp_bdic_API_IO_write_reg(BDIC_REG_TIMEER, timeer1_val);
         SHDISP_BDIC_REGSET(shdisp_bdic_led_rainbow_on);
         break;
-#ifdef SHDISP_EXTEND_COLOR_LED
-    case SHDISP_BDIC_TRI_LED_MODE_PATTERN1:
-        shdisp_bdic_API_IO_write_reg(BDIC_REG_TIMEER, timeer1_val);
-        SHDISP_BDIC_REGSET(shdisp_bdic_led_pattern1_on);
-        break;
 
-    case SHDISP_BDIC_TRI_LED_MODE_PATTERN2:
-        shdisp_bdic_API_IO_write_reg(BDIC_REG_TIMEER, timeer1_val);
-        SHDISP_BDIC_REGSET(shdisp_bdic_led_pattern2_on);
+    case SHDISP_BDIC_TRI_LED_MODE_TRIPLE_COLOR:
+        SHDISP_BDIC_REGSET(shdisp_bdic_illumi_triple_color_1st);
         break;
-#endif  /* SHDISP_EXTEND_COLOR_LED */
 #endif  /* SHDISP_ANIME_COLOR_LED */
 
     default:
@@ -1781,7 +2417,7 @@ static void shdisp_bdic_PD_TRI_LED_set_chdig(void)
 
     case SHDISP_BDIC_TRI_LED_MODE_BLINK:
     case SHDISP_BDIC_TRI_LED_MODE_FIREFLY:
-
+    case SHDISP_BDIC_TRI_LED_MODE_TRIPLE_COLOR:
 #ifdef SHDISP_EXTEND_COLOR_LED
         if (shdisp_bdic_tri_led_color > SHDISP_TRI_LED_COLOR_NUM) {
             extend_color_index = shdisp_bdic_tri_led_color - SHDISP_TRI_LED_COLOR_NUM;
@@ -1822,6 +2458,7 @@ static void shdisp_bdic_PD_TRI_LED_set_chdig(void)
             wBuf[1] = wBuf[7] = wBuf[4];
             wBuf[2] = wBuf[8] = wBuf[5];
         }
+
         shdisp_bdic_API_IO_multi_write_reg(BDIC_REG_CH0_A, wBuf, 9);
         break;
 
@@ -1958,11 +2595,8 @@ static void shdisp_bdic_PD_TRI_LED_set_chdig(void)
 
     case SHDISP_BDIC_TRI_LED_MODE_AURORA:
     case SHDISP_BDIC_TRI_LED_MODE_RAINBOW:
-    case SHDISP_BDIC_TRI_LED_MODE_PATTERN1:
-    case SHDISP_BDIC_TRI_LED_MODE_PATTERN2:
     case SHDISP_BDIC_TRI_LED_MODE_EMOPATTERN:
         switch (shdisp_bdic_tri_led_mode) {
-#ifdef SHDISP_EXTEND_COLOR_LED
         case SHDISP_BDIC_TRI_LED_MODE_AURORA:
             memcpy(anime_tbl2, shdisp_triple_led_anime_aurora_tbl, sizeof(anime_tbl2));
             break;
@@ -1972,23 +2606,6 @@ static void shdisp_bdic_PD_TRI_LED_set_chdig(void)
         case SHDISP_BDIC_TRI_LED_MODE_EMOPATTERN:
             memcpy(anime_tbl2, shdisp_triple_led_anime_emopattern_tbl, sizeof(anime_tbl2));
             break;
-        case SHDISP_BDIC_TRI_LED_MODE_PATTERN1:
-            memcpy(anime_tbl2, shdisp_triple_led_anime_pattern1_tbl, sizeof(anime_tbl2));
-            break;
-        case SHDISP_BDIC_TRI_LED_MODE_PATTERN2:
-            memcpy(anime_tbl2, shdisp_triple_led_anime_pattern2_tbl, sizeof(anime_tbl2));
-            break;
-#else /* SHDISP_EXTEND_COLOR_LED */
-        case SHDISP_BDIC_TRI_LED_MODE_AURORA:
-            memcpy(anime_tbl2, shdisp_triple_led_anime_aurora_tbl, sizeof(anime_tbl2));
-            break;
-        case SHDISP_BDIC_TRI_LED_MODE_RAINBOW:
-            memcpy(anime_tbl2, shdisp_triple_led_anime_rainbow_tbl, sizeof(anime_tbl2));
-            break;
-        case SHDISP_BDIC_TRI_LED_MODE_EMOPATTERN:
-            memcpy(anime_tbl2, shdisp_triple_led_anime_emopattern_tbl, sizeof(anime_tbl2));
-            break;
-#endif /* SHDISP_EXTEND_COLOR_LED */
         }
 #else /* SHDISP_ILLUMI_COLOR_LED */
     case SHDISP_BDIC_TRI_LED_MODE_EMOPATTERN:
@@ -2003,6 +2620,7 @@ static void shdisp_bdic_PD_TRI_LED_set_chdig(void)
         wBuf[6] = anime_tbl2[clrvari][2][0];
         wBuf[7] = anime_tbl2[clrvari][2][1];
         wBuf[8] = anime_tbl2[clrvari][2][2];
+
         shdisp_bdic_API_IO_multi_write_reg(BDIC_REG_CH0_A, wBuf, 9);
         break;
 #endif /* SHDISP_ANIME_COLOR_LED */
@@ -2065,6 +2683,11 @@ static void shdisp_bdic_PD_TRI_LED_control_twin(unsigned char request, int param
                        , shdisp_bdic_tri_led_mode_twin, shdisp_bdic_tri_led_before_mode_twin);
 
         if (shdisp_bdic_tri_led_mode_twin == SHDISP_BDIC_TRI_LED_MODE_NORMAL) {
+#ifdef SHDISP_SYSFS_LED
+            if (param == CURRENT_SET) {
+                shdisp_bdic_LD_set_led_on_table_twin(rgb_current2);
+            } else
+#endif /* SHDISP_SYSFS_LED */
             shdisp_bdic_LD_set_led_fix_on_table_twin(led_state_str.bdic_clrvari_index, shdisp_bdic_tri_led_color);
         } else {
             SHDISP_BDIC_REGSET(shdisp_bdic_led_lposc_enable);
@@ -2134,6 +2757,10 @@ static void shdisp_bdic_PD_TRI_LED_control_twin(unsigned char request, int param
         break;
     case SHDISP_BDIC_REQ_TRI_LED_SET_MODE_RAINBOW:
         shdisp_bdic_tri_led_mode_twin  = SHDISP_BDIC_TRI_LED_MODE_RAINBOW;
+        shdisp_bdic_tri_led_color = (unsigned char)param;
+        break;
+    case SHDISP_BDIC_REQ_ILLUMI_TRIPLE_COLOR:
+        shdisp_bdic_tri_led_mode_twin  = SHDISP_BDIC_TRI_LED_MODE_TRIPLE_COLOR;
         shdisp_bdic_tri_led_color = (unsigned char)param;
         break;
 #endif  /* SHDISP_ANIME_COLOR_LED */
@@ -2245,6 +2872,10 @@ static void shdisp_bdic_PD_TRI_LED_set_anime_twin(void)
         shdisp_bdic_API_IO_write_reg(BDIC_REG_TIMER2, timeer2_val);
         SHDISP_BDIC_REGSET(shdisp_bdic_led_rainbow_on_twin);
         break;
+
+    case SHDISP_BDIC_TRI_LED_MODE_TRIPLE_COLOR:
+        SHDISP_BDIC_REGSET(shdisp_bdic_illumi_triple_color_1st_twin);
+        break;
 #endif  /* SHDISP_ANIME_COLOR_LED */
     default:
         break;
@@ -2259,11 +2890,16 @@ static void shdisp_bdic_PD_TRI_LED_set_anime_twin(void)
 static void shdisp_bdic_PD_TRI_LED_set_chdig_twin(void)
 {
     int clrvari = led_state_str.bdic_clrvari_index;
-#ifdef SHDISP_ANIME_COLOR_LED
-    unsigned char anime_tbl1[SHDISP_COL_VARI_KIND][SHDISP_TRI_LED_ANIME_3PAGE][SHDISP_TRI_LED_COLOR_TBL_NUM][3];
-    unsigned char anime_tbl2[SHDISP_COL_VARI_KIND][SHDISP_TRI_LED_ANIME_3PAGE][3];
-#endif  /* SHDISP_ANIME_COLOR_LED */
     unsigned char wBuf[9];
+#ifdef SHDISP_ANIME_COLOR_LED
+#ifdef SHDISP_ILLUMI_COLOR_LED
+    unsigned char anime_tbl1[SHDISP_COL_VARI_KIND][SHDISP_TRI_LED_ANIME_3PAGE][SHDISP_TRI_LED_COLOR_TBL_NUM][3];
+#endif /* SHDISP_ILLUMI_COLOR_LED */
+    unsigned char anime_tbl2[SHDISP_COL_VARI_KIND][SHDISP_TRI_LED_ANIME_3PAGE][3];
+#ifdef SHDISP_EXTEND_COLOR_LED
+    unsigned char extend_color_index;
+#endif /* SHDISP_EXTEND_COLOR_LED */
+#endif  /* SHDISP_ANIME_COLOR_LED */
 
     memset(wBuf, 0, sizeof(wBuf));
 
@@ -2273,6 +2909,31 @@ static void shdisp_bdic_PD_TRI_LED_set_chdig_twin(void)
 
     case SHDISP_BDIC_TRI_LED_MODE_BLINK:
     case SHDISP_BDIC_TRI_LED_MODE_FIREFLY:
+    case SHDISP_BDIC_TRI_LED_MODE_TRIPLE_COLOR:
+#ifdef SHDISP_EXTEND_COLOR_LED
+        if (shdisp_bdic_tri_led_color > SHDISP_TRI_LED_COLOR_NUM) {
+            extend_color_index = shdisp_bdic_tri_led_color - SHDISP_TRI_LED_COLOR_NUM;
+            wBuf[0] = shdisp_triple_led_extend_anime_tbl[clrvari][0][extend_color_index][0];
+            wBuf[1] = shdisp_triple_led_extend_anime_tbl[clrvari][0][extend_color_index][1];
+            wBuf[2] = shdisp_triple_led_extend_anime_tbl[clrvari][0][extend_color_index][2];
+            wBuf[3] = shdisp_triple_led_extend_anime_tbl[clrvari][1][extend_color_index][0];
+            wBuf[4] = shdisp_triple_led_extend_anime_tbl[clrvari][1][extend_color_index][1];
+            wBuf[5] = shdisp_triple_led_extend_anime_tbl[clrvari][1][extend_color_index][2];
+            wBuf[6] = shdisp_triple_led_extend_anime_tbl[clrvari][0][extend_color_index][0];
+            wBuf[7] = shdisp_triple_led_extend_anime_tbl[clrvari][0][extend_color_index][1];
+            wBuf[8] = shdisp_triple_led_extend_anime_tbl[clrvari][0][extend_color_index][2];
+        } else {
+            wBuf[0] = shdisp_triple_led_anime_tbl_twin[clrvari][0][shdisp_bdic_tri_led_color][0];
+            wBuf[1] = shdisp_triple_led_anime_tbl_twin[clrvari][0][shdisp_bdic_tri_led_color][1];
+            wBuf[2] = shdisp_triple_led_anime_tbl_twin[clrvari][0][shdisp_bdic_tri_led_color][2];
+            wBuf[3] = shdisp_triple_led_anime_tbl_twin[clrvari][1][shdisp_bdic_tri_led_color][0];
+            wBuf[4] = shdisp_triple_led_anime_tbl_twin[clrvari][1][shdisp_bdic_tri_led_color][1];
+            wBuf[5] = shdisp_triple_led_anime_tbl_twin[clrvari][1][shdisp_bdic_tri_led_color][2];
+            wBuf[6] = shdisp_triple_led_anime_tbl_twin[clrvari][0][shdisp_bdic_tri_led_color][0];
+            wBuf[7] = shdisp_triple_led_anime_tbl_twin[clrvari][0][shdisp_bdic_tri_led_color][1];
+            wBuf[8] = shdisp_triple_led_anime_tbl_twin[clrvari][0][shdisp_bdic_tri_led_color][2];
+        }
+#else /* SHDISP_EXTEND_COLOR_LED */
         wBuf[0] = shdisp_triple_led_anime_tbl_twin[clrvari][0][shdisp_bdic_tri_led_color][0];
         wBuf[1] = shdisp_triple_led_anime_tbl_twin[clrvari][0][shdisp_bdic_tri_led_color][1];
         wBuf[2] = shdisp_triple_led_anime_tbl_twin[clrvari][0][shdisp_bdic_tri_led_color][2];
@@ -2282,21 +2943,38 @@ static void shdisp_bdic_PD_TRI_LED_set_chdig_twin(void)
         wBuf[6] = shdisp_triple_led_anime_tbl_twin[clrvari][0][shdisp_bdic_tri_led_color][0];
         wBuf[7] = shdisp_triple_led_anime_tbl_twin[clrvari][0][shdisp_bdic_tri_led_color][1];
         wBuf[8] = shdisp_triple_led_anime_tbl_twin[clrvari][0][shdisp_bdic_tri_led_color][2];
-
+#endif /* SHDISP_EXTEND_COLOR_LED */
         if ((shdisp_bdic_tri_led_mode_twin == SHDISP_BDIC_TRI_LED_MODE_BLINK) &&
             (shdisp_bdic_tri_led_ontime > SHDISP_TRI_LED_ONTIME_TYPE7)) {
             wBuf[0] = wBuf[6] = wBuf[3];
             wBuf[1] = wBuf[7] = wBuf[4];
             wBuf[2] = wBuf[8] = wBuf[5];
         }
+
         shdisp_bdic_API_IO_multi_write_reg(BDIC_REG_CH3_A, wBuf, 9);
         break;
+
 #ifdef SHDISP_ANIME_COLOR_LED
+#ifdef SHDISP_ILLUMI_COLOR_LED
     case SHDISP_BDIC_TRI_LED_MODE_HISPEED:
     case SHDISP_BDIC_TRI_LED_MODE_STANDARD:
+#ifdef SHDISP_EXTEND_COLOR_LED
+        if (shdisp_bdic_tri_led_color > SHDISP_TRI_LED_COLOR_NUM) {
+            extend_color_index = shdisp_bdic_tri_led_color - SHDISP_TRI_LED_COLOR_NUM;
+            wBuf[3] = shdisp_triple_led_extend_anime_high_speed_tbl[clrvari][extend_color_index][0];
+            wBuf[4] = shdisp_triple_led_extend_anime_high_speed_tbl[clrvari][extend_color_index][1];
+            wBuf[5] = shdisp_triple_led_extend_anime_high_speed_tbl[clrvari][extend_color_index][2];
+        } else {
+            wBuf[3] = shdisp_triple_led_anime_high_speed_tbl_twin[clrvari][shdisp_bdic_tri_led_color][0];
+            wBuf[4] = shdisp_triple_led_anime_high_speed_tbl_twin[clrvari][shdisp_bdic_tri_led_color][1];
+            wBuf[5] = shdisp_triple_led_anime_high_speed_tbl_twin[clrvari][shdisp_bdic_tri_led_color][2];
+        }
+#else /* SHDISP_EXTEND_COLOR_LED */
         wBuf[3] = shdisp_triple_led_anime_high_speed_tbl_twin[clrvari][shdisp_bdic_tri_led_color][0];
         wBuf[4] = shdisp_triple_led_anime_high_speed_tbl_twin[clrvari][shdisp_bdic_tri_led_color][1];
         wBuf[5] = shdisp_triple_led_anime_high_speed_tbl_twin[clrvari][shdisp_bdic_tri_led_color][2];
+#endif /* SHDISP_EXTEND_COLOR_LED */
+
         shdisp_bdic_API_IO_multi_write_reg(BDIC_REG_CH3_A, wBuf, 9);
         break;
 
@@ -2304,29 +2982,106 @@ static void shdisp_bdic_PD_TRI_LED_set_chdig_twin(void)
     case SHDISP_BDIC_TRI_LED_MODE_LONG_BREATH:
     case SHDISP_BDIC_TRI_LED_MODE_WAVE:
     case SHDISP_BDIC_TRI_LED_MODE_FLASH:
-        switch (shdisp_bdic_tri_led_mode_twin) {
-        case SHDISP_BDIC_TRI_LED_MODE_BREATH:
-            memcpy(anime_tbl1, shdisp_triple_led_anime_breath_tbl_twin, sizeof(anime_tbl1));
-            break;
-        case SHDISP_BDIC_TRI_LED_MODE_LONG_BREATH:
-            memcpy(anime_tbl1, shdisp_triple_led_anime_long_breath_tbl_twin, sizeof(anime_tbl1));
-            break;
-        case SHDISP_BDIC_TRI_LED_MODE_WAVE:
-            memcpy(anime_tbl1, shdisp_triple_led_anime_wave_tbl_twin, sizeof(anime_tbl1));
-            break;
-        case SHDISP_BDIC_TRI_LED_MODE_FLASH:
-            memcpy(anime_tbl1, shdisp_triple_led_anime_flash_tbl_twin, sizeof(anime_tbl1));
-            break;
-        }
-        wBuf[0] = anime_tbl1[clrvari][0][shdisp_bdic_tri_led_color][0];
-        wBuf[1] = anime_tbl1[clrvari][0][shdisp_bdic_tri_led_color][1];
-        wBuf[2] = anime_tbl1[clrvari][0][shdisp_bdic_tri_led_color][2];
-        wBuf[3] = anime_tbl1[clrvari][1][shdisp_bdic_tri_led_color][0];
-        wBuf[4] = anime_tbl1[clrvari][1][shdisp_bdic_tri_led_color][1];
-        wBuf[5] = anime_tbl1[clrvari][1][shdisp_bdic_tri_led_color][2];
-        wBuf[6] = anime_tbl1[clrvari][2][shdisp_bdic_tri_led_color][0];
-        wBuf[7] = anime_tbl1[clrvari][2][shdisp_bdic_tri_led_color][1];
-        wBuf[8] = anime_tbl1[clrvari][2][shdisp_bdic_tri_led_color][2];
+#ifdef SHDISP_EXTEND_COLOR_LED
+        if (shdisp_bdic_tri_led_color > SHDISP_TRI_LED_COLOR_NUM) {
+            extend_color_index = shdisp_bdic_tri_led_color - SHDISP_TRI_LED_COLOR_NUM;
+            switch (shdisp_bdic_tri_led_mode_twin) {
+            case SHDISP_BDIC_TRI_LED_MODE_BREATH:
+                wBuf[0] = shdisp_triple_led_extend_anime_breath_tbl[clrvari][0][extend_color_index][0];
+                wBuf[1] = shdisp_triple_led_extend_anime_breath_tbl[clrvari][0][extend_color_index][1];
+                wBuf[2] = shdisp_triple_led_extend_anime_breath_tbl[clrvari][0][extend_color_index][2];
+                wBuf[3] = shdisp_triple_led_extend_anime_breath_tbl[clrvari][1][extend_color_index][0];
+                wBuf[4] = shdisp_triple_led_extend_anime_breath_tbl[clrvari][1][extend_color_index][1];
+                wBuf[5] = shdisp_triple_led_extend_anime_breath_tbl[clrvari][1][extend_color_index][2];
+                wBuf[6] = shdisp_triple_led_extend_anime_breath_tbl[clrvari][2][extend_color_index][0];
+                wBuf[7] = shdisp_triple_led_extend_anime_breath_tbl[clrvari][2][extend_color_index][1];
+                wBuf[8] = shdisp_triple_led_extend_anime_breath_tbl[clrvari][2][extend_color_index][2];
+                break;
+            case SHDISP_BDIC_TRI_LED_MODE_LONG_BREATH:
+                wBuf[0] = shdisp_triple_led_extend_anime_long_breath_tbl[clrvari][0][extend_color_index][0];
+                wBuf[1] = shdisp_triple_led_extend_anime_long_breath_tbl[clrvari][0][extend_color_index][1];
+                wBuf[2] = shdisp_triple_led_extend_anime_long_breath_tbl[clrvari][0][extend_color_index][2];
+                wBuf[3] = shdisp_triple_led_extend_anime_long_breath_tbl[clrvari][1][extend_color_index][0];
+                wBuf[4] = shdisp_triple_led_extend_anime_long_breath_tbl[clrvari][1][extend_color_index][1];
+                wBuf[5] = shdisp_triple_led_extend_anime_long_breath_tbl[clrvari][1][extend_color_index][2];
+                wBuf[6] = shdisp_triple_led_extend_anime_long_breath_tbl[clrvari][2][extend_color_index][0];
+                wBuf[7] = shdisp_triple_led_extend_anime_long_breath_tbl[clrvari][2][extend_color_index][1];
+                wBuf[8] = shdisp_triple_led_extend_anime_long_breath_tbl[clrvari][2][extend_color_index][2];
+                break;
+            case SHDISP_BDIC_TRI_LED_MODE_WAVE:
+                wBuf[0] = shdisp_triple_led_extend_anime_wave_tbl[clrvari][0][extend_color_index][0];
+                wBuf[1] = shdisp_triple_led_extend_anime_wave_tbl[clrvari][0][extend_color_index][1];
+                wBuf[2] = shdisp_triple_led_extend_anime_wave_tbl[clrvari][0][extend_color_index][2];
+                wBuf[3] = shdisp_triple_led_extend_anime_wave_tbl[clrvari][1][extend_color_index][0];
+                wBuf[4] = shdisp_triple_led_extend_anime_wave_tbl[clrvari][1][extend_color_index][1];
+                wBuf[5] = shdisp_triple_led_extend_anime_wave_tbl[clrvari][1][extend_color_index][2];
+                wBuf[6] = shdisp_triple_led_extend_anime_wave_tbl[clrvari][2][extend_color_index][0];
+                wBuf[7] = shdisp_triple_led_extend_anime_wave_tbl[clrvari][2][extend_color_index][1];
+                wBuf[8] = shdisp_triple_led_extend_anime_wave_tbl[clrvari][2][extend_color_index][2];
+                break;
+            case SHDISP_BDIC_TRI_LED_MODE_FLASH:
+                wBuf[0] = shdisp_triple_led_extend_anime_flash_tbl[clrvari][0][extend_color_index][0];
+                wBuf[1] = shdisp_triple_led_extend_anime_flash_tbl[clrvari][0][extend_color_index][1];
+                wBuf[2] = shdisp_triple_led_extend_anime_flash_tbl[clrvari][0][extend_color_index][2];
+                wBuf[3] = shdisp_triple_led_extend_anime_flash_tbl[clrvari][1][extend_color_index][0];
+                wBuf[4] = shdisp_triple_led_extend_anime_flash_tbl[clrvari][1][extend_color_index][1];
+                wBuf[5] = shdisp_triple_led_extend_anime_flash_tbl[clrvari][1][extend_color_index][2];
+                wBuf[6] = shdisp_triple_led_extend_anime_flash_tbl[clrvari][2][extend_color_index][0];
+                wBuf[7] = shdisp_triple_led_extend_anime_flash_tbl[clrvari][2][extend_color_index][1];
+                wBuf[8] = shdisp_triple_led_extend_anime_flash_tbl[clrvari][2][extend_color_index][2];
+                break;
+            }
+        } else {
+            switch (shdisp_bdic_tri_led_mode_twin) {
+            case SHDISP_BDIC_TRI_LED_MODE_BREATH:
+                memcpy(anime_tbl1, shdisp_triple_led_anime_breath_tbl_twin, sizeof(anime_tbl1));
+                break;
+            case SHDISP_BDIC_TRI_LED_MODE_LONG_BREATH:
+                memcpy(anime_tbl1, shdisp_triple_led_anime_long_breath_tbl_twin, sizeof(anime_tbl1));
+                break;
+            case SHDISP_BDIC_TRI_LED_MODE_WAVE:
+                memcpy(anime_tbl1, shdisp_triple_led_anime_wave_tbl_twin, sizeof(anime_tbl1));
+                break;
+            case SHDISP_BDIC_TRI_LED_MODE_FLASH:
+                memcpy(anime_tbl1, shdisp_triple_led_anime_flash_tbl_twin, sizeof(anime_tbl1));
+                break;
+            }
+            wBuf[0] = anime_tbl1[clrvari][0][shdisp_bdic_tri_led_color][0];
+            wBuf[1] = anime_tbl1[clrvari][0][shdisp_bdic_tri_led_color][1];
+            wBuf[2] = anime_tbl1[clrvari][0][shdisp_bdic_tri_led_color][2];
+            wBuf[3] = anime_tbl1[clrvari][1][shdisp_bdic_tri_led_color][0];
+            wBuf[4] = anime_tbl1[clrvari][1][shdisp_bdic_tri_led_color][1];
+            wBuf[5] = anime_tbl1[clrvari][1][shdisp_bdic_tri_led_color][2];
+            wBuf[6] = anime_tbl1[clrvari][2][shdisp_bdic_tri_led_color][0];
+            wBuf[7] = anime_tbl1[clrvari][2][shdisp_bdic_tri_led_color][1];
+            wBuf[8] = anime_tbl1[clrvari][2][shdisp_bdic_tri_led_color][2];
+          }
+#else /* SHDISP_EXTEND_COLOR_LED */
+            switch (shdisp_bdic_tri_led_mode_twin) {
+            case SHDISP_BDIC_TRI_LED_MODE_BREATH:
+                memcpy(anime_tbl1, shdisp_triple_led_anime_breath_tbl_twin, sizeof(anime_tbl1));
+                break;
+            case SHDISP_BDIC_TRI_LED_MODE_LONG_BREATH:
+                memcpy(anime_tbl1, shdisp_triple_led_anime_long_breath_tbl_twin, sizeof(anime_tbl1));
+                break;
+            case SHDISP_BDIC_TRI_LED_MODE_WAVE:
+                memcpy(anime_tbl1, shdisp_triple_led_anime_wave_tbl_twin, sizeof(anime_tbl1));
+                break;
+            case SHDISP_BDIC_TRI_LED_MODE_FLASH:
+                memcpy(anime_tbl1, shdisp_triple_led_anime_flash_tbl_twin, sizeof(anime_tbl1));
+                break;
+            }
+            wBuf[0] = anime_tbl1[clrvari][0][shdisp_bdic_tri_led_color][0];
+            wBuf[1] = anime_tbl1[clrvari][0][shdisp_bdic_tri_led_color][1];
+            wBuf[2] = anime_tbl1[clrvari][0][shdisp_bdic_tri_led_color][2];
+            wBuf[3] = anime_tbl1[clrvari][1][shdisp_bdic_tri_led_color][0];
+            wBuf[4] = anime_tbl1[clrvari][1][shdisp_bdic_tri_led_color][1];
+            wBuf[5] = anime_tbl1[clrvari][1][shdisp_bdic_tri_led_color][2];
+            wBuf[6] = anime_tbl1[clrvari][2][shdisp_bdic_tri_led_color][0];
+            wBuf[7] = anime_tbl1[clrvari][2][shdisp_bdic_tri_led_color][1];
+            wBuf[8] = anime_tbl1[clrvari][2][shdisp_bdic_tri_led_color][2];
+#endif /* SHDISP_EXTEND_COLOR_LED */
+
         shdisp_bdic_API_IO_multi_write_reg(BDIC_REG_CH3_A, wBuf, 9);
         break;
 
@@ -2344,6 +3099,10 @@ static void shdisp_bdic_PD_TRI_LED_set_chdig_twin(void)
             memcpy(anime_tbl2, shdisp_triple_led_anime_emopattern_tbl_twin, sizeof(anime_tbl2));
             break;
         }
+#else /* SHDISP_ILLUMI_COLOR_LED */
+    case SHDISP_BDIC_TRI_LED_MODE_EMOPATTERN:
+        memcpy(anime_tbl2, shdisp_triple_led_anime_emopattern_tbl_twin, sizeof(anime_tbl2));
+#endif /* SHDISP_ILLUMI_COLOR_LED */
         wBuf[0] = anime_tbl2[clrvari][0][0];
         wBuf[1] = anime_tbl2[clrvari][0][1];
         wBuf[2] = anime_tbl2[clrvari][0][2];
@@ -2353,6 +3112,7 @@ static void shdisp_bdic_PD_TRI_LED_set_chdig_twin(void)
         wBuf[6] = anime_tbl2[clrvari][2][0];
         wBuf[7] = anime_tbl2[clrvari][2][1];
         wBuf[8] = anime_tbl2[clrvari][2][2];
+
         shdisp_bdic_API_IO_multi_write_reg(BDIC_REG_CH3_A, wBuf, 9);
         break;
 #endif /* SHDISP_ANIME_COLOR_LED */
@@ -2370,23 +3130,66 @@ static void shdisp_bdic_PD_TRI_LED_set_chdig_twin(void)
 static void shdisp_bdic_LD_set_led_fix_on_table_twin(int clr_vari, int color)
 {
     unsigned char *pTriLed;
-    shdisp_bdicRegSetting_t led_fix_on_twin[ARRAY_SIZE(shdisp_bdic_led_fix_on_twin)];
 
-    memcpy(led_fix_on_twin, shdisp_bdic_led_fix_on_twin, sizeof(shdisp_bdic_led_fix_on_twin));
+#ifdef SHDISP_EXTEND_COLOR_LED
+    unsigned char extend_color_index;
 
+    if (color > SHDISP_TRI_LED_COLOR_NUM) {
+        extend_color_index = color - SHDISP_TRI_LED_COLOR_NUM;
+        pTriLed = (unsigned char *)(&(shdisp_triple_led_extend_tbl[clr_vari][extend_color_index]));
+    } else {
+        pTriLed = (unsigned char *)(&(shdisp_triple_led_tbl_twin[clr_vari][color]));
+    }
+#else /* SHDISP_EXTEND_COLOR_LED */
     pTriLed = (unsigned char *)(&(shdisp_triple_led_tbl_twin[clr_vari][color]));
+#endif /* SHDISP_EXTEND_COLOR_LED */
 
-    led_fix_on_twin[0].data = *(pTriLed + 0);
-    led_fix_on_twin[1].data = *(pTriLed + 1);
-    led_fix_on_twin[2].data = *(pTriLed + 2);
-    SHDISP_BDIC_REGSET(led_fix_on_twin);
+    shdisp_bdic_LD_set_led_on_table_twin(pTriLed);
 }
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_LD_set_led_on_table_twin                                      */
+/* ------------------------------------------------------------------------- */
+static void shdisp_bdic_LD_set_led_on_table_twin(unsigned char *rgb_current)
+{
+    unsigned char *pTriLed;
+    shdisp_bdicRegSetting_t led_fix_on[ARRAY_SIZE(shdisp_bdic_led_fix_on_twin)];
+
+    memcpy(led_fix_on, shdisp_bdic_led_fix_on_twin, sizeof(shdisp_bdic_led_fix_on_twin));
+
+    pTriLed = (unsigned char *)rgb_current;
+
+    led_fix_on[0].data = *(pTriLed + 0);
+    led_fix_on[1].data = *(pTriLed + 1);
+    led_fix_on[2].data = *(pTriLed + 2);
+    SHDISP_BDIC_REGSET(led_fix_on);
+}
+
+#ifdef SHDISP_SYSFS_LED
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_LD_set_led_fix_current_table_twin                             */
+/* ------------------------------------------------------------------------- */
+static void shdisp_bdic_LD_set_led_fix_current_table_twin(unsigned char *rgb_current)
+{
+    unsigned char *pTriLed;
+    shdisp_bdicRegSetting_t led_current[ARRAY_SIZE(shdisp_bdic_led_current_twin)];
+
+    memcpy(led_current, shdisp_bdic_led_current_twin, sizeof(shdisp_bdic_led_current_twin));
+
+    pTriLed = (unsigned char *)rgb_current;
+
+    led_current[0].data = *(pTriLed + 0);
+    led_current[1].data = *(pTriLed + 1);
+    led_current[2].data = *(pTriLed + 2);
+    SHDISP_BDIC_REGSET(led_current);
+}
+#endif /* SHDISP_SYSFS_LED */
 
 #if defined(CONFIG_ANDROID_ENGINEERING)
 /* ------------------------------------------------------------------------- */
-/* shdisp_bdic_API_TRI_LED_INFO_output_twin                                  */
+/* shdisp_bdic_TRI_LED_INFO_output_twin                                      */
 /* ------------------------------------------------------------------------- */
-static void shdisp_bdic_API_TRI_LED_INFO_output_twin(void)
+static void shdisp_bdic_TRI_LED_INFO_output_twin(void)
 {
     int idx;
     unsigned char   *p;
@@ -2430,6 +3233,12 @@ static void shdisp_bdic_API_TRI_LED_INFO_output_twin(void)
     printk("[SHDISP] shdisp_bdic_tri_led_interval      = %d.\n", shdisp_bdic_tri_led_interval);
     printk("[SHDISP] shdisp_bdic_tri_led_count         = %d.\n", shdisp_bdic_tri_led_count);
 
+#ifdef SHDISP_SYSFS_LED
+    printk("[SHDISP] rgb_current2[0]                   = %d.\n", rgb_current2[0]);
+    printk("[SHDISP] rgb_current2[1]                   = %d.\n", rgb_current2[1]);
+    printk("[SHDISP] rgb_current2[2]                   = %d.\n", rgb_current2[2]);
+#endif /* SHDISP_SYSFS_LED */
+
     p = pbuf;
     printk("[SHDISP] BDIC_REG_TIMER_SETTING 0x%2X: %02x %02x %02x\n", BDIC_REG_SEQ_ANIME, *p, *(p + 1), *(p + 2));
     p += 3;
@@ -2444,6 +3253,29 @@ static void shdisp_bdic_API_TRI_LED_INFO_output_twin(void)
     printk("[SHDISP] TRI-LED-TWIN INFO <<-\n");
     return;
 }
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_illumi_triple_color_INFO_output                               */
+/* ------------------------------------------------------------------------- */
+static void shdisp_bdic_illumi_triple_color_INFO_output(void)
+{
+    int i;
+
+    printk("[SHDISP] illumi-triple-color INFO ->>\n");
+
+    printk("[SHDISP] illumi_state.running_state        = %d.\n", illumi_state.running_state);
+    printk("[SHDISP] illumi_state.illumi_state         = %d.\n", illumi_state.illumi_state);
+
+    for (i = ILLUMI_FRAME_FIRST; i != ILLUMI_FRAME_MAX; i++) {
+        printk("[SHDISP] illumi_state.colors[%d]            = %d.\n", i, illumi_state.colors[i]);
+    }
+
+    printk("[SHDISP] illumi_state.count                = %d.\n", illumi_state.count);
+
+    printk("[SHDISP] illumi-triple-color INFO <<-\n");
+}
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
 #endif /* CONFIG_ANDROID_ENGINEERING */
 #endif /* SHDISP_COLOR_LED_TWIN */
 
@@ -2483,8 +3315,6 @@ static void shdisp_bdic_PD_TRI_LED_control2(unsigned char request, int param)
         case SHDISP_BDIC_TRI_LED_MODE_AURORA:
         case SHDISP_BDIC_TRI_LED_MODE_RAINBOW:
         case SHDISP_BDIC_TRI_LED_MODE_EMOPATTERN:
-        case SHDISP_BDIC_TRI_LED_MODE_PATTERN1:
-        case SHDISP_BDIC_TRI_LED_MODE_PATTERN2:
         default:
             SHDISP_BDIC_REGSET(shdisp_bdic_led_off2);
             shdisp_bdic_PD_TRI_LED_lposc_off();
@@ -2561,15 +3391,6 @@ static void shdisp_bdic_PD_TRI_LED_control2(unsigned char request, int param)
     case SHDISP_BDIC_REQ_TRI_LED_SET_MODE_RAINBOW:
         shdisp_bdic_tri_led_mode2   = SHDISP_BDIC_TRI_LED_MODE_RAINBOW;
         break;
-#ifdef SHDISP_EXTEND_COLOR_LED
-    case SHDISP_BDIC_REQ_TRI_LED_SET_MODE_PATTERN1:
-        shdisp_bdic_tri_led_mode2   = SHDISP_BDIC_TRI_LED_MODE_PATTERN1;
-        break;
-
-    case SHDISP_BDIC_REQ_TRI_LED_SET_MODE_PATTERN2:
-        shdisp_bdic_tri_led_mode2   = SHDISP_BDIC_TRI_LED_MODE_PATTERN2;
-        break;
-#endif  /* SHDISP_EXTEND_COLOR_LED */
 #endif  /* SHDISP_ANIME_COLOR_LED */
 
     case SHDISP_BDIC_REQ_TRI_LED_SET_ONTIME:
@@ -2636,10 +3457,6 @@ static void shdisp_bdic_PD_TRI_LED_set_chdig2(void)
 
     case SHDISP_BDIC_TRI_LED_MODE_AURORA:
     case SHDISP_BDIC_TRI_LED_MODE_RAINBOW:
-#ifdef SHDISP_EXTEND_COLOR_LED
-    case SHDISP_BDIC_TRI_LED_MODE_PATTERN1:
-    case SHDISP_BDIC_TRI_LED_MODE_PATTERN2:
-#endif  /* SHDISP_ANIME_COLOR_LED */
         SHDISP_BDIC_REGSET(shdisp_bdic_led_ani_on2_1_aurora);
         break;
 #endif  /* SHDISP_ANIME_COLOR_LED */
@@ -2740,19 +3557,6 @@ static void shdisp_bdic_PD_TRI_LED_set_anime2(void)
         shdisp_bdic_API_IO_write_reg(BDIC_REG_CH3_SET2, BDIC_REG_CH3_SET2_VAL_RAINBOW);
         shdisp_bdic_API_IO_msk_bit_reg(BDIC_REG_TIMER2, (unsigned char)timeer2_val, 0xF7);
         break;
-#ifdef SHDISP_EXTEND_COLOR_LED
-    case SHDISP_BDIC_TRI_LED_MODE_PATTERN1:
-        shdisp_bdic_API_IO_msk_bit_reg(BDIC_REG_CH3_SET1, BDIC_REG_CH3_SET1_VAL_PATTERN1, 0x6F);
-        shdisp_bdic_API_IO_write_reg(BDIC_REG_CH3_SET2, BDIC_REG_CH3_SET2_VAL_PATTERN1);
-        shdisp_bdic_API_IO_msk_bit_reg(BDIC_REG_TIMER2, (unsigned char)timeer2_val, 0xF7);
-        break;
-
-    case SHDISP_BDIC_TRI_LED_MODE_PATTERN2:
-        shdisp_bdic_API_IO_msk_bit_reg(BDIC_REG_CH3_SET1, BDIC_REG_CH3_SET1_VAL_PATTERN2, 0x6F);
-        shdisp_bdic_API_IO_write_reg(BDIC_REG_CH3_SET2, BDIC_REG_CH3_SET2_VAL_PATTERN2);
-        shdisp_bdic_API_IO_msk_bit_reg(BDIC_REG_TIMER2, (unsigned char)timeer2_val, 0xF7);
-        break;
-#endif  /* SHDISP_EXTEND_COLOR_LED */
 #endif  /* SHDISP_ANIME_COLOR_LED */
     default:
         break;

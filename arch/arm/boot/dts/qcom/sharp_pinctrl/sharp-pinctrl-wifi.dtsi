@@ -1,0 +1,58 @@
+/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+&soc {
+	tlmm_pinmux: pinctrl@fd510000 {
+		
+		/*****************************************/
+		/*  pinctrl customize for wifi           */
+		/*****************************************/
+		/* GPIO 35 */
+		pcie0_perst {
+			/* default state */
+			sharp_pcie0_perst_default: sharp_pcie0_perst_default {
+				drive-strength = <2>;
+				bias-disable; /* Non-pull */
+			};
+		};
+
+		/* GPIO 36 */
+		pcie0_clkreq {
+			/* default state */
+			sharp_pcie0_clkreq_default: sharp_pcie0_clkreq_default {
+				drive-strength = <2>;
+				bias-disable; /* Non-pull */
+			};
+		};
+
+		/* GPIO 37 */
+		pcie0_wake {
+			/* default state */
+			sharp_pcie0_wake_default: sharp_pcie0_wake_default {
+				drive-strength = <2>;
+				bias-disable; /* Non-pull */
+			};
+
+			sharp_pcie0_wake_sleep: sharp_pcie0_wake_sleep {
+				drive-strength = <2>;
+				bias-disable; /* Non-pull */
+			};
+		};
+
+		/* GPIO 113 */
+		cnss_pins {
+			sharp_cnss_default: sharp_default {
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
+	};
+};

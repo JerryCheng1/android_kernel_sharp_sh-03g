@@ -95,6 +95,7 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_PRESENT,
 	POWER_SUPPLY_PROP_ONLINE,
 	POWER_SUPPLY_PROP_AUTHENTIC,
+	POWER_SUPPLY_PROP_BATTERY_CHARGING_ENABLED,
 	POWER_SUPPLY_PROP_CHARGING_ENABLED,
 	POWER_SUPPLY_PROP_TECHNOLOGY,
 	POWER_SUPPLY_PROP_CYCLE_COUNT,
@@ -120,6 +121,8 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_CHARGE_FULL,
 	POWER_SUPPLY_PROP_CHARGE_EMPTY,
 	POWER_SUPPLY_PROP_CHARGE_NOW,
+	POWER_SUPPLY_PROP_CHARGE_NOW_RAW,
+	POWER_SUPPLY_PROP_CHARGE_NOW_ERROR,
 	POWER_SUPPLY_PROP_CHARGE_AVG,
 	POWER_SUPPLY_PROP_CHARGE_COUNTER,
 	POWER_SUPPLY_PROP_CHARGE_COUNTER_SHADOW,
@@ -141,6 +144,7 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_CAPACITY_ALERT_MIN, /* in percents! */
 	POWER_SUPPLY_PROP_CAPACITY_ALERT_MAX, /* in percents! */
 	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
+	POWER_SUPPLY_PROP_CAPACITY_RAW,
 	POWER_SUPPLY_PROP_TEMP,
 	POWER_SUPPLY_PROP_TEMP_ALERT_MIN,
 	POWER_SUPPLY_PROP_TEMP_ALERT_MAX,
@@ -160,6 +164,7 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_RESISTANCE_CAPACITIVE,
 	/* unit is in ohms due to ID being typically in kohm range */
 	POWER_SUPPLY_PROP_RESISTANCE_ID,
+	POWER_SUPPLY_PROP_RESISTANCE_NOW,
 #ifdef CONFIG_BATTERY_SH
 	POWER_SUPPLY_PROP_AICL_FINAL_LIMIT,
 	POWER_SUPPLY_PROP_CHARGING_VOLTAGE,
@@ -169,8 +174,6 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_USB_ID_RESISTANCE,
 	POWER_SUPPLY_PROP_COLD_TEMP,
 	POWER_SUPPLY_PROP_HOT_TEMP,
-	POWER_SUPPLY_PROP_DIRECT_CURRENT,
-	POWER_SUPPLY_PROP_DIRECT_VOLTAGE,
 #endif /* CONFIG_BATTERY_SH */
 	/* Local extensions */
 	POWER_SUPPLY_PROP_USB_HC,
@@ -179,7 +182,12 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_FLASH_CURRENT_MAX,
 	POWER_SUPPLY_PROP_UPDATE_NOW,
 	POWER_SUPPLY_PROP_ESR_COUNT,
+	POWER_SUPPLY_PROP_SAFETY_TIMER_ENABLE,
 	POWER_SUPPLY_PROP_CHARGE_DONE,
+	POWER_SUPPLY_PROP_FLASH_ACTIVE,
+	POWER_SUPPLY_PROP_FORCE_TLIM,
+	POWER_SUPPLY_PROP_ALLOW_DETECTION,
+	POWER_SUPPLY_PROP_CYCLE_COUNT_ID,
 	/* Local extensions of type int64_t */
 	POWER_SUPPLY_PROP_CHARGE_COUNTER_EXT,
 	/* Properties of type `const char *' */
@@ -301,6 +309,8 @@ extern int power_supply_set_supply_type(struct power_supply *psy,
 extern int power_supply_set_hi_power_state(struct power_supply *psy, int value);
 extern int power_supply_set_low_power_state(struct power_supply *psy,
 							int value);
+extern int power_supply_set_allow_detection(struct power_supply *psy,
+							int value);
 extern int power_supply_is_system_supplied(void);
 extern int power_supply_register(struct device *parent,
 				 struct power_supply *psy);
@@ -344,6 +354,9 @@ static inline int power_supply_set_hi_power_state(struct power_supply *psy,
 							int value)
 							{ return -ENOSYS; }
 static inline int power_supply_set_low_power_state(struct power_supply *psy,
+							int value)
+							{ return -ENOSYS; }
+static inline int power_supply_set_allow_detection(struct power_supply *psy,
 							int value)
 							{ return -ENOSYS; }
 static inline int power_supply_is_system_supplied(void) { return -ENOSYS; }

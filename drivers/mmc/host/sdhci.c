@@ -69,6 +69,10 @@ static void sdhci_show_adma_error(struct sdhci_host *host);
 static u32 sh_mmc_sd_err_cmd = 0;
 #endif /* CONFIG_MMC_SD_BATTLOG_CUST_SH */
 
+#ifdef CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH
+static bool during_tuning_flg = false;
+#endif /* CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH */
+
 #ifdef CONFIG_PM_RUNTIME
 static int sdhci_runtime_pm_get(struct sdhci_host *host);
 static int sdhci_runtime_pm_put(struct sdhci_host *host);
@@ -275,6 +279,7 @@ static void sdhci_reset(struct sdhci_host *host, u8 mask)
 	if (host->ops->platform_reset_enter)
 		host->ops->platform_reset_enter(host, mask);
 
+retry_reset:
 	sdhci_writeb(host, mask, SDHCI_SOFTWARE_RESET);
 
 	if (mask & SDHCI_RESET_ALL)
@@ -292,6 +297,27 @@ static void sdhci_reset(struct sdhci_host *host, u8 mask)
 		if (timeout == 0) {
 			pr_err("%s: Reset 0x%x never completed.\n",
 				mmc_hostname(host->mmc), (int)mask);
+			if ((host->quirks2 & SDHCI_QUIRK2_USE_RESET_WORKAROUND)
+				&& host->ops->reset_workaround) {
+				if (!host->reset_wa_applied) {
+					/*
+					 * apply the workaround and issue
+					 * reset again.
+					 */
+					host->ops->reset_workaround(host, 1);
+					host->reset_wa_applied = 1;
+					host->reset_wa_cnt++;
+					goto retry_reset;
+				} else {
+					pr_err("%s: Reset 0x%x failed with workaround\n",
+						mmc_hostname(host->mmc),
+						(int)mask);
+					/* clear the workaround */
+					host->ops->reset_workaround(host, 0);
+					host->reset_wa_applied = 0;
+				}
+			}
+
 			sdhci_dumpregs(host);
 			return;
 		}
@@ -302,6 +328,14 @@ static void sdhci_reset(struct sdhci_host *host, u8 mask)
 	if (host->ops->platform_reset_exit)
 		host->ops->platform_reset_exit(host, mask);
 
+	if ((host->quirks2 & SDHCI_QUIRK2_USE_RESET_WORKAROUND) &&
+		host->ops->reset_workaround && host->reset_wa_applied) {
+		pr_info("%s: Reset 0x%x successful with workaround\n",
+			mmc_hostname(host->mmc), (int)mask);
+		/* clear the workaround */
+		host->ops->reset_workaround(host, 0);
+		host->reset_wa_applied = 0;
+	}
 	/* clear pending normal/error interrupt status */
 	sdhci_writel(host, sdhci_readl(host, SDHCI_INT_STATUS),
 			SDHCI_INT_STATUS);
@@ -1071,8 +1105,14 @@ static void sdhci_set_transfer_mode(struct sdhci_host *host,
 
 	if (data->flags & MMC_DATA_READ) {
 		mode |= SDHCI_TRNS_READ;
-		if (host->ops->toggle_cdr)
-			host->ops->toggle_cdr(host, true);
+		if (host->ops->toggle_cdr) {
+			if ((cmd->opcode == MMC_SEND_TUNING_BLOCK_HS200) ||
+				(cmd->opcode == MMC_SEND_TUNING_BLOCK_HS400) ||
+				(cmd->opcode == MMC_SEND_TUNING_BLOCK))
+				host->ops->toggle_cdr(host, false);
+			else
+				host->ops->toggle_cdr(host, true);
+		}
 	}
 	if (host->ops->toggle_cdr && (data->flags & MMC_DATA_WRITE))
 		host->ops->toggle_cdr(host, false);
@@ -1561,6 +1601,8 @@ static int sdhci_enable(struct mmc_host *mmc)
 	sdhci_set_pmqos_req_type(host, true);
 	pm_qos_update_request(&host->pm_qos_req_dma,
 		host->cpu_dma_latency_us[host->pm_qos_index]);
+	if (host->pm_qos_req_dma.type == PM_QOS_REQ_AFFINE_CORES)
+		irq_set_affinity(host->irq, &host->pm_qos_req_dma.cpus_affine);
 
 platform_bus_vote:
 	if (host->ops->platform_bus_voting)
@@ -1624,6 +1666,9 @@ static int sdhci_notify_load(struct mmc_host *mmc, enum mmc_load state)
 	switch (state) {
 	case MMC_LOAD_HIGH:
 		sdhci_update_power_policy(host, SDHCI_PERFORMANCE_MODE);
+		break;
+	case MMC_LOAD_INIT:
+		sdhci_update_power_policy(host, SDHCI_PERFORMANCE_MODE_INIT);
 		break;
 	case MMC_LOAD_LOW:
 		sdhci_update_power_policy(host, SDHCI_POWER_SAVE_MODE);
@@ -2397,6 +2442,15 @@ static int sdhci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 	int err = 0;
 	bool requires_tuning_nonuhs = false;
 
+#ifdef CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH
+	if (strncmp(mmc_hostname(mmc), HOST_MMC_MMC, sizeof(HOST_MMC_MMC)) == 0) {
+		if (during_tuning_flg)
+			return 0;
+		else
+			during_tuning_flg = true;
+	}
+#endif /* CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH */
+
 	host = mmc_priv(mmc);
 
 	sdhci_runtime_pm_get(host);
@@ -2425,6 +2479,10 @@ static int sdhci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 		spin_unlock(&host->lock);
 		enable_irq(host->irq);
 		sdhci_runtime_pm_put(host);
+#ifdef CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH
+		if (strncmp(mmc_hostname(mmc), HOST_MMC_MMC, sizeof(HOST_MMC_MMC)) == 0)
+			during_tuning_flg = false;
+#endif /* CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH */
 		return 0;
 	}
 
@@ -2587,6 +2645,10 @@ out:
 	enable_irq(host->irq);
 	sdhci_runtime_pm_put(host);
 
+#ifdef CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH
+	if (strncmp(mmc_hostname(mmc), HOST_MMC_MMC, sizeof(HOST_MMC_MMC)) == 0)
+		during_tuning_flg = false;
+#endif /* CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH */
 	return err;
 }
 
@@ -2896,7 +2958,7 @@ static void sdhci_cmd_irq(struct sdhci_host *host, u32 intmask)
 
 	if (intmask & SDHCI_INT_AUTO_CMD_ERR) {
 		auto_cmd_status = host->auto_cmd_err_sts;
-		pr_err("%s: %s: AUTO CMD err sts 0x%08x\n",
+		pr_err_ratelimited("%s: %s: AUTO CMD err sts 0x%08x\n",
 			mmc_hostname(host->mmc), __func__, auto_cmd_status);
 		if (auto_cmd_status & (SDHCI_AUTO_CMD12_NOT_EXEC |
 				       SDHCI_AUTO_CMD_INDEX_ERR |
@@ -2914,8 +2976,12 @@ static void sdhci_cmd_irq(struct sdhci_host *host, u32 intmask)
 		if (host->cmd->error == -EILSEQ &&
 		    (command != MMC_SEND_TUNING_BLOCK_HS400) &&
 		    (command != MMC_SEND_TUNING_BLOCK_HS200) &&
+#ifdef CONFIG_MMC_BUG_FIX_CUST_SH
 		    (command != MMC_SEND_TUNING_BLOCK) &&
 		    (command != MMC_SEND_STATUS))
+#else /* CONFIG_MMC_BUG_FIX_CUST_SH */
+		    (command != MMC_SEND_TUNING_BLOCK))
+#endif /* CONFIG_MMC_BUG_FIX_CUST_SH */
 				host->flags |= SDHCI_NEEDS_RETUNING;
 		tasklet_schedule(&host->finish_tasklet);
 		return;
@@ -3566,12 +3632,16 @@ int sdhci_add_host(struct sdhci_host *host)
 			host->caps1 :
 			sdhci_readl(host, SDHCI_CAPABILITIES_1);
 
-#ifdef CONFIG_MMC_SD_DISABLE_UHS1_CUST_SH
-	if (!strcmp(mmc_hostname(mmc), HOST_MMC_SD)) {
-		caps[0] &= ~SDHCI_CAN_VDD_180;
+#ifdef CONFIG_MMC_SD_ENABLE_ONLY_DDR50_CUST_SH
+	if (!strcmp(mmc_hostname(mmc), HOST_MMC_SD))
 		caps[1] &= ~(SDHCI_SUPPORT_SDR104 | SDHCI_SUPPORT_SDR50 |
-		                   SDHCI_SUPPORT_DDR50 | SDHCI_USE_SDR50_TUNING);
-	}
+						SDHCI_USE_SDR50_TUNING);
+#endif /* CONFIG_MMC_SD_ENABLE_ONLY_DDR50_CUST_SH */
+
+#ifdef CONFIG_MMC_SD_DISABLE_UHS1_CUST_SH
+	if (!strcmp(mmc_hostname(mmc), HOST_MMC_SD))
+		caps[1] &= ~(SDHCI_SUPPORT_SDR104 | SDHCI_SUPPORT_SDR50 |
+						SDHCI_SUPPORT_DDR50 | SDHCI_USE_SDR50_TUNING);
 #endif /* CONFIG_MMC_SD_DISABLE_UHS1_CUST_SH */
 
 	if (host->quirks & SDHCI_QUIRK_FORCE_DMA)
@@ -3697,6 +3767,7 @@ int sdhci_add_host(struct sdhci_host *host)
 			>> SDHCI_CLOCK_BASE_SHIFT;
 
 	host->max_clk *= 1000000;
+	sdhci_update_power_policy(host, SDHCI_PERFORMANCE_MODE_INIT);
 	if (host->max_clk == 0 || host->quirks &
 			SDHCI_QUIRK_CAP_CLOCK_BASE_BROKEN) {
 		if (!host->ops->get_max_clock) {
@@ -4153,6 +4224,7 @@ void sdhci_remove_host(struct sdhci_host *host, int dead)
 		spin_unlock_irqrestore(&host->lock, flags);
 	}
 
+	sdhci_update_power_policy(host, SDHCI_POWER_SAVE_MODE);
 	sdhci_disable_card_detection(host);
 
 	if (host->cpu_dma_latency_us)

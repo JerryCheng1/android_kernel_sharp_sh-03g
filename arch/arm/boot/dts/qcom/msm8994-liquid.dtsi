@@ -64,6 +64,11 @@
 &dsi_dual_jdi_4k_video_1 {
 	qcom,cont-splash-enabled;
 };
+
+&mdss_fb0 {
+	qcom,boot-indication-enabled;
+};
+
 &mdss_dsi0 {
 	qcom,dsi-pref-prim-pan = <&dsi_dual_jdi_4k_video_0>;
 	pinctrl-names = "mdss_default", "mdss_sleep";
@@ -534,17 +539,9 @@
 	qcom,use-otp-profile;
 };
 
-&usb_otg_switch {
-	status = "disabled";
-};
-
 &pmi8994_charger {
-	/delete-property/ otg-parent-supply;
 	qcom,dc-psy-type = "Wipower";
 	qcom,charge-unknown-battery;
-	smbcharger_charger_otg {
-		parent-supply = <&pmi8994_boost_5v>;
-	};
 };
 
 &slim_msm {
@@ -869,16 +866,6 @@
 				qcom,s2-type = <7>;
 			};
 		};
-       };
-
-       qcom,pmi8994@3 {
-              qcom,leds@d000 {
-                     qcom,rgb_2 {
-                            status = "ok";
-                            qcom,default-state = "on";
-                            qcom,turn-off-delay-ms = <5000>;
-                     };
-              };
        };
 };
 

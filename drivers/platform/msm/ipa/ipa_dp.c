@@ -47,6 +47,8 @@
 #define IPA_ODU_RX_POOL_SZ 32
 #define IPA_SIZE_DL_CSUM_META_TRAILER 8
 
+#define IPA_HEADROOM 128
+
 static struct sk_buff *ipa_get_skb_ipa_rx(unsigned int len, gfp_t flags);
 static void ipa_replenish_wlan_rx_cache(struct ipa_sys_context *sys);
 static void ipa_replenish_rx_cache(struct ipa_sys_context *sys);
@@ -63,6 +65,8 @@ static void ipa_wq_rx_avail(struct work_struct *work);
 static void ipa_alloc_wlan_rx_common_cache(u32 size);
 static void ipa_cleanup_wlan_rx_common_cache(void);
 static void ipa_wq_repl_rx(struct work_struct *work);
+static void ipa_dma_memcpy_notify(struct ipa_sys_context *sys,
+		struct sps_iovec *iovec);
 
 static void ipa_wq_write_done_common(struct ipa_sys_context *sys, u32 cnt)
 {
@@ -263,9 +267,6 @@ static void ipa_wq_handle_tx(struct work_struct *work)
  * @in_atomic:  whether caller is in atomic context
  *
  * - Allocate tx_packet wrapper
- * - Allocate a bounce buffer due to HW constrains
- *   (This buffer will be used for the DMA command)
- * - Copy the data (desc->pyld) to the bounce buffer
  * - transfer data to the IPA
  * - after the transfer was done the SPS will
  *   notify the sending user via ipa_sps_irq_comp_tx()
@@ -292,29 +293,8 @@ int ipa_send_one(struct ipa_sys_context *sys, struct ipa_desc *desc,
 	}
 
 	if (!desc->dma_address_valid) {
-		if (unlikely(ipa_ctx->ipa_hw_type == IPA_HW_v1_0)) {
-			WARN_ON(desc->len > 512);
-
-			/*
-			 * Due to a HW limitation, we need to make sure that
-			 * the packet does not cross a 1KB boundary
-			 */
-			tx_pkt->bounce = dma_pool_alloc(
-				ipa_ctx->dma_pool,
-				mem_flag, &dma_address);
-			if (!tx_pkt->bounce) {
-				dma_address = 0;
-			} else {
-				WARN_ON(!ipa_straddle_boundary
-					((u32)dma_address,
-					(u32)dma_address + desc->len - 1,
-					1024));
-				memcpy(tx_pkt->bounce, desc->pyld, desc->len);
-			}
-		} else {
-			dma_address = dma_map_single(ipa_ctx->pdev, desc->pyld,
-				desc->len, DMA_TO_DEVICE);
-		}
+		dma_address = dma_map_single(ipa_ctx->pdev, desc->pyld,
+			desc->len, DMA_TO_DEVICE);
 	} else {
 		dma_address = desc->dma_address;
 		tx_pkt->no_unmap_dma = true;
@@ -368,12 +348,7 @@ int ipa_send_one(struct ipa_sys_context *sys, struct ipa_desc *desc,
 fail_sps_send:
 	list_del(&tx_pkt->link);
 	spin_unlock_bh(&sys->spinlock);
-	if (unlikely(ipa_ctx->ipa_hw_type == IPA_HW_v1_0))
-		dma_pool_free(ipa_ctx->dma_pool, tx_pkt->bounce,
-				dma_address);
-	else
-		dma_unmap_single(ipa_ctx->pdev, dma_address, desc->len,
-				DMA_TO_DEVICE);
+	dma_unmap_single(ipa_ctx->pdev, dma_address, desc->len, DMA_TO_DEVICE);
 fail_dma_map:
 	kmem_cache_free(ipa_ctx->tx_pkt_wrapper_cache, tx_pkt);
 fail_mem_alloc:
@@ -390,8 +365,6 @@ fail_mem_alloc:
  * This function is used for system-to-bam connection.
  * - SPS driver expect struct sps_transfer which will contain all the data
  *   for a transaction
- * - The sps_transfer struct will be pointing to bounce buffers for
- *   its DMA command (immediate command and data)
  * - ipa_tx_pkt_wrapper will be used for each ipa
  *   descriptor (allocated from wrappers cache)
  * - The wrapper struct will be configured for each ipa-desc payload and will
@@ -478,35 +451,11 @@ int ipa_send(struct ipa_sys_context *sys, u32 num_desc, struct ipa_desc *desc,
 		tx_pkt->mem.size = desc[i].len;
 
 		if (!desc->dma_address_valid) {
-			if (unlikely(ipa_ctx->ipa_hw_type == IPA_HW_v1_0)) {
-				WARN_ON(tx_pkt->mem.size > 512);
-
-				/*
-				 * Due to a HW limitation, we need to make sure
-				 * that the packet does not cross a
-				 * 1KB boundary
-				 */
-				tx_pkt->bounce =
-				dma_pool_alloc(ipa_ctx->dma_pool,
-					       mem_flag,
-					       &tx_pkt->mem.phys_base);
-				if (!tx_pkt->bounce) {
-					tx_pkt->mem.phys_base = 0;
-				} else {
-					WARN_ON(!ipa_straddle_boundary(
-						(u32)tx_pkt->mem.phys_base,
-						(u32)tx_pkt->mem.phys_base +
-						tx_pkt->mem.size - 1, 1024));
-					memcpy(tx_pkt->bounce, tx_pkt->mem.base,
-						tx_pkt->mem.size);
-				}
-			} else {
-				tx_pkt->mem.phys_base =
-					dma_map_single(ipa_ctx->pdev,
-					tx_pkt->mem.base,
-					tx_pkt->mem.size,
-					DMA_TO_DEVICE);
-			}
+			tx_pkt->mem.phys_base =
+				dma_map_single(ipa_ctx->pdev,
+				tx_pkt->mem.base,
+				tx_pkt->mem.size,
+				DMA_TO_DEVICE);
 		} else {
 			tx_pkt->mem.phys_base = desc->dma_address;
 			tx_pkt->no_unmap_dma = true;
@@ -524,7 +473,7 @@ int ipa_send(struct ipa_sys_context *sys, u32 num_desc, struct ipa_desc *desc,
 		tx_pkt->user2 = desc[i].user2;
 
 		/*
-		 * Point the iovec to the bounce buffer and
+		 * Point the iovec to the buffer and
 		 * add this packet to system pipe context.
 		 */
 		iovec->addr = tx_pkt->mem.phys_base;
@@ -564,14 +513,9 @@ failure:
 	for (j = 0; j < i; j++) {
 		next_pkt = list_next_entry(tx_pkt, link);
 		list_del(&tx_pkt->link);
-		if (unlikely(ipa_ctx->ipa_hw_type == IPA_HW_v1_0))
-			dma_pool_free(ipa_ctx->dma_pool,
-					tx_pkt->bounce,
-					tx_pkt->mem.phys_base);
-		else
-			dma_unmap_single(ipa_ctx->pdev, tx_pkt->mem.phys_base,
-					tx_pkt->mem.size,
-					DMA_TO_DEVICE);
+		dma_unmap_single(ipa_ctx->pdev, tx_pkt->mem.phys_base,
+				tx_pkt->mem.size,
+				DMA_TO_DEVICE);
 		kmem_cache_free(ipa_ctx->tx_pkt_wrapper_cache, tx_pkt);
 		tx_pkt = next_pkt;
 	}
@@ -775,8 +719,9 @@ static int ipa_handle_rx_core(struct ipa_sys_context *sys, bool process_all,
 
 		if (iov.addr == 0)
 			break;
-
-		if (IPA_CLIENT_IS_WLAN_CONS(sys->ep->client))
+		if (IPA_CLIENT_IS_MEMCPY_DMA_CONS(sys->ep->client))
+			ipa_dma_memcpy_notify(sys, &iov);
+		else if (IPA_CLIENT_IS_WLAN_CONS(sys->ep->client))
 			ipa_wlan_wq_rx_common(sys, iov.size);
 		else
 			ipa_wq_rx_common(sys, iov.size);
@@ -869,6 +814,38 @@ static void ipa_sps_irq_rx_notify(struct sps_event_notify *notify)
 		break;
 	default:
 		IPAERR("recieved unexpected event id %d\n", notify->event_id);
+	}
+}
+
+void ipa_sps_irq_rx_notify_all(void)
+{
+	struct sps_event_notify notify;
+	struct ipa_ep_context *ep;
+	int ipa_ep_idx, client_num;
+
+	IPADBG("\n");
+
+	for (client_num = IPA_CLIENT_CONS;
+		client_num < IPA_CLIENT_MAX; client_num++) {
+		if ((client_num != IPA_CLIENT_APPS_LAN_CONS) &&
+			(client_num != IPA_CLIENT_APPS_WAN_CONS))
+			continue;
+
+		memset(&notify, 0, sizeof(notify));
+		ipa_ep_idx = ipa_get_ep_mapping(client_num);
+		if (ipa_ep_idx == -1) {
+			IPAERR("Invalid client.\n");
+			continue;
+		}
+		ep = &ipa_ctx->ep[ipa_ep_idx];
+		if (!ep->valid) {
+			IPAERR("EP (%d) not allocated.\n", ipa_ep_idx);
+			continue;
+		}
+		notify.user = ep->sys;
+		notify.event_id = SPS_EVENT_EOT;
+		if (ep->sys->sps_callback)
+			ep->sys->sps_callback(&notify);
 	}
 }
 
@@ -1838,6 +1815,9 @@ static int ipa_lan_rx_pyld_hdlr(struct sk_buff *skb,
 	unsigned char *buf;
 	bool drop_packet;
 	int src_pipe;
+	unsigned int used = *(unsigned int *)skb->cb;
+	unsigned int used_align = ALIGN(used, 32);
+	unsigned long unused = IPA_GENERIC_RX_BUFF_BASE_SZ - used;
 
 	IPA_DUMP_BUFF(skb->data, 0, skb->len);
 
@@ -1870,6 +1850,8 @@ static int ipa_lan_rx_pyld_hdlr(struct sk_buff *skb,
 						skb->data, sys->len_rem);
 					skb_trim(skb2,
 						skb2->len - sys->len_pad);
+					skb2->truesize = skb2->len +
+						sizeof(struct sk_buff);
 					sys->ep->client_notify(sys->ep->priv,
 						IPA_RECEIVE,
 						(unsigned long)(skb2));
@@ -2019,6 +2001,11 @@ begin:
 					if (drop_packet)
 						dev_kfree_skb_any(skb2);
 					else {
+					skb2->truesize = skb2->len +
+						sizeof(struct sk_buff) +
+						(ALIGN(len +
+						IPA_PKT_STATUS_SIZE, 32) *
+						unused / used_align);
 						sys->ep->client_notify(
 							sys->ep->priv,
 							IPA_RECEIVE,
@@ -2311,6 +2298,18 @@ static struct sk_buff *ipa_get_skb_ipa_rx(unsigned int len, gfp_t flags)
 	return __dev_alloc_skb(len, flags);
 }
 
+static struct sk_buff *ipa_get_skb_ipa_rx_headroom(unsigned int len,
+		gfp_t flags)
+{
+	struct sk_buff *skb;
+
+	skb = __dev_alloc_skb(len + IPA_HEADROOM, flags);
+	if (skb)
+		skb_reserve(skb, IPA_HEADROOM);
+
+	return skb;
+}
+
 static void ipa_free_skb_rx(struct sk_buff *skb)
 {
 	dev_kfree_skb_any(skb);
@@ -2406,6 +2405,26 @@ static void ipa_wlan_wq_rx_common(struct ipa_sys_context *sys, u32 size)
 				(unsigned long)(&rx_pkt_expected->data));
 	}
 	ipa_replenish_wlan_rx_cache(sys);
+}
+
+static void ipa_dma_memcpy_notify(struct ipa_sys_context *sys,
+	struct sps_iovec *iovec)
+{
+	IPADBG("ENTER.\n");
+	if (unlikely(list_empty(&sys->head_desc_list))) {
+		IPAERR("descriptor list is empty!\n");
+		WARN_ON(1);
+		return;
+	}
+	if (!(iovec->flags & SPS_IOVEC_FLAG_EOT)) {
+		IPAERR("recieved unexpected event. sps flag is 0x%x\n"
+			, iovec->flags);
+		WARN_ON(1);
+		return;
+	}
+	sys->ep->client_notify(sys->ep->priv, IPA_RECEIVE,
+				(unsigned long)(iovec));
+	IPADBG("EXIT\n");
 }
 
 static void ipa_wq_rx_avail(struct work_struct *work)
@@ -2516,6 +2535,8 @@ static int ipa_assign_policy(struct ipa_sys_connect_params *in,
 				sys->sps_callback = NULL;
 				sys->ep->status.status_ep = ipa_get_ep_mapping(
 						IPA_CLIENT_APPS_LAN_CONS);
+				if (IPA_CLIENT_IS_MEMCPY_DMA_PROD(in->client))
+					sys->ep->status.status_en = false;
 			} else {
 				sys->policy = IPA_POLICY_INTR_MODE;
 				sys->sps_option = (SPS_O_AUTO_ENABLE |
@@ -2537,8 +2558,9 @@ static int ipa_assign_policy(struct ipa_sys_connect_params *in,
 						replenish_rx_work_func);
 				INIT_WORK(&sys->repl_work, ipa_wq_repl_rx);
 				atomic_set(&sys->curr_polling_state, 0);
-				sys->rx_buff_sz = IPA_GENERIC_RX_BUFF_SZ;
-				sys->get_skb = ipa_get_skb_ipa_rx;
+				sys->rx_buff_sz = IPA_GENERIC_RX_BUFF_SZ -
+					IPA_HEADROOM;
+				sys->get_skb = ipa_get_skb_ipa_rx_headroom;
 				sys->free_skb = ipa_free_skb_rx;
 				in->ipa_ep_cfg.aggr.aggr_en = IPA_ENABLE_AGGR;
 				in->ipa_ep_cfg.aggr.aggr = IPA_GENERIC;
@@ -2611,6 +2633,26 @@ static int ipa_assign_policy(struct ipa_sys_connect_params *in,
 				sys->get_skb = ipa_get_skb_ipa_rx;
 				sys->free_skb = ipa_free_skb_rx;
 				sys->repl_hdlr = ipa_replenish_rx_cache;
+			} else if (in->client ==
+					IPA_CLIENT_MEMCPY_DMA_ASYNC_CONS) {
+				IPADBG("assigning policy to client:%d",
+					in->client);
+				sys->ep->status.status_en = false;
+				sys->policy = IPA_POLICY_INTR_POLL_MODE;
+				sys->sps_option = (SPS_O_AUTO_ENABLE | SPS_O_EOT
+					| SPS_O_ACK_TRANSFERS);
+				sys->sps_callback = ipa_sps_irq_rx_notify;
+				INIT_WORK(&sys->work, ipa_wq_handle_rx);
+				INIT_DELAYED_WORK(&sys->switch_to_intr_work,
+					switch_to_intr_rx_work_func);
+			} else if (in->client ==
+					IPA_CLIENT_MEMCPY_DMA_SYNC_CONS) {
+				IPADBG("assigning policy to client:%d",
+					in->client);
+				sys->ep->status.status_en = false;
+				sys->policy = IPA_POLICY_NOINTR_MODE;
+				sys->sps_option = SPS_O_AUTO_ENABLE |
+				SPS_O_ACK_TRANSFERS | SPS_O_POLL;
 			} else {
 				IPAERR("Need to install a RX pipe hdlr\n");
 				WARN_ON(1);

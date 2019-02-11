@@ -9,7 +9,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-#include "sharp-pinctrl-nfc.dtsi"
+#include "sharp-pinctrl-nfc-8994.dtsi"
 #include "sharp-pinctrl-prox.dtsi"
 #include "sharp-pinctrl-shub.dtsi"
 #include "sharp-pinctrl-audio.dtsi"

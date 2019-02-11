@@ -15,7 +15,7 @@
 
 #include "msm8994-v2.dtsi"
 #include "msm8994-pinctrl.dtsi"
-#include "sharp-common.dtsi"
+#include "sharp-common-8994.dtsi"
 #include "sharp-dl70.dtsi"
 
 / {

@@ -9,13 +9,16 @@ obj-$(CONFIG_FB_MSM_MDSS_MDP3) += mdss-mdp3.o
 mdss-mdp-objs := mdss_mdp.o mdss_mdp_ctl.o mdss_mdp_pipe.o mdss_mdp_util.o dsi_status_6g.o
 mdss-mdp-objs += mdss_mdp_pp.o mdss_mdp_pp_debug.o
 mdss-mdp-objs += mdss_mdp_intf_video.o
-ifeq ($(CONFIG_SHDISP),y) # CUST_ID_00027
-#SHDISP_DISABLE_HR_VIDEO=y
+ifneq ($(CONFIG_ANDROID_ENGINEERING),y)
+EXTRA_CFLAGS += -DCONFIG_ANDROID_ENGINEERING
+endif
+ifeq ($(CONFIG_SHDISP_PANEL_HAYABUSA),y)
+SHDISP_DISABLE_HR_VIDEO=y
+endif
 ifneq ($(SHDISP_DISABLE_HR_VIDEO),y)
 mdss-mdp-objs += mdss_mdp_intf_hr_video.o
 else
 EXTRA_CFLAGS += -DSHDISP_DISABLE_HR_VIDEO
-endif
 endif
 mdss-mdp-objs += mdss_mdp_intf_cmd.o
 mdss-mdp-objs += mdss_mdp_intf_writeback.o
@@ -25,6 +28,9 @@ mdss-mdp-objs += mdss_mdp_splash_logo.o
 mdss-mdp-objs += mdss_mdp_wb.o
 obj-$(CONFIG_FB_MSM_MDSS) += mdss-mdp.o
 obj-$(CONFIG_FB_MSM_MDSS) += mdss_mdp_debug.o
+ifeq ($(CONFIG_DEBUG_FS),y)
+mdss-mdp-objs += mdss_mdp_fps_debugfs.o
+endif
 
 ifeq ($(CONFIG_FB_MSM_MDSS),y)
 obj-$(CONFIG_DEBUG_FS) += mdss_debug.o mdss_debug_xlog.o

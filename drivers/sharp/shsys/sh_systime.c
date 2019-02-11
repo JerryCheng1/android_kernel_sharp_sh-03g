@@ -1,6 +1,6 @@
 /* drivers/sharp/shsys/sh_systime.c
  *
- * Copyright (C) 2014 Sharp Corporation
+ * Copyright (C) 2012 Sharp Corporation
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -24,6 +24,12 @@
 #include <asm/io.h>
 
 #include <sharp/sh_systime.h>
+
+#ifdef CONFIG_SHSYS_SHUTDOWN_TIME_CUST
+#define SHUTDOWN_COMPLETE_TIME_MAGIC 0x1f2e3d4c
+#define MSM_SHARED_IMEM_BASE	0xfe80f000
+#define SHUTDOWN_COMPLETE_TIME_ADDR (MSM_SHARED_IMEM_BASE + 0x800)
+#endif /*  CONFIG_SHSYS_SHUTDOWN_TIME_CUST  */
 
 static int timestamp_point = 0;
 
@@ -72,6 +78,10 @@ void sh_systime_log_shutdown_complete_time(void)
     sharp_smem_common_type *p_sh_smem_common_type = NULL;
     unsigned long long systime = 0;
 
+#ifdef CONFIG_SHSYS_SHUTDOWN_TIME_CUST
+    void __iomem *shutdown_complete_time_addr = NULL;
+#endif /*  CONFIG_SHSYS_SHUTDOWN_TIME_CUST  */
+
     p_sh_smem_common_type = sh_smem_get_common_address();
     if (p_sh_smem_common_type != NULL) {
         if (p_sh_smem_common_type->shsys_timestamp[SHSYS_TIMEMSTAMP_SHUTDOWN_START] == 0) {
@@ -93,6 +103,15 @@ void sh_systime_log_shutdown_complete_time(void)
         p_sh_smem_common_type->shsys_timestamp[SHSYS_TIMEMSTAMP_SHUTDOWN_START] = 0;
 
         printk("shutdown complete time %llu[us]\n", systime);
+
+#ifdef CONFIG_SHSYS_SHUTDOWN_TIME_CUST
+        shutdown_complete_time_addr = ioremap_nocache(SHUTDOWN_COMPLETE_TIME_ADDR, 8);
+        if (shutdown_complete_time_addr != NULL) {
+            __raw_writel(SHUTDOWN_COMPLETE_TIME_MAGIC, shutdown_complete_time_addr);
+            __raw_writel(systime, shutdown_complete_time_addr + sizeof(unsigned int));
+            iounmap(shutdown_complete_time_addr);
+        }
+#endif /*  CONFIG_SHSYS_SHUTDOWN_TIME_CUST  */
     }
 }
 EXPORT_SYMBOL(sh_systime_log_shutdown_complete_time);

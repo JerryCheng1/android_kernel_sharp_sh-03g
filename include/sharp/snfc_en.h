@@ -1,6 +1,6 @@
-/* include/sharp/snfc_en.h (NFC driver)
+/* include/sharp/snfc_en.h
  *
- * Copyright (C) 2013-2014 SHARP CORPORATION
+ * Copyright (C) 2015 SHARP CORPORATION
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -15,8 +15,19 @@
 #ifndef _LINUX_SNFC_EN_H
 #define _LINUX_SNFC_EN_H
 
-#define SNFC_EN_IOC_MAGIC 's'
+/* MSM8992 */
 
+#define SNFC_OFF_SEQUENCE_NFC 0
+#define SNFC_ON_SEQUENCE      1
+#define SNFC_OFF_SEQUENCE_SIM 2
+
+#define NFC_SNFC_EN_IOC_MAGIC 'd'
+#define NFC_SNFC_EN_IOCTL_HVDD_H      _IO ( NFC_SNFC_EN_IOC_MAGIC, 0x01)
+#define NFC_SNFC_EN_IOCTL_HVDD_L      _IO ( NFC_SNFC_EN_IOC_MAGIC, 0x02)
+
+/* MSM8994 */
+
+#define SNFC_EN_IOC_MAGIC 's'
 #define SHSNFC_EN_REQ_CHIPRESET			_IO(SNFC_EN_IOC_MAGIC, 1)
 #define SHSNFC_EN_REQ_PVDD_ENABLE		_IOW(SNFC_EN_IOC_MAGIC, 2, int)
 #define SHSNFC_EN_REQ_AVDD_ENABLE		_IOW(SNFC_EN_IOC_MAGIC, 3, int)

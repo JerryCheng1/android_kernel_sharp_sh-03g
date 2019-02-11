@@ -45,6 +45,7 @@
 #include <linux/syscore_ops.h>
 #include <linux/msm_rtb.h>
 
+#include <asm/cputype.h>
 #include <asm/irq.h>
 #include <asm/exception.h>
 #include <asm/smp_plat.h>
@@ -81,11 +82,13 @@ struct gic_chip_data {
 	unsigned int wakeup_irqs[32];
 	unsigned int enabled_irqs[32];
 #endif
+	u32 saved_regs[0x400];
 };
 
 static DEFINE_RAW_SPINLOCK(irq_controller_lock);
 
 #ifdef CONFIG_CPU_PM
+static bool skip_cluster_collapse_activites;
 static unsigned int saved_dist_ctrl, saved_cpu_ctrl;
 #endif
 
@@ -216,6 +219,22 @@ static void gic_disable_irq(struct irq_data *d)
 	if (gic_arch_extn.irq_disable)
 		gic_arch_extn.irq_disable(d);
 }
+
+static int gic_panic_handler(struct notifier_block *this,
+			unsigned long event, void *ptr)
+{
+	int i;
+	void __iomem *base;
+
+	base = gic_data_dist_base(&gic_data[0]);
+	for (i = 0; i < 0x400; i += 1)
+		gic_data[0].saved_regs[i] = readl_relaxed(base + 4 * i);
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block gic_panic_blk = {
+	.notifier_call = gic_panic_handler,
+};
 
 #ifdef CONFIG_PM
 static int gic_suspend_one(struct gic_chip_data *gic)
@@ -825,7 +844,8 @@ static void gic_cpu_restore(unsigned int gic_nr)
 	writel_relaxed_no_log(saved_cpu_ctrl, cpu_base + GIC_CPU_CTRL);
 }
 
-static int gic_notifier(struct notifier_block *self, unsigned long cmd,	void *v)
+static int gic_notifier(struct notifier_block *self, unsigned long cmd,
+			void *aff_level)
 {
 	int i;
 
@@ -844,11 +864,20 @@ static int gic_notifier(struct notifier_block *self, unsigned long cmd,	void *v)
 			gic_cpu_restore(i);
 			break;
 		case CPU_CLUSTER_PM_ENTER:
-			gic_dist_save(i);
+			/*
+			 * Affinity level of the node
+			 * eg:
+			 *    cpu level = 0
+			 *    l2 level  = 1
+			 *    cci level = 2
+			 */
+			if (!(unsigned long)aff_level)
+				gic_dist_save(i);
 			break;
 		case CPU_CLUSTER_PM_ENTER_FAILED:
 		case CPU_CLUSTER_PM_EXIT:
-			gic_dist_restore(i);
+			if (!(unsigned long)aff_level)
+				gic_dist_restore(i);
 			break;
 		}
 	}
@@ -870,7 +899,7 @@ static void __init gic_pm_init(struct gic_chip_data *gic)
 		sizeof(u32));
 	BUG_ON(!gic->saved_ppi_conf);
 
-	if (gic == &gic_data[0])
+	if (gic == &gic_data[0] && !skip_cluster_collapse_activites)
 		cpu_pm_register_notifier(&gic_notifier_block);
 }
 #else
@@ -1022,7 +1051,9 @@ void __init gic_init_bases(unsigned int gic_nr, int irq_start,
 		}
 
 		for_each_possible_cpu(cpu) {
-			unsigned long offset = percpu_offset * cpu_logical_map(cpu);
+			u32 mpidr = cpu_logical_map(cpu);
+			u32 core_id = MPIDR_AFFINITY_LEVEL(mpidr, 0);
+			unsigned long offset = percpu_offset * core_id;
 			*per_cpu_ptr(gic->dist_base.percpu_base, cpu) = dist_base + offset;
 			*per_cpu_ptr(gic->cpu_base.percpu_base, cpu) = cpu_base + offset;
 		}
@@ -1122,11 +1153,20 @@ int __init gic_of_init(struct device_node *node, struct device_node *parent)
 		gic_cascade_irq(gic_cnt, irq);
 	}
 	gic_cnt++;
+	atomic_notifier_chain_register(&panic_notifier_list, &gic_panic_blk);
 	return 0;
 }
+
+int __init msm_gic_of_init(struct device_node *node, struct device_node *parent)
+{
+	skip_cluster_collapse_activites = true;
+	return gic_of_init(node, parent);
+}
+
 IRQCHIP_DECLARE(cortex_a15_gic, "arm,cortex-a15-gic", gic_of_init);
 IRQCHIP_DECLARE(cortex_a9_gic, "arm,cortex-a9-gic", gic_of_init);
+IRQCHIP_DECLARE(cortex_a7_gic, "arm,cortex-a7-gic", gic_of_init);
 IRQCHIP_DECLARE(msm_8660_qgic, "qcom,msm-8660-qgic", gic_of_init);
-IRQCHIP_DECLARE(msm_qgic2, "qcom,msm-qgic2", gic_of_init);
+IRQCHIP_DECLARE(msm_qgic2, "qcom,msm-qgic2", msm_gic_of_init);
 
 #endif

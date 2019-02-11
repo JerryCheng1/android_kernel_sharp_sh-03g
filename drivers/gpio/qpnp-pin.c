@@ -955,7 +955,7 @@ static int qpnp_pin_apply_config(struct qpnp_pin_chip *q_chip,
 	of_property_read_u32(node, "qcom,cs-out",
 		&param.cs_out);
 	rc = _qpnp_pin_config(q_chip, q_spec, &param);
-
+	
 #ifdef CONFIG_BATTERY_SH
 	qpnp_pin_config_init(q_spec, &param);
 #endif /* CONFIG_BATTERY_SH */

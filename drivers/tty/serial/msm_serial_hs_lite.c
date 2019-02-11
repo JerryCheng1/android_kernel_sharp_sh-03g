@@ -160,12 +160,14 @@ struct msm_hsl_port {
 #ifdef CONFIG_SHIRDA
 	bool use_irda;
 #endif
+#if defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20)
 #ifdef CONFIG_SERIAL_CUST_SH
 	bool use_pinctrl;
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pins_active;
 	struct pinctrl_state *pins_sleep;
 #endif /* CONFIG_SERIAL_CUST_SH */
+#endif /* defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20) */
 };
 
 #define UARTDM_VERSION_11_13	0
@@ -323,6 +325,7 @@ static int msm_hsl_config_uart_tx_rx_gpios(struct uart_port *port)
 exit_uart_config:
 	return ret;
 }
+#if defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20)
 #ifdef CONFIG_SERIAL_CUST_SH
 static void msm_hsl_pinctrl_init(struct platform_device *pdev,struct msm_hsl_port *msm_hsl_port)
 {
@@ -388,6 +391,7 @@ static int msm_hsl_pinctrl_select(struct uart_port *port, bool flg)
 	return ret;
 }
 #endif /* CONFIG_SERIAL_CUST_SH */
+#endif /* defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20) */
 
 /**
  * msm_hsl_unconfig_uart_tx_rx_gpios: Unconfigures UART Tx and RX GPIOs
@@ -1048,11 +1052,13 @@ static void msm_hsl_set_baud_rate(struct uart_port *port,
 		rxstale = 31;
 		break;
 	}
+
 #ifdef CONFIG_SHIRDA
 	if (msm_hsl_port->use_irda) {
 		rxstale = 1;
 	}
 #endif
+
 	vid = msm_hsl_port->ver_id;
 	msm_hsl_write(port, baud_code, regmap[vid][UARTDM_CSR]);
 
@@ -1157,9 +1163,11 @@ static int msm_hsl_startup(struct uart_port *port)
 				goto release_wakelock;
 			}
 		}
+#if defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20)
 #ifdef CONFIG_SERIAL_CUST_SH
 		msm_hsl_pinctrl_select(port, true);
 #endif /* CONFIG_SERIAL_CUST_SH */
+#endif /* defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20) */
 	}
 
 	/*
@@ -1188,9 +1196,11 @@ static int msm_hsl_startup(struct uart_port *port)
 	if (unlikely(ret)) {
 		pr_err("failed to request_irq\n");
 		msm_hsl_unconfig_uart_gpios(port);
+#if defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20)
 #ifdef CONFIG_SERIAL_CUST_SH
 		msm_hsl_pinctrl_select(port, false);
 #endif /* CONFIG_SERIAL_CUST_SH */
+#endif /* defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20) */
 		goto release_wakelock;
 	}
 
@@ -1225,9 +1235,11 @@ static void msm_hsl_shutdown(struct uart_port *port)
 		if (pdata && pdata->config_gpio)
 			msm_hsl_unconfig_uart_gpios(port);
 
+#if defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20)
 #ifdef CONFIG_SERIAL_CUST_SH
 		msm_hsl_pinctrl_select(port, false);
 #endif /* CONFIG_SERIAL_CUST_SH */
+#endif /* defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20) */
 
 		if (pdata && pdata->use_pm)
 			wake_unlock(&msm_hsl_port->port_open_wake_lock);
@@ -1512,6 +1524,7 @@ static struct msm_hsl_port msm_hsl_uart_ports[] = {
 			.line = 2,
 		},
 	},
+#if defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20)
 #if defined(CONFIG_SERIAL_EXPAND_PORT_SH)
 	{
 		.uart = {
@@ -1532,6 +1545,7 @@ static struct msm_hsl_port msm_hsl_uart_ports[] = {
 		},
 	},
 #endif	/* defined(CONFIG_SERIAL_EXPAND_PORT_SH) */
+#endif /* defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20) */
 };
 
 #define UART_NR	ARRAY_SIZE(msm_hsl_uart_ports)
@@ -1953,9 +1967,11 @@ static int msm_serial_hsl_probe(struct platform_device *pdev)
 	else
 		msm_hsl_port->func_mode = UART_TWO_WIRE;
 
+#if defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20)
 #ifdef CONFIG_SERIAL_CUST_SH
 	msm_hsl_pinctrl_init(pdev,msm_hsl_port);
 #endif /* CONFIG_SERIAL_CUST_SH */
+#endif /* defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20) */
 
 	HSLDB_INFO("func_mode = %d\n",msm_hsl_port->func_mode);
 
@@ -1984,16 +2000,17 @@ static int msm_serial_hsl_probe(struct platform_device *pdev)
 			}
 		}
 	}
+
 #ifdef CONFIG_SHIRDA
 	if (pdev->dev.of_node) {
-		msm_hsl_port->use_irda = of_property_read_bool(	
+		msm_hsl_port->use_irda = of_property_read_bool(
 			pdev->dev.of_node,
 			"qcom,use-irda"
 		);
 	} else {
-		msm_hsl_port->use_irda = false;	
+		msm_hsl_port->use_irda = false;
 	}
-#endif	
+#endif
 
 	gsbi_resource =	platform_get_resource_byname(pdev,
 						     IORESOURCE_MEM,

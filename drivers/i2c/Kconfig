@@ -131,8 +131,4 @@ config I2C_CUST_SH
 	bool "I2C customize(Port,ClockSpeed...)"
 	default y
 
-config I2C_CUST_SH_CLOCK_STRETCH
-	bool "I2C customize(I2C clock stretch extension)"
-	default n
-
 endif # I2C

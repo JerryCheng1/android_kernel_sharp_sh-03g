@@ -115,6 +115,12 @@ int chk_config_get_id(void)
 		return APQ8026_TOOLS_ID;
 	case MSM_CPU_8909:
 		return MSM8909_TOOLS_ID;
+	case MSM_CPU_8992:
+		return MSM8992_TOOLS_ID;
+	case MSM_CPU_TELLURIUM:
+		return MSMTELLURIUM_TOOLS_ID;
+	case MSM_CPU_8929:
+		return MSM8929_TOOLS_ID;
 	default:
 		if (driver->use_device_tree) {
 			if (machine_is_msm8974())
@@ -654,7 +660,9 @@ void diag_smd_send_req(struct diag_smd_info *smd_info)
 			}
 		}
 
-		if (smd_info->type != SMD_CNTL_TYPE || buf_full)
+		if ((smd_info->type != SMD_CNTL_TYPE &&
+				smd_info->type != SMD_CMD_TYPE)
+					|| buf_full)
 			break;
 
 		}
@@ -1210,8 +1218,8 @@ int diag_process_apps_pkt(unsigned char *buf, int len)
 	/* Mobile ID Rsp */
 	else if ((*buf == DIAG_CMD_DIAG_SUBSYS) &&
 		(*(buf+1) == DIAG_SS_PARAMS) &&
-		(*(buf+2) == DIAG_EXT_MOBILE_ID) && (*(buf+3) == 0x0))  {
-			write_len = diag_cmd_get_mobile_id(buf, len,
+		(*(buf+2) == DIAG_EXT_MOBILE_ID) && (*(buf+3) == 0x0)) {
+		write_len = diag_cmd_get_mobile_id(buf, len,
 						   driver->apps_rsp_buf,
 						   APPS_BUF_SIZE);
 		if (write_len > 0) {

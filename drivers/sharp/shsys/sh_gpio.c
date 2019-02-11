@@ -1,6 +1,6 @@
 /* drivers/sharp/shsys/sh_gpiodump.c
  *
- * Copyright (C) 2014 Sharp Corporation
+ * Copyright (C) 2012 Sharp Corporation
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -17,21 +17,25 @@
 #include <linux/miscdevice.h>
 #include <linux/fs.h>
 #include <linux/io.h>
+//#include <mach/msm_iomap.h>
+//#include <mach/gpiomux.h>
+#include <asm/uaccess.h>
+#include <asm/io.h>
+//#include <mach/io.h>
+#include <sharp/sh_gpio.h>
+#include <sharp/sh_systime.h>
 #include <linux/gpio.h>
 #include <linux/qpnp/pin.h>
-#include <linux/uaccess.h>
-#include "../../../../arch/arm/mach-msm/include/mach/gpiomux.h"
-#include <sharp/sh_gpio.h>
 
 /*
  * Register Address
  */
-// LINUX/android/bootable/bootloader/lk/platform/msm8994/include/platform/iomap.h
-#define TLMM_BASE_ADDR              0xFD510000
+#define MSM_TLMM_BASE		IOMEM(0xFA017000)
+#define SH_GPIO_CFG(n)    	(MSM_TLMM_BASE + 0x1000 + (0x10 * n))
+#define SH_GPIO_IN_OUT(n) 	(MSM_TLMM_BASE + 0x1004 + (0x10 * n))
+#define SH_GPIO_INTR_CFG(n) (MSM_TLMM_BASE + 0x1008 + (0x10 * n))
 
-#define SH_GPIO_CFG(n)    	(TLMM_BASE_ADDR + 0x1000 + (0x10 * n))
-#define SH_GPIO_IN_OUT(n) 	(TLMM_BASE_ADDR + 0x1004 + (0x10 * n))
-#define SH_GPIO_INTR_CFG(n) (TLMM_BASE_ADDR + 0x1008 + (0x10 * n))
+
 
 #define HWIO_GPIO_CFGn_GPIO_OE_BMSK          0x200
 #define HWIO_GPIO_CFGn_GPIO_OE_SHFT          0x9
@@ -114,39 +118,6 @@ typedef enum {
   SYSPROBE_GPIOINT_TRIGGER_MAX_ENUM_VAL_V01 = 2147483647 /**< To force a 32 bit signed enum.  Do not change or use*/
 }sysprobe_gpioint_trigger_v01;
 
-
-
-static uint32_t sh_gpio_reg_read(unsigned int physaddr)
-{
-    int ret = 0;
-    void __iomem *regadr = ioremap_nocache(physaddr, 4);
-
-    if (regadr == NULL) {
-        printk("sh_gpio_reg_read: ioremap_nocache ret error\n");
-        return 0;
-    }
-
-    ret = ioread32(regadr);
-    iounmap(regadr);
-
-    return ret;
-}
-
-static void sh_gpio_reg_write(uint32_t config, unsigned int physaddr)
-{
-    void __iomem *regadr = ioremap_nocache(physaddr, 4);
-
-    if (regadr == NULL) {
-        printk("sh_gpio_reg_write: ioremap_nocache ret error\n");
-        return;
-    }
-
-    iowrite32(config, regadr);
-    iounmap(regadr);
-
-    return;
-}
-
 /* 
  * source-fle-name : AMSS/MDM/modem_proc/core/sharp/shsys/src/sysprobe_gpio_dump.c
  * function-name   : void sysprobe_gpio_dump_get_sysprobe_gpio_info(int gpio, sysprobe_gpio_info_v01 *info)
@@ -165,9 +136,8 @@ static void sh_gpio_info(int gpio, struct sh_gpio_read_write *info)
 	/*
 	 * GPIO configuration and control register 
 	 * GPIO_CFGn
-	 */	 
- 	config 	= sh_gpio_reg_read(SH_GPIO_CFG(gpio));
-
+	 */
+ 	config 	= __raw_readl(SH_GPIO_CFG(gpio));
     info->gpio_config.func =   ((config & HWIO_GPIO_CFGn_FUNC_SEL_BMSK)     >> HWIO_GPIO_CFGn_FUNC_SEL_SHFT);
     info->gpio_config.dir  =   ((config & HWIO_GPIO_CFGn_GPIO_OE_BMSK)      >> HWIO_GPIO_CFGn_GPIO_OE_SHFT);
     info->gpio_config.pull =   ((config & HWIO_GPIO_CFGn_GPIO_PULL_BMSK)    >> HWIO_GPIO_CFGn_GPIO_PULL_SHFT);
@@ -176,7 +146,7 @@ static void sh_gpio_info(int gpio, struct sh_gpio_read_write *info)
 	/*
 	 * GPIO_IN_OUTn
 	 */
-    in_out = sh_gpio_reg_read(SH_GPIO_IN_OUT(gpio));;
+    in_out = __raw_readl(SH_GPIO_IN_OUT(gpio));;
     if (info->gpio_config.dir == HAL_TLMM_INPUT) {
         val = ((in_out & HWIO_GPIO_IN_OUTn_GPIO_IN_BMSK) >> HWIO_GPIO_IN_OUTn_GPIO_IN_SHFT);
     }
@@ -194,7 +164,7 @@ static void sh_gpio_info(int gpio, struct sh_gpio_read_write *info)
 	* GPIO_INTR_CFGn
 	*/
 	
-	intr = sh_gpio_reg_read(SH_GPIO_INTR_CFG(gpio));
+	intr = __raw_readl(SH_GPIO_INTR_CFG(gpio));
 	
 	
 	/*
@@ -263,7 +233,7 @@ static int sh_gpio_ioctl_read(unsigned long arg)
 	// 	,(int)gpio_req.gpioint_info.enable
 	// 	,(int)gpio_req.gpioint_info.trigger);
 
-    if (copy_to_user((void __user *)arg, (void*)&gpio_req, sizeof(gpio_req)) != 0) {
+    if (copy_to_user((u8*)arg, (u8*)&gpio_req, sizeof(gpio_req)) != 0) {
         rc = -EFAULT;
     }
 
@@ -346,11 +316,11 @@ static int sh_gpio_ioctl_write(unsigned long arg)
     else {
         outval = current_info.gpio_config.outval;
     }
-	sh_gpio_reg_write(config, SH_GPIO_CFG(gpio));
+	__raw_writel(config, SH_GPIO_CFG(gpio));
 
 	if (func == GPIOMUX_FUNC_GPIO) {
     	if (gpio_req.flag & SH_GPIO_CONFIG_BIT_FLAG_RMT_V01) {
-			sh_gpio_reg_write(dir == GPIOMUX_OUT_HIGH ? BIT(1) : 0,
+			__raw_writel(dir == GPIOMUX_OUT_HIGH ? BIT(1) : 0,
 				SH_GPIO_IN_OUT(gpio));
 		}
 	}
@@ -361,7 +331,7 @@ static int sh_gpio_ioctl_write(unsigned long arg)
 	 * Response
 	 */
 	sh_gpio_info(gpio, &resp_config) ;
-    if (copy_to_user((void __user *)arg, (void*)&resp_config, sizeof(resp_config)) != 0) {
+    if (copy_to_user((u8*)arg, (u8*)&resp_config, sizeof(resp_config)) != 0) {
         printk("sh_gpio_ioctl_write: copy to user error\n");
         rc = -EFAULT;
     }
@@ -472,7 +442,6 @@ static struct file_operations sh_gpio_fops = {
     .open           = sh_gpio_open,
     .release        = sh_gpio_release,
     .unlocked_ioctl = sh_gpio_ioctl,
-    .compat_ioctl   = sh_gpio_ioctl,
 };
 
 static struct miscdevice sh_gpio_dev = {

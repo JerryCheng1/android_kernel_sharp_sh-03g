@@ -1,9 +1,15 @@
 #
-# Makefile for the NFC drivers.
+# Makefile for the Toshiba NFC I2C drivers.
 #
 
-obj-$(CONFIG_SHNFC3) += snfc_en.o
-obj-$(CONFIG_SHNFC3) += snfc_ant.o
-obj-$(CONFIG_SEC_NFC) += sec_nfc.o
-obj-$(CONFIG_SEC_NFC_S3FNRN3_FN) += sec_nfc_fn.o
+## Compile only the target include Toshiba NFC configure ##
+obj-$(CONFIG_TOSHIBA_NFC) += snfc_en.o
+ifeq ($(CONFIG_TOSHIBA_NFC),y)
 
+# GPIO Driver
+obj-$(CONFIG_TOSHIBA_NFC_GPIO) += GPIO/
+
+# I2C Driver
+obj-$(CONFIG_TOSHIBA_NFC_I2C)  += I2C/
+
+endif

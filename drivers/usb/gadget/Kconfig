@@ -873,7 +873,9 @@ config USB_G_PRINTER
 
 config USB_G_ANDROID
 	boolean "Android Composite Gadget"
-	select USB_F_ACM
+#20150331 USB SHARP CUSTOMIZE DEL START
+	#select USB_F_ACM
+#20150331 USB SHARP CUSTOMIZE DEL END
 	select USB_F_SERIAL
 	select USB_LIBCOMPOSITE
 	select USB_U_SERIAL
@@ -904,13 +906,6 @@ config USB_ANDROID_SH_SERIALS
         help
          Provides serial function for android gadget driver for sharp devices.
 
-config USB_ANDROID_SH_MTP
-	boolean "Android gadget MTP function for Sharp Devices"
-	depends on USB_ANDROID_SH_CUST
-	default n
-	help
-	  Provides USB mtp function for android gadget driver.
-
 config USB_ANDROID_SH_UMS
 	boolean "Android gadget mass storage function(userspace) for sharp devices"
 	depends on USB_ANDROID_SH_CUST
@@ -918,6 +913,14 @@ config USB_ANDROID_SH_UMS
 	help
 	  Provides USB mass storage function for android gadget driver.
 	  This is to apply user space drivers for sharp devices.
+
+config USB_ANDROID_SH_MTP
+	boolean "Android gadget MTP function for Sharp Devices"
+	depends on USB_ANDROID_SH_CUST
+	default n
+	help
+	  Provides USB mtp function for android gadget driver.
+
 # 20141119 USB SHARP CUSTOMIZE ADD END
 
 if TTY

@@ -1,4 +1,5 @@
-/*
+/* drivers/usb/core/hcd.c
+ *
  * (C) Copyright Linus Torvalds 1999
  * (C) Copyright Johannes Erdfelt 1999-2001
  * (C) Copyright Andreas Gal 1999
@@ -6,6 +7,7 @@
  * (C) Copyright Deti Fliegl 1999
  * (C) Copyright Randy Dunlap 2000
  * (C) Copyright David Brownell 2000-2002
+ * (C) Copyright SHARP CORPORATION 2014
  * 
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -942,8 +944,10 @@ static int usb_register_bus(struct usb_bus *bus)
 
 	usb_notify_add_bus(bus);
 
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 	dev_info (bus->controller, "new USB bus registered, assigned bus "
 		  "number %d\n", bus->busnum);
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 	return 0;
 
 error_find_busnum:
@@ -961,7 +965,9 @@ error_find_busnum:
  */
 static void usb_deregister_bus (struct usb_bus *bus)
 {
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 	dev_info (bus->controller, "USB bus %d deregistered\n", bus->busnum);
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 
 	/*
 	 * NOTE: make sure that all the devices are removed by the
@@ -1605,6 +1611,7 @@ static int unlink1(struct usb_hcd *hcd, struct urb *urb, int status)
 int usb_hcd_unlink_urb (struct urb *urb, int status)
 {
 	struct usb_hcd		*hcd;
+	struct usb_device	*udev = urb->dev;
 	int			retval = -EIDRM;
 	unsigned long		flags;
 
@@ -1616,20 +1623,19 @@ int usb_hcd_unlink_urb (struct urb *urb, int status)
 	spin_lock_irqsave(&hcd_urb_unlink_lock, flags);
 	if (atomic_read(&urb->use_count) > 0) {
 		retval = 0;
-		usb_get_dev(urb->dev);
+		usb_get_dev(udev);
 	}
 	spin_unlock_irqrestore(&hcd_urb_unlink_lock, flags);
 	if (retval == 0) {
 		hcd = bus_to_hcd(urb->dev->bus);
 		retval = unlink1(hcd, urb, status);
-		usb_put_dev(urb->dev);
+		if (retval == 0)
+			retval = -EINPROGRESS;
+		else if (retval != -EIDRM && retval != -EBUSY)
+			dev_dbg(&udev->dev, "hcd_unlink_urb %p fail %d\n",
+					urb, retval);
+		usb_put_dev(udev);
 	}
-
-	if (retval == 0)
-		retval = -EINPROGRESS;
-	else if (retval != -EIDRM && retval != -EBUSY)
-		dev_dbg(&urb->dev->dev, "hcd_unlink_urb %p fail %d\n",
-				urb, retval);
 	return retval;
 }
 
@@ -1961,6 +1967,8 @@ int usb_alloc_streams(struct usb_interface *interface,
 		return -EINVAL;
 	if (dev->speed != USB_SPEED_SUPER)
 		return -EINVAL;
+	if (dev->state < USB_STATE_CONFIGURED)
+		return -ENODEV;
 
 	/* Streams only apply to bulk endpoints. */
 	for (i = 0; i < num_eps; i++)
@@ -2459,10 +2467,12 @@ static int usb_hcd_request_irqs(struct usb_hcd *hcd,
 			return retval;
 		}
 		hcd->irq = irqnum;
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 		dev_info(hcd->self.controller, "irq %d, %s 0x%08llx\n", irqnum,
 				(hcd->driver->flags & HCD_MEMORY) ?
 					"io mem" : "io base",
 					(unsigned long long)hcd->rsrc_start);
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 	} else {
 		hcd->irq = 0;
 		if (hcd->rsrc_start)
@@ -2490,7 +2500,9 @@ int usb_add_hcd(struct usb_hcd *hcd,
 	int retval;
 	struct usb_device *rhdev;
 
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 	dev_info(hcd->self.controller, "%s\n", hcd->product_desc);
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 
 	/* Keep old behaviour if authorized_default is not in [0, 1]. */
 	if (authorized_default < 0 || authorized_default > 1)
@@ -2645,7 +2657,9 @@ void usb_remove_hcd(struct usb_hcd *hcd)
 {
 	struct usb_device *rhdev = hcd->self.root_hub;
 
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 	dev_info(hcd->self.controller, "remove, state %x\n", hcd->state);
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 
 	usb_get_dev(rhdev);
 	sysfs_remove_group(&rhdev->dev.kobj, &usb_bus_attr_group);

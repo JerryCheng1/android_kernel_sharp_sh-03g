@@ -34,7 +34,6 @@
 #include <media/msm_media_info.h>
 
 #include "vidc_hfi_api.h"
-#include "vidc_hfi_api.h"
 
 #define MSM_VIDC_DRV_NAME "msm_vidc_driver"
 #define MSM_VIDC_VERSION KERNEL_VERSION(0, 0, 1);
@@ -44,6 +43,7 @@
 #define DEFAULT_WIDTH 1920
 #define MIN_SUPPORTED_WIDTH 32
 #define MIN_SUPPORTED_HEIGHT 32
+#define MAX_SUPPORTED_INSTANCES_COUNT 13
 
 /* Maintains the number of FTB's between each FBD over a window */
 #define DCVS_FTB_WINDOW 32
@@ -200,8 +200,6 @@ struct dcvs_stats {
 	bool is_clock_scaled;
 	int etb_counter;
 	bool is_power_save_mode;
-	bool is_output_buff_added;
-	bool is_input_buff_added;
 	bool is_additional_buff_added;
 };
 
@@ -263,6 +261,7 @@ struct msm_vidc_core {
 	struct msm_video_device vdev[MSM_VIDC_MAX_DEVICES];
 	struct v4l2_device v4l2_dev;
 	struct list_head instances;
+	u32 max_supported_instances;
 	struct dentry *debugfs_root;
 	enum vidc_core_state state;
 	struct completion completions[SYS_MSG_END - SYS_MSG_START + 1];
@@ -314,6 +313,7 @@ struct msm_vidc_inst {
 	atomic_t seq_hdr_reqs;
 	struct v4l2_ctrl **ctrls;
 	bool dcvs_mode;
+	u32 buffers_held_in_driver;
 };
 
 extern struct msm_vidc_drv *vidc_driver;

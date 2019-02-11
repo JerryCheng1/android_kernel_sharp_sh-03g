@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -55,14 +55,6 @@ struct snd_msm {
 	struct snd_pcm *pcm;
 };
 
-#define PLAYBACK_MIN_NUM_PERIODS    2
-#define PLAYBACK_MAX_NUM_PERIODS    8
-#define PLAYBACK_MAX_PERIOD_SIZE    12288
-#define PLAYBACK_MIN_PERIOD_SIZE    128
-#define CAPTURE_MIN_NUM_PERIODS     2
-#define CAPTURE_MAX_NUM_PERIODS     8
-#define CAPTURE_MAX_PERIOD_SIZE     4096
-#define CAPTURE_MIN_PERIOD_SIZE     320
 #define CMD_EOS_MIN_TIMEOUT_LENGTH  50
 #define CMD_EOS_TIMEOUT_MULTIPLIER  (HZ * 50)
 
@@ -116,8 +108,6 @@ static unsigned int supported_sample_rates[] = {
 	88200, 96000, 176400, 192000
 };
 
-static uint32_t in_frame_info[CAPTURE_MAX_NUM_PERIODS][2];
-
 static struct snd_pcm_hw_constraint_list constraints_sample_rates = {
 	.count = ARRAY_SIZE(supported_sample_rates),
 	.list = supported_sample_rates,
@@ -163,7 +153,7 @@ static void event_handler(uint32_t opcode,
 		wake_up(&the_locks.write_wait);
 		if (!atomic_read(&prtd->start))
 			break;
-		if (!prtd->mmap_flag)
+		if (!prtd->mmap_flag || prtd->reset_event)
 			break;
 		if (q6asm_is_cpu_buf_avail_nolock(IN,
 				prtd->audio_client,
@@ -183,11 +173,11 @@ static void event_handler(uint32_t opcode,
 	case ASM_DATA_EVENT_READ_DONE_V2: {
 		pr_debug("ASM_DATA_EVENT_READ_DONE_V2\n");
 		pr_debug("token = 0x%08x\n", token);
-		in_frame_info[token][0] = payload[4];
-		in_frame_info[token][1] = payload[5];
+		prtd->in_frame_info[token].size = payload[4];
+		prtd->in_frame_info[token].offset = payload[5];
 		/* assume data size = 0 during flushing */
-		if (in_frame_info[token][0]) {
-			prtd->pcm_irq_pos += in_frame_info[token][0];
+		if (prtd->in_frame_info[token].size) {
+			prtd->pcm_irq_pos += prtd->in_frame_info[token].size;
 			pr_debug("pcm_irq_pos=%d\n", prtd->pcm_irq_pos);
 			if (atomic_read(&prtd->start))
 				snd_pcm_period_elapsed(substream);
@@ -368,6 +358,7 @@ static int msm_pcm_capture_prepare(struct snd_pcm_substream *substream)
 	int ret = 0;
 	int i = 0;
 	uint16_t bits_per_sample = 16;
+	unsigned int be_id = soc_prtd->dai_link->be_id;
 
 	pdata = (struct msm_plat_data *)
 		dev_get_drvdata(soc_prtd->platform->dev);
@@ -376,17 +367,23 @@ static int msm_pcm_capture_prepare(struct snd_pcm_substream *substream)
 		return -EINVAL;
 	}
 
-	pr_debug("%s\n", __func__);
 	if (prtd->enabled == IDLE) {
+		pr_debug("%s:perf_mode=%d periods=%d\n", __func__,
+			pdata->perf_mode, runtime->periods);
 		params = &soc_prtd->dpcm[substream->stream].hw_params;
 		if (params_format(params) == SNDRV_PCM_FORMAT_S24_LE)
 			bits_per_sample = 24;
 
-		prtd->audio_client->perf_mode = pdata->perf_mode;
-		pr_debug("%s: perf_mode: 0x%x\n", __func__, pdata->perf_mode);
+		/* ULL mode is not supported in capture path */
+		if (pdata->perf_mode == LEGACY_PCM_MODE)
+			prtd->audio_client->perf_mode = LEGACY_PCM_MODE;
+		else
+			prtd->audio_client->perf_mode = LOW_LATENCY_PCM_MODE;
 
-		pr_debug("%s Opening %d-ch PCM read stream\n",
-				__func__, params_channels(params));
+		pr_debug("%s Opening %d-ch PCM read stream, perf_mode %d\n",
+				__func__, params_channels(params),
+				prtd->audio_client->perf_mode);
+
 		ret = q6asm_open_read_v2(prtd->audio_client, FORMAT_LINEAR_PCM,
 				bits_per_sample);
 		if (ret < 0) {
@@ -446,6 +443,12 @@ static int msm_pcm_capture_prepare(struct snd_pcm_substream *substream)
 
 	prtd->enabled = RUNNING;
 
+	if (prtd->ch_mixer)
+		msm_pcm_routing_channel_mixer(
+			soc_prtd->dai_link->be_id,
+			prtd->audio_client->perf_mode,
+			prtd->session_id, substream->stream, be_id);
+
 	return ret;
 }
 
@@ -496,6 +499,7 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct snd_soc_pcm_runtime *soc_prtd = substream->private_data;
 	struct msm_audio *prtd;
+	unsigned int be_id = soc_prtd->dai_link->be_id;
 	int ret = 0;
 
 	prtd = kzalloc(sizeof(struct msm_audio), GFP_KERNEL);
@@ -575,6 +579,8 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 	prtd->set_channel_map = false;
 	prtd->reset_event = false;
 	runtime->private_data = prtd;
+	if (be_id == MSM_FRONTEND_DAI_MULTIMEDIA3)
+		prtd->ch_mixer = true;
 
 	return 0;
 }
@@ -748,7 +754,7 @@ static int msm_pcm_capture_copy(struct snd_pcm_substream *substream,
 		xfer = fbytes;
 		if (xfer > size)
 			xfer = size;
-		offset = in_frame_info[idx][1];
+		offset = prtd->in_frame_info[idx].offset;
 		pr_debug("Offset value = %d\n", offset);
 		if (copy_to_user(buf, bufptr+offset, xfer)) {
 			pr_err("Failed to copy buf to user\n");
@@ -757,12 +763,12 @@ static int msm_pcm_capture_copy(struct snd_pcm_substream *substream,
 		}
 		fbytes -= xfer;
 		size -= xfer;
-		in_frame_info[idx][1] += xfer;
+		prtd->in_frame_info[idx].offset += xfer;
 		pr_debug("%s:fbytes = %d: size=%d: xfer=%d\n",
 					__func__, fbytes, size, xfer);
 		pr_debug(" Sending next buffer to dsp\n");
-		memset(&in_frame_info[idx], 0,
-			sizeof(uint32_t) * 2);
+		memset(&prtd->in_frame_info[idx], 0,
+		       sizeof(struct msm_audio_in_frame_info));
 		atomic_dec(&prtd->in_count);
 		ret = q6asm_read(prtd->audio_client);
 		if (ret < 0) {

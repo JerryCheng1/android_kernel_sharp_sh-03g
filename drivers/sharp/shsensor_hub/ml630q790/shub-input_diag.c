@@ -35,6 +35,16 @@
 #include <linux/gpio.h>
 #include <linux/irq.h>
 
+/* SHMDS_HUB_0103_14 add S */
+static int shub_diag_acc_self_test_initialize(void);
+static int shub_diag_acc_self_test_check(int16_t* accData);
+static int shub_diag_acc_self_test_average(int16_t data[][3]);
+
+static int shub_diag_gyro_self_test_initialize(void);
+static int shub_diag_gyro_self_test_check(int16_t* gyroData);
+static int shub_diag_gyro_self_test_average(int16_t data[][3]);
+/* SHMDS_HUB_0103_14 add E */
+
 // SHMDS_HUB_0701_01 add S
 #ifdef CONFIG_ANDROID_ENGINEERING
 static int shub_diag_log = 0;
@@ -54,72 +64,101 @@ module_param(shub_diag_log, int, 0600);
 
 #define HC_MCU_GET_VERSION              (0x0001u)
 #define HC_MCU_ACC_SENSOR_REG           (0x0009u)
+#define HC_MCU_GET_PORT_OUT             (0x0008u)
 #define HC_MCU_SELF_TEST                (0x000Au)
 #define HC_MCU_I2C_IO                   (0x000Cu)
 
 
-#define YAS_PCB_ADDR_ID                 (0x80)
-#define YAS_PCB_ADDR_COIL               (0x81)
-#define YAS_PCB_ADDR_MEASURE_COMMAND    (0x82)
-#define YAS_PCB_ADDR_CONFIG             (0x83)
-#define YAS_PCB_ADDR_MEASURE_INTERVAL   (0x84)
-#define YAS_PCB_ADDR_OFFSETX            (0x85)
-#define YAS_PCB_ADDR_OFFSETY1           (0x86)
-#define YAS_PCB_ADDR_OFFSETY2           (0x87)
-#define YAS_PCB_ADDR_TEST               (0x88)
-#define YAS_PCB_ADDR_TEST2              (0x89)
-#define YAS_PCB_ADDR_CAL                (0x90)
-#define YAS_PCB_ADDR_MEASURE_DATA       (0xB0)
+#define SHUB_ABS(a)     ((a) > 0 ? (a) : -(a))
+#define SHUB_INT_PIN_CHECK_RETRY_MAX    (10)
+#define SHUB_INT_PIN_CHECK_TIME_US      (10000)
 
+#define YAS537_REG_DIDR                 (0x80)
+#define YAS537_REG_CMDR                 (0x81)
+#define YAS537_REG_CONFR                (0x82)
+#define YAS537_REG_INTRVLR              (0x83)
+#define YAS537_REG_OXR                  (0x84)
+#define YAS537_REG_OY1R                 (0x85)
+#define YAS537_REG_OY2R                 (0x86)
+#define YAS537_REG_AVRR                 (0x87)
+#define YAS537_REG_HCKR                 (0x88)
+#define YAS537_REG_LCKR                 (0x89)
+#define YAS537_REG_SRSTR                (0x90)
+#define YAS537_REG_ADCCALR              (0x91)
+#define YAS537_REG_MTCR                 (0x93)
+#define YAS537_REG_OCR                  (0x9e)
+#define YAS537_REG_TRMR                 (0x9f)
+#define YAS537_REG_DATAR                (0xb0)
+#define YAS537_REG_CALR                 (0xc0)
+
+#define YAS537_DATA_UNDERFLOW           (0)
+#define YAS537_DATA_OVERFLOW            (16383)
+#define YAS537_MAG_RCOIL_TIME           (65)
+#define YAS537_SLAVE_ADDRESS            (0x2Eu)
+#define YAS537_BUSY_RETRY_MAX           (10)
+#define YAS537_RCOIL_RETRY_MAX          (1)
+#define YAS537_RCOIL_RETRY_TIME_US      (1000000)
+
+#define YAS_CAL_REG_NUM                 (17)
+#define YAS_PCB_MEASURE_DATA_REG_NUM    (8)
 #define YAS_PCB_MEASURE_COMMAND_START   (0x01)
 #define YAS_PCB_MEASURE_COMMAND_LDTC    (0x02)
 #define YAS_PCB_MEASURE_COMMAND_FORS    (0x04)
 
-#define YAS_CAL_REG_NUM                 (14)
-#define YAS_PCB_MEASURE_DATA_REG_NUM    (8)
-#define YAS_PCB_HARD_OFFSET_CORRECT     (16)
-#define YAS_PCB_COIL_INIT_CALC_NUM      (5)
+#define LSM6DS3_ACC_GYRO_INT1_CTRL      (0x0D)
+#define LSM6DS3_ACC_GYRO_INT2_CTRL      (0x0E)
+#define LSM6DS3_ACC_GYRO_CTRL3_C        (0x12)
+#define LSM6DS3_ACC_GYRO_CTRL4_C        (0x13)
 
-#define YAS532_COEFX_VERSION_AC         (850)
-#define YAS532_COEFY1_VERSION_AC        (750)
-#define YAS532_COEFY2_VERSION_AC        (750)
-#define YAS532_RAWDATA_CENTER           (4096)
-#define YAS532_RAWDATA_OVERFLOW         (8190)
-#define YAS532_SLAVE_ADDRESS            (0x2Eu)
-#define YAS532_TEMP20DEGREE_TYPICAL     (390)			// SHMDS_HUB_0103_10 add
+#define LSM6DS3_ACC_GYRO_CTRL1_XL       (0x10)
+#define LSM6DS3_ACC_GYRO_CTRL8_XL       (0x17)
+#define LSM6DS3_ACC_GYRO_CTRL9_XL       (0x18)
+#define LSM6DS3_ACC_GYRO_TAP_CFG        (0x58)
+#define LSM6DS3_ACC_GYRO_OUT_X_L_XL     (0x28)
 
-#define LSM6DS0_ACC_GYRO_INT_CTRL       (0x0C)
-#define LSM6DS0_ACC_GYRO_CTRL_REG1_G    (0x10)
-#define LSM6DS0_ACC_GYRO_CTRL_REG2_G    (0x11)
-#define LSM6DS0_ACC_GYRO_CTRL_REG3_G    (0x12)
-#define LSM6DS0_ACC_GYRO_OUT_X_L_G      (0x18)
-#define LSM6DS0_ACC_GYRO_CTRL_REG4      (0x1E)
-#define LSM6DS0_ACC_GYRO_CTRL_REG5_XL   (0x1F)
-#define LSM6DS0_ACC_GYRO_CTRL_REG6_XL   (0x20)
-#define LSM6DS0_ACC_GYRO_CTRL_REG7_XL   (0x21)
-#define LSM6DS0_ACC_GYRO_CTRL_REG8      (0x22)
-#define LSM6DS0_ACC_GYRO_CTRL_REG9      (0x23)
-#define LSM6DS0_ACC_GYRO_OUT_X_L_XL     (0x28)
-#define LSM6DS0_SLAVE_ADDRESS           (0x6Bu)
+#define LSM6DS3_ACC_GYRO_CTRL2_G        (0x11)
+#define LSM6DS3_ACC_GYRO_CTRL6_G        (0x15)
+#define LSM6DS3_ACC_GYRO_CTRL7_G        (0x16)
+#define LSM6DS3_ACC_GYRO_CTR10_C        (0x19)
+#define LSM6DS3_ACC_GYRO_OUT_X_L_G      (0x22) 
 
-struct yas_pcb_correction {
-    int32_t s32Cx, s32Cy1, s32Cy2;
-    int32_t s32A2, s32A3, s32A4, s32A5, s32A6, s32A7, s32A8, s32A9, s32K;
-    int32_t s32ZFlag;
-    int32_t s32Rx, s32Ry1, s32Ry2;
-    int32_t s32Fx, s32Fy1, s32Fy2;
-    int32_t s32Ver;
+#define LSM6DS3_SLAVE_ADDRESS           (0x6Au)
+
+/* SHMDS_HUB_0103_14 add S */
+#define LSM6DS3_ACC_GYRO_CTRL5_C        (0x14)
+#define LSM6DS3_ACC_GYRO_OUT_X_H_XL     (0x29)
+#define LSM6DS3_ACC_GYRO_OUT_Y_L_XL     (0x2A)
+#define LSM6DS3_ACC_GYRO_OUT_Y_H_XL     (0x2B)
+#define LSM6DS3_ACC_GYRO_OUT_Z_L_XL     (0x2C)
+#define LSM6DS3_ACC_GYRO_OUT_Z_H_XL     (0x2D)
+#define LSM6DS3_ACC_GYRO_STATUS_REG     (0x1E)
+#define SELF_TEST_ACC_READTIMES (5)
+#define SELF_TEST_GYRO_READTIMES (5)
+#define CHECK_ACC_REG (1)
+#define CHECK_GYRO_REG (2)
+#define ACC_MIN_ST (1470)
+#define ACC_MAX_ST (27870)
+#define GYRO_MIN_ST (3570)
+#define GYRO_MAX_ST (10000)
+/* SHMDS_HUB_0103_14 add E */
+
+struct yas_cal {
+    int8_t a2, a3, a4, a6, a7, a8;
+    int16_t a5, a9, cxy1y2[3];
+    uint8_t k, ver;
 };
 
-/* How often we poll keys - msecs */
+static struct yas_cal ysaCalData;
+static int16_t yas_overflow[3];
+static int16_t yas_underflow[3];
+static uint16_t ysa_last_after_rcoil[3];
+static int ysa_rcoil_first_set_flg = 0;
 
 static struct platform_device *pdev;
 static struct input_dev *shub_idev;
 
-static int isFlowFlg = 0;
 static int read_cal_init_flg = 0;
 static uint8_t calRegData[YAS_CAL_REG_NUM];
-static struct yas_pcb_correction gstCorrect;
 static int gyro_first_read_wait_flg = 1;
 static int initial_gyro_flg = 0;
 static int initial_acc_flg = 0;
@@ -245,224 +284,11 @@ static int shub_diag_sensorMultiReadSendCmd(uint8_t addr, uint8_t* resData, uint
 static int shub_diag_mag_initialize(void)
 {
     int ret;
-    uint8_t setData = 0;
-    ret = shub_diag_magSensorWriteSendCmd(YAS_PCB_ADDR_TEST, setData);
-    if(ret != 0) {
-        return -1;
-    }
-    ret = shub_diag_magSensorWriteSendCmd(YAS_PCB_ADDR_TEST2, setData);
-    if(ret != 0) {
-        return -1;
-    }
-    ret = shub_diag_magSensorWriteSendCmd(YAS_PCB_ADDR_MEASURE_INTERVAL, setData);
-    if(ret != 0) {
-        return -1;
-    }
-    return 0;
-}
-
-/* acc initial setting */
-static int shub_diag_acc_initialize(void)
-{
-    int ret;
     uint8_t setData;
 
-    /* INT_DRDY_XL setting */
-    setData = 0x00;
-    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS0_ACC_GYRO_INT_CTRL, setData);
-    if(ret != 0) {
-        return -1;
-    }
-    /* Accelerometer axis output enable */
-    setData = 0x38;
-    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS0_ACC_GYRO_CTRL_REG5_XL, setData);
-    if(ret != 0) {
-        return -1;
-    }
-    /* HR mode HPF disable */
-    setData = 0x00;
-    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS0_ACC_GYRO_CTRL_REG7_XL, setData);
-    if(ret != 0) {
-        return -1;
-    }
-    /* Block data update enable */
-    setData = 0x44;
-    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS0_ACC_GYRO_CTRL_REG8, setData);
-    if(ret != 0) {
-        return -1;
-    }
-    /* DA timer enabled */
-    setData = 0x00;
-    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS0_ACC_GYRO_CTRL_REG9, setData);
-    if(ret != 0) {
-        return -1;
-    }
-    return 0;
-}
-
-/* gyro initial setting */
-static int shub_diag_gyro_initialize(void)
-{
-    int ret;
-    uint8_t setData;
-
-    gyro_first_read_wait_flg = 1;
-
-    /* INT_DRDY_G setting */
-    setData = 0x00;
-    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS0_ACC_GYRO_INT_CTRL, setData);
-    if(ret != 0) {
-        return -1;
-    }
-    /* LPF HPF setting */
-    setData = 0x0A;
-    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS0_ACC_GYRO_CTRL_REG2_G, setData);
-    if(ret != 0) {
-        return -1;
-    }
-    /* HPF enable */
-    setData = 0x00;
-    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS0_ACC_GYRO_CTRL_REG3_G, setData);
-    if(ret != 0) {
-        return -1;
-    }
-    /* Gyroscope axis output enable */
-    setData = 0x38;
-    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS0_ACC_GYRO_CTRL_REG4, setData);
-    if(ret != 0) {
-        return -1;
-    }
-    /* Block data update enable */
-    setData = 0x44;
-    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS0_ACC_GYRO_CTRL_REG8, setData);
-    if(ret != 0) {
-        return -1;
-    }
-    /* DA timer enabled */
-    setData = 0x00;
-    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS0_ACC_GYRO_CTRL_REG9, setData);
-    if(ret != 0) {
-        return -1;
-    }
-    return 0;
-}
-
-/* cal data read */
-static void shub_diag_mag_calc_correction(const uint8_t *pu08Data)
-{
-    uint8_t u08Dx  = pu08Data[0];
-    uint8_t u08Dy1 = pu08Data[1];
-    uint8_t u08Dy2 = pu08Data[2];
-    uint8_t u08D2  = (uint8_t)((pu08Data[3] >> 2) & 0x3F);
-    uint8_t u08D3  = (uint8_t)(((pu08Data[3] << 2) & 0x0C) | ((pu08Data[4] >> 6) & 0x03));
-    uint8_t u08D4  = (uint8_t)(pu08Data[4] & 0x3F);
-    uint8_t u08D5  = (uint8_t)((pu08Data[5] >> 2) & 0x3f);
-    uint8_t u08D6  = (uint8_t)(((pu08Data[5] << 4) & 0x30) | ((pu08Data[6] >> 4) & 0x0F));
-    uint8_t u08D7  = (uint8_t)(((pu08Data[6] << 3) & 0x78) | ((pu08Data[7] >> 5) & 0x07));
-    uint8_t u08D8  = (uint8_t)(((pu08Data[7] << 1) & 0x3E) | ((pu08Data[8] >> 7) & 0x01));
-    uint8_t u08D9  = (uint8_t)(((pu08Data[8] << 1) & 0xFE) | ((pu08Data[9] >> 7) & 0x01));
-    uint8_t u08D0  = (uint8_t)((pu08Data[9] >> 2) & 0x1F);
-    uint8_t u08Rx  = (uint8_t)((pu08Data[10] >> 1) & 0x3F);
-    uint8_t u08Fx  = (uint8_t)(((pu08Data[10] & 0x01) << 1) | ((pu08Data[11] >> 7) & 0x01));
-    uint8_t u08Ry1 = (uint8_t)((pu08Data[11] >> 1) & 0x3F);
-    uint8_t u08Fy1 = (uint8_t)(((pu08Data[11] & 0x01) << 1) | ((pu08Data[12] >> 7) & 0x01));
-    uint8_t u08Ry2 = (uint8_t)((pu08Data[12] >> 1) & 0x3F);
-    uint8_t u08Fy2 = (uint8_t)(((pu08Data[12] & 0x01) << 1) | ((pu08Data[13] >> 7) & 0x01));
-    uint8_t u08Ver = pu08Data[13] & 0x01;
-
-    gstCorrect.s32Cx  = (int32_t)((u08Dx * 10) - 1280);
-    gstCorrect.s32Cy1 = (int32_t)((u08Dy1 * 10) - 1280);
-    gstCorrect.s32Cy2 = (int32_t)((u08Dy2 * 10) - 1280);
-    gstCorrect.s32A2  = (int32_t)(u08D2 - 32);
-    gstCorrect.s32A3  = (int32_t)(u08D3 - 8);
-    gstCorrect.s32A4  = (int32_t)(u08D4 - 32);
-    gstCorrect.s32A5  = (int32_t)(u08D5 + 38);
-    gstCorrect.s32A6  = (int32_t)(u08D6 - 32);
-    gstCorrect.s32A7  = (int32_t)(u08D7 - 64);
-    gstCorrect.s32A8  = (int32_t)(u08D8 - 32);
-    gstCorrect.s32A9  = (int32_t)u08D9;
-    gstCorrect.s32K   = (int32_t)u08D0;
-    gstCorrect.s32ZFlag = (int32_t)1;
-    gstCorrect.s32Rx  = (int32_t)((int8_t)(u08Rx << 2) >> 2);
-    gstCorrect.s32Fx  = (int32_t)u08Fx;
-    gstCorrect.s32Ry1 = (int32_t)((int8_t)(u08Ry1 << 2) >> 2);
-    gstCorrect.s32Fy1 = (int32_t)u08Fy1;
-    gstCorrect.s32Ry2 = (int32_t)((int8_t)(u08Ry2 << 2) >> 2);
-    gstCorrect.s32Fy2 = (int32_t)u08Fy2;
-    gstCorrect.s32Ver = (int32_t)u08Ver;
-    read_cal_init_flg = 1;
-}
-
-/* cal data read */
-static int shub_diag_mag_read_cal(void)
-{
-    int i;
-    int ret;
-    int size = YAS_CAL_REG_NUM;
-    int len = size - 1;
-    uint8_t resData[2];
-
-    if(read_cal_init_flg){
-        return 0;
-    }
-    memset(calRegData, 0, sizeof(calRegData));
-    memset(resData, 0, sizeof(resData));
-    /* Dummy read */
-/* SHMDS_HUB_0103_09 mod S */
-//    for(i = 0; i < len; i++)
-    for(i = 0; i < size; i++)
-    {
-/* SHMDS_HUB_0103_09 mod E */
-        ret = shub_diag_magSensorReadSendCmd(YAS_PCB_ADDR_CAL + i, resData);
-        if(ret != 0) {
-            printk("[shub]%s dummy read err.\n", __func__);
-            return -1;
-        }
-    }
-
-    memset(resData, 0, sizeof(resData));
-/* SHMDS_HUB_0103_09 mod S */
-//    for(i = 0; i < len; i++)
-    for(i = 0; i < size; i++)
-    {
-/* SHMDS_HUB_0103_09 mod E */
-        ret = shub_diag_magSensorReadSendCmd(YAS_PCB_ADDR_CAL + i, resData);
-        if(ret != 0) {
-            printk("[shub]%s read err.\n", __func__);
-            return -1;
-        }
-        calRegData[i] = resData[0];
-    }
-
-    /* cal register is all 0 */
-    for (i = 0; i < size; i++) {
-        if (calRegData[i] != 0x00) {
-            /* OK */
-            shub_diag_mag_calc_correction(calRegData);
-            return 0;
-        }
-    }
-
-    /* MSB is not 0 */
-    if (calRegData[len] & 0x80) {
-        /* OK */
-        shub_diag_mag_calc_correction(calRegData);
-        return 0;
-    }
-
-    printk("[shub]%s check err.\n", __func__);
-    return -1;
-}
-
-/* config data setting */
-static int shub_diag_mag_set_config(void)
-{
-    int ret;
-    uint8_t setData;
-    
-    setData = 0x01;
-    setData = (uint8_t)(setData | (uint8_t)((calRegData[9]  & 0x03) << 3) | (uint8_t)((calRegData[10] & 0x80) >> 5));
-    ret = shub_diag_magSensorWriteSendCmd(YAS_PCB_ADDR_CONFIG, setData);
+    /* SRSTR Soft reset */
+    setData = 0x02;
+    ret = shub_diag_magSensorWriteSendCmd(YAS537_REG_SRSTR, setData);
     if(ret != 0) {
         return -1;
     }
@@ -475,37 +301,450 @@ static int shub_diag_mag_set_coil(void)
     int ret;
     uint8_t setData = 0;
     
-    ret = shub_diag_magSensorWriteSendCmd(YAS_PCB_ADDR_COIL, setData);
+    /* CONFR Config set */
+    setData = 0x09;
+    ret = shub_diag_magSensorWriteSendCmd(YAS537_REG_CONFR, setData);
     if(ret != 0) {
         return -1;
     }
-    isFlowFlg = 0;
+    usleep(YAS537_MAG_RCOIL_TIME);
     return 0;
 }
 
-/* offset data setting */
-static int shub_diag_mag_set_offset_data(uint8_t* offsetData)
+/* mag initial2 setting */
+static int shub_diag_mag_initialize_2(void)
 {
     int ret;
     uint8_t setData;
+
+    /* ADCCALR A/D rev */
+    setData = 0x03;
+    ret = shub_diag_magSensorWriteSendCmd(YAS537_REG_ADCCALR, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    setData = 0xF8;
+    ret = shub_diag_magSensorWriteSendCmd(YAS537_REG_ADCCALR + 1, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    /* TRMR Temperature rev */
+    setData = 0xFF;
+    ret = shub_diag_magSensorWriteSendCmd(YAS537_REG_TRMR, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    /* CONFR coil data setting */
+    ret = shub_diag_mag_set_coil();
+    if(ret != 0) {
+        return -1;
+    }
+    /* INTRVLR Interval */
+    setData = 0x00;
+    ret = shub_diag_magSensorWriteSendCmd(YAS537_REG_INTRVLR, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    /* AVRR Average filter */
+    setData = 0x70;
+    ret = shub_diag_magSensorWriteSendCmd(YAS537_REG_AVRR, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+/* acc initial setting */
+static int shub_diag_acc_initialize(void)
+{
+    int ret;
+    uint8_t setData;
+
+    /* INT1_CTRL setting */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_INT1_CTRL, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    /* INT2_CTRL setting */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_INT2_CTRL, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    /* Accelerometer axis output enable */
+    setData = 0x38;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL9_XL, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    /* HR mode HPF disable */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_TAP_CFG, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    /* HP & LPF disable */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL8_XL, setData);
+    if(ret != 0) {
+        return -1;
+    }
+	/* Block data update enable */
+    setData = 0x44;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL3_C, setData);
+    if(ret != 0) {
+        return -1;
+    }
+	/* DA timer disable */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL4_C, setData);
+    if(ret != 0) {
+        return -1;
+    }
     
-    setData = offsetData[0];
-    ret = shub_diag_magSensorWriteSendCmd(YAS_PCB_ADDR_OFFSETX, setData);
+    return 0;
+}
+
+/* SHMDS_HUB_0103_14 add S */
+static int shub_diag_acc_self_test_initialize(void)
+{
+    int ret;
+    uint8_t setData;
+
+	/* CTRL1 setting */
+	setData = 0x30;
+	ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL1_XL, setData);
+	if(ret != 0) {
+        return -1;
+    }
+        
+    /* CTRL2 setting */
+	setData = 0x00;
+	ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL2_G, setData);
+	if(ret != 0) {
+        return -1;
+    }
+    
+	/* Block data update enable */
+    setData = 0x44;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL3_C, setData);
     if(ret != 0) {
         return -1;
     }
-    setData = offsetData[1];
-    ret = shub_diag_magSensorWriteSendCmd(YAS_PCB_ADDR_OFFSETY1, setData);
+    
+	/* DA timer disable */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL4_C, setData);
     if(ret != 0) {
         return -1;
     }
-    setData = offsetData[2];
-    ret = shub_diag_magSensorWriteSendCmd(YAS_PCB_ADDR_OFFSETY2, setData);
+    
+	/* LSM6DS3_ACC_GYRO_CTRL5_C disable */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL5_C, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    
+	/* LSM6DS3_ACC_GYRO_CTRL6_G disable */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL6_G, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    
+	/* LSM6DS3_ACC_GYRO_CTRL7_G disable */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL7_G, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    
+    /* HP & LPF disable */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL8_XL, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    
+    /* Accelerometer axis output enable */
+    setData = 0x38;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL9_XL, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    
+	/* LSM6DS3_ACC_GYRO_CTR10_C disable */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTR10_C, setData);
     if(ret != 0) {
         return -1;
     }
 
     return 0;
+}
+/* SHMDS_HUB_0103_14 add E */
+
+/* gyro initial setting */
+static int shub_diag_gyro_initialize(void)
+{
+    int ret;
+    uint8_t setData;
+
+    gyro_first_read_wait_flg = 1;
+
+    /* INT1_CTRL setting */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_INT1_CTRL, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    /* INT2_CTRL setting */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_INT2_CTRL, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    /* Sensitive setting */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL6_G, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    /* HPF enable */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL7_G, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    /* Gyroscope axis output enable */
+    setData = 0x38;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTR10_C, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    /* Block data update enable */
+    setData = 0x44;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL3_C, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    /* DA timer enabled */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL4_C, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+/* SHMDS_HUB_0103_14 add S */
+static int shub_diag_gyro_self_test_initialize(void)
+{
+    int ret;
+    uint8_t setData;
+
+    gyro_first_read_wait_flg = 1;
+
+    /* CTRL1_XL setting */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL1_XL, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    
+    /* CTRL2_G setting */
+    setData = 0x5C;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL2_G, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    
+    /* Block data update enable */
+    setData = 0x44;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL3_C, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    
+    /* DA timer enabled */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL4_C, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    
+    /* CTRL5_C setting */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL5_C, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    
+    /* Sensitive setting */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL6_G, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    
+    /* HPF enable */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL7_G, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    
+    /* CTRL8_XL setting */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL8_XL, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    
+    /* CTRL9_XL setting */
+    setData = 0x00;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL9_XL, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    
+    /* Gyroscope axis output enable */
+    setData = 0x38;
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTR10_C, setData);
+    if(ret != 0) {
+        return -1;
+    }
+    return 0;
+}
+/* SHMDS_HUB_0103_14 add E */
+
+/* cal data set */
+static int shub_diag_mag_calc_setting(const uint8_t *pu08Data)
+{
+    int i;
+    int ret;
+
+    for (i = 0; i < 3; i++) {
+        ret = shub_diag_magSensorWriteSendCmd(YAS537_REG_MTCR + i, pu08Data[i]);
+        if(ret != 0) {
+            return -1;
+        }
+        ret = shub_diag_magSensorWriteSendCmd(YAS537_REG_OXR + i, pu08Data[i + 12]);
+        if(ret != 0) {
+            return -1;
+        }
+    }
+    ret = shub_diag_magSensorWriteSendCmd(YAS537_REG_MTCR + i, (pu08Data[i] & 0xe0) | 0x10);
+    if(ret != 0) {
+        return -1;
+    }
+    ret = shub_diag_magSensorWriteSendCmd(YAS537_REG_HCKR, (pu08Data[15] >> 3) & 0x1e);
+    if(ret != 0) {
+        return -1;
+    }
+    ret = shub_diag_magSensorWriteSendCmd(YAS537_REG_LCKR, (pu08Data[15] << 1) & 0x1e);
+    if(ret != 0) {
+        return -1;
+    }
+    ret = shub_diag_magSensorWriteSendCmd(YAS537_REG_OCR, pu08Data[16] & 0x3f);
+    if(ret != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+/* cal data read */
+static void shub_diag_mag_calc_correction(const uint8_t *pu08Data)
+{
+    int i;
+//    int16_t a[3];
+
+    ysaCalData.cxy1y2[0] = ((pu08Data[0] << 1) | (pu08Data[1] >> 7)) - 256;
+    ysaCalData.cxy1y2[1] = (((pu08Data[1] << 2) & 0x1fc) | (pu08Data[2] >> 6)) - 256;
+    ysaCalData.cxy1y2[2] = (((pu08Data[2] << 3) & 0x1f8) | (pu08Data[3] >> 5)) - 256;
+    ysaCalData.a2 = (((pu08Data[3] << 2) & 0x7c) | (pu08Data[4] >> 6)) - 64;
+    ysaCalData.a3 = (((pu08Data[4] << 1) & 0x7e) | (pu08Data[5] >> 7)) - 64;
+    ysaCalData.a4 = (((pu08Data[5] << 1) & 0xfe) | (pu08Data[6] >> 7)) - 128;
+    ysaCalData.a5 = (((pu08Data[6] << 2) & 0x1fc)| (pu08Data[7] >> 6)) - 112;
+    ysaCalData.a6 = (((pu08Data[7] << 1) & 0x7e) | (pu08Data[8] >> 7)) - 64;
+    ysaCalData.a7 = (((pu08Data[8] << 1) & 0xfe) | (pu08Data[9] >> 7)) - 128;
+    ysaCalData.a8 = (pu08Data[9] & 0x7f) - 64;
+    ysaCalData.a9 = (((pu08Data[10] << 1) & 0x1fe) | (pu08Data[11] >> 7)) - 112;
+    ysaCalData.k = pu08Data[11] & 0x7f;
+//    a[0] = 128;
+//    a[1] = ysaCalData.a5;
+//    a[2] = ysaCalData.a9;
+    for (i = 0; i < 3; i++) {
+//        yas_overflow[i] = 8192 + ysaCalData.k * a[i] * (8192 - SHUB_ABS(ysaCalData.cxy1y2[i]) * 325 / 16 - 192) / 8192;
+//        yas_underflow[i] = 8192 - ysaCalData.k * a[i] * (8192 - SHUB_ABS(ysaCalData.cxy1y2[i]) * 325 / 16 - 192) / 8192;
+//        if (YAS537_DATA_OVERFLOW < yas_overflow[i]) {
+            yas_overflow[i] = YAS537_DATA_OVERFLOW;
+//        }
+//        if (yas_underflow[i] < YAS537_DATA_UNDERFLOW) {
+            yas_underflow[i] = YAS537_DATA_UNDERFLOW;
+//        }
+    }
+}
+
+/* cal data read setting */
+static int shub_diag_mag_read_cal(void)
+{
+    int i;
+    int ret;
+    int cal_valid = 1;
+    uint8_t resData[2];
+
+    if(read_cal_init_flg == 0) {
+        cal_valid = 0;
+        memset(calRegData, 0, sizeof(calRegData));
+        memset(resData, 0, sizeof(resData));
+        for(i = 0; i < YAS_CAL_REG_NUM; i++)
+        {
+            ret = shub_diag_magSensorReadSendCmd(YAS537_REG_CALR + i, resData);
+            if(ret != 0) {
+                printk("[shub]%s read err.\n", __func__);
+                return -1;
+            }
+            calRegData[i] = resData[0];
+        }
+
+        /* cal register check */
+        for (i = 0; i < YAS_CAL_REG_NUM; i++) {
+            if(i < YAS_CAL_REG_NUM - 1) {
+                if (calRegData[i] != 0x00) {
+                    cal_valid = 1;
+                }
+            }
+            else {
+                if ((calRegData[i] & 0x3F) != 0x00) {
+                    cal_valid = 1;
+                }
+            }
+        }
+        /* ysaCalData set */
+        if (cal_valid) {
+            ysaCalData.ver = calRegData[16] >> 6;
+            if(ysaCalData.ver == 1) {
+                shub_diag_mag_calc_correction(calRegData);
+                read_cal_init_flg = 1;
+            }
+        }
+    }
+
+    /* cal register set */
+    if (cal_valid) {
+        if(ysaCalData.ver == 1) {
+            ret = shub_diag_mag_calc_setting(calRegData);
+            if(ret == 0) {
+                return 0;
+            }
+        }
+    }
+
+    printk("[shub]%s check err. cal_valid=%d cal_ver=%d\n", __func__, cal_valid, ysaCalData.ver);
+    return -1;
 }
 
 /* Accelerometer mode setting */
@@ -516,14 +755,14 @@ static int shub_diag_acc_mode_change(int mode)
 
     if(mode){
         /* power mode(Accelerometer data out) */
-        setData = 0xD4;
+        setData = 0x78;
     }
     else{
         /* power down mode */
         setData = 0x00;
     }
     /* Accelerometer mode setting */
-    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS0_ACC_GYRO_CTRL_REG6_XL, setData);
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL1_XL, setData);
     if(ret != 0) {
         return -1;
     }
@@ -538,7 +777,7 @@ static int shub_diag_gyro_mode_change(int mode)
 
     if(mode){
         /* power mode(Gyroscope data out) */
-        setData = 0xD8;
+        setData = 0x7C;
     }
     else{
         /* power down mode */
@@ -546,65 +785,10 @@ static int shub_diag_gyro_mode_change(int mode)
         gyro_first_read_wait_flg = 1;
     }
     /* Gyroscope mode setting */
-    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS0_ACC_GYRO_CTRL_REG1_G, setData);
+    ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL2_G, setData);
     if(ret != 0) {
         return -1;
     }
-    return 0;
-}
-
-/* mag measure one time */
-static int shub_diag_mag_measure(int32_t* magData, int* temperature, uint8_t cmd)
-{
-    int cnt;
-    int ret;
-    uint8_t mesData[YAS_PCB_MEASURE_DATA_REG_NUM + 1];
-    uint8_t setData;
-    uint8_t resData[2];
-    
-    /* measure start */
-    setData = cmd;
-    ret = shub_diag_magSensorWriteSendCmd(YAS_PCB_ADDR_MEASURE_COMMAND, setData);
-    if(ret != 0) {
-        return -1;
-    }
-    
-    memset(resData, 0, sizeof(resData));
-    /* measure complete wait */
-    for(cnt = 0; cnt < 100; cnt++){
-        usleep(100);
-        ret = shub_diag_magSensorReadSendCmd(YAS_PCB_ADDR_MEASURE_DATA, resData);
-        if(ret != 0) {
-            printk("[shub]%s err.\n", __func__);
-            return -1;
-        }
-        if(resData[0] & 0x80){
-            printk("[shub]%s measurement now. cnt=%d\n", __func__, cnt);
-            ret = -1;
-        }
-        else{
-            ret = 0;
-            break;
-        }
-    }
-    if(ret != 0) {
-        printk("[shub]%s measure timeout.\n", __func__);
-        return -1;
-    }
-    
-    usleep(1500);
-    
-    memset(mesData, 0, sizeof(mesData));
-    ret = shub_diag_sensorMultiReadSendCmd(YAS_PCB_ADDR_MEASURE_DATA, mesData, YAS532_SLAVE_ADDRESS, YAS_PCB_MEASURE_DATA_REG_NUM);
-    if((ret != 0) || (mesData[0] != 0)) {
-        printk("[shub]%s measurement read err.ret=%d %d\n", __func__, ret, mesData[0]);
-        return -1;
-    }
-    *temperature = (((int32_t)(mesData[1] & 0x7F) << 3) | ((mesData[2] >> 5) & 0x07));
-    magData[0] = (int32_t)(((int32_t)(mesData[3] & 0x7F) << 6) | ((mesData[4] >> 2) & 0x3F));
-    magData[1] = (int32_t)(((int32_t)(mesData[5] & 0x7F) << 6) | ((mesData[6] >> 2) & 0x3F));
-    magData[2] = (int32_t)(((int32_t)(mesData[7] & 0x7F) << 6) | ((mesData[8] >> 2) & 0x3F));
-
     return 0;
 }
 
@@ -615,7 +799,7 @@ static int shub_diag_acc_measure(int16_t* accData)
     uint8_t mesData[9];
 
     memset(mesData, 0, sizeof(mesData));
-    ret = shub_diag_sensorMultiReadSendCmd(LSM6DS0_ACC_GYRO_OUT_X_L_XL, mesData, LSM6DS0_SLAVE_ADDRESS, 6);
+    ret = shub_diag_sensorMultiReadSendCmd(LSM6DS3_ACC_GYRO_OUT_X_L_XL, mesData, LSM6DS3_SLAVE_ADDRESS, 6);
     if((ret != 0) || (mesData[0] != 0)) {
         printk("[shub]%s measurement read err.ret=%d %d\n", __func__, ret, mesData[0]);
         return -1;
@@ -634,7 +818,7 @@ static int shub_diag_gyro_measure(int16_t* gyroData)
     uint8_t mesData[9];
 
     memset(mesData, 0, sizeof(mesData));
-    ret = shub_diag_sensorMultiReadSendCmd(LSM6DS0_ACC_GYRO_OUT_X_L_G, mesData, LSM6DS0_SLAVE_ADDRESS, 6);
+    ret = shub_diag_sensorMultiReadSendCmd(LSM6DS3_ACC_GYRO_OUT_X_L_G, mesData, LSM6DS3_SLAVE_ADDRESS, 6);
     if((ret != 0) || (mesData[0] != 0)) {
         printk("[shub]%s measurement read err.ret=%d %d\n", __func__, ret, mesData[0]);
         return -1;
@@ -646,110 +830,6 @@ static int shub_diag_gyro_measure(int16_t* gyroData)
     return 0;
 }
 
-/* offset adjust value calc */
-static int shub_diag_mag_offset_adjust_calc(void)
-{
-    int ret = 0;
-    int i;
-    int k;
-    int temperature;
-    int8_t offsetCorrect = YAS_PCB_HARD_OFFSET_CORRECT;
-    int32_t magData[3];
-    uint8_t offsetData[3];
-    
-    memset(offsetData, 0, sizeof(offsetData));
-    ret = shub_diag_mag_set_offset_data(offsetData);
-    if(ret != 0) {
-        return -1;
-    }
-
-    for(i = 0; i < YAS_PCB_COIL_INIT_CALC_NUM; i++){
-        temperature = 0;
-        memset(magData, 0, sizeof(magData));
-        ret = shub_diag_mag_measure(magData, &temperature, YAS_PCB_MEASURE_COMMAND_START);
-        if(ret != 0) {
-            break;
-        }
-        for(k = 0; k < 3; k++){
-            if(YAS532_RAWDATA_CENTER < magData[k]){
-                offsetData[k] += offsetCorrect;
-                ret = 0;
-            }
-            else if(magData[k] < YAS532_RAWDATA_CENTER){
-                offsetData[k] -= offsetCorrect;
-                ret = 0;
-            }
-            else{
-                ret += 1;
-            }
-        }
-        if(ret == 3){
-            break;
-        }
-        ret = shub_diag_mag_set_offset_data(offsetData);
-        if(ret != 0) {
-            break;
-        }
-        offsetCorrect = (int8_t)((uint8_t)offsetCorrect >> 1);
-    }
-
-    return ret;
-}
-
-/* temperature revision and coordinate change  */
-static void shub_diag_mag_data_revision(int32_t* mesData, int temperature, int32_t* revData)
-{
-    int32_t s32Sx  = mesData[0] - ((gstCorrect.s32Cx  * temperature) / 1000);
-    int32_t s32Sy1 = mesData[1] - ((gstCorrect.s32Cy1 * temperature) / 1000);
-    int32_t s32Sy2 = mesData[2] - ((gstCorrect.s32Cy2 * temperature) / 1000);
-    int32_t s32Sy  =  s32Sy1 - s32Sy2;
-    int32_t s32Sz  = -s32Sy1 - s32Sy2;
-
-/* SHMDS_HUB_0103_06 add S */
-    revData[0] = (gstCorrect.s32K
-             * ((100 * s32Sx)
-             + (gstCorrect.s32A2 * s32Sy)
-             + (gstCorrect.s32A3 * s32Sz))) / 10;
-    revData[1] = (gstCorrect.s32K
-             * ((gstCorrect.s32A4 * s32Sx)
-             + (gstCorrect.s32A5 * s32Sy)
-             + (gstCorrect.s32A6 * s32Sz))) / 10;
-    revData[2] = (gstCorrect.s32K
-             * ((gstCorrect.s32A7 * s32Sx)
-             + (gstCorrect.s32A8 * s32Sy)
-             + (gstCorrect.s32A9 * s32Sz))) / 10;
-
-    revData[0] = revData[0] / 1000;
-    revData[1] = revData[1] / 1000;
-    revData[2] = revData[2] / 1000;
-/* SHMDS_HUB_0103_06 add E */
-}
-
-/* check overflow and underflow */
-static int shub_diag_mag_is_flow_occued(int32_t* mesData, int32_t underflow, int32_t overflow)
-{
-    int ret = 0;
-    int32_t s32Tmp;
-    uint8_t i;
-
-    for (i = 0; i < 3; i++) {
-        s32Tmp = mesData[i];
-        if (s32Tmp <= underflow){
-            printk("[shub]%s underflow err.\n", __func__);
-            ret = -1;
-        }
-        else{
-            if (overflow <= s32Tmp){
-                printk("[shub]%s overflow err.\n", __func__);
-                ret = -1;
-            }
-        }
-    }
-
-    return ret;
-}
-
-
 /* collect mag initial setting */
 static int shub_diag_mag_initialize_collect(void)
 {
@@ -759,79 +839,225 @@ static int shub_diag_mag_initialize_collect(void)
     if(ret != 0) {
         return -1;
     }
-    /* cal data read */
+    /* cal data read setting */
     ret = shub_diag_mag_read_cal();
     if(ret != 0) {
         return -1;
     }
-    /* config data setting */
-    ret = shub_diag_mag_set_config();
-    if(ret != 0) {
-        return -1;
-    }
-    /* coil data setting */
-    ret = shub_diag_mag_set_coil();
-    if(ret != 0) {
-        return -1;
-    }
-    /* offset adjust value calc */
-    ret = shub_diag_mag_offset_adjust_calc();
+    /* mag initial2 setting */
+    ret = shub_diag_mag_initialize_2();
     if(ret != 0) {
         return -1;
     }
     return 0;
 }
 
-/* magnetic field data measure(continuation call) */
-static int shub_diag_mag_data_measure_cont(int32_t* revData)
+/* get_port_pa2_val */
+static int shub_diag_mag_get_port_out_pa2(uint8_t *port_val)
+{
+    int32_t ret;
+    uint8_t prm[16];
+    uint8_t resData[8];
+
+    memset(prm, 0, sizeof(prm));
+    ret = shub_direct_sendcmd(HC_MCU_GET_PORT_OUT, prm);
+    shub_direct_multi_get_result(resData);
+    if(ret != 0) {
+        printk("[shub]%s error ret=%d\n", __func__, ret);
+        return -1;
+    }
+    *port_val = resData[2];
+    DBG_DIAG_IO("shub_diag_mag_get_port_out_pa2 A0=%d,A1=%d,A2=%d,A3=%d\n", resData[0], resData[1], resData[2], resData[3]);
+    return 0;
+}
+
+/* mag measure start */
+static int shub_diag_mag_measure(uint8_t* mesData, uint8_t cmd, int portCheck)
 {
     int ret;
-    int temperature;
-    int32_t mesData[3];
+    int busy;
+    int busy_cnt;
+    int port_cnt;
+    uint8_t resData[2];
+    uint8_t get_pa2_val;
 
-    if(isFlowFlg){
-        /* coil data setting */
-        ret = shub_diag_mag_set_coil();
-        if(ret != 0) {
-            return -1;
-        }
-        /* offset adjust value calc */
-        ret = shub_diag_mag_offset_adjust_calc();
-        if(ret != 0) {
-            return -1;
-        }
-    }
-    /* mag measure one time */
-    ret = shub_diag_mag_measure(mesData, &temperature, YAS_PCB_MEASURE_COMMAND_START);
+    ret = shub_diag_magSensorWriteSendCmd(YAS537_REG_CMDR, cmd);
     if(ret != 0) {
+        printk("[shub]%s measure start err.\n", __func__);
         return -1;
     }
-    /* temperature revision and coordinate change  */
-    temperature = (temperature - YAS532_TEMP20DEGREE_TYPICAL) * 10;			// SHMDS_HUB_0103_10 add
-    shub_diag_mag_data_revision(mesData, temperature, revData);
-    /* check overflow and underflow */
-    ret = shub_diag_mag_is_flow_occued(mesData, 0, YAS532_RAWDATA_OVERFLOW);
-    if(ret != 0) {
-        isFlowFlg = 1;
+    /* wait 2ms */
+    usleep(2000);
+    busy_cnt = 0;
+    do {
+        if(busy_cnt >= YAS537_BUSY_RETRY_MAX) {
+            printk("[shub]%s measure busy retry over.\n", __func__);
+            return -1;
+        }
+        if(portCheck) {
+            /* INT PIN check "L" */
+            port_cnt = 0;
+            do {
+                if(port_cnt >= SHUB_INT_PIN_CHECK_RETRY_MAX) {
+                    printk("[shub]%s INT PIN is not LOW. retry out.\n", __func__);
+                    return -1;
+                }
+                else {
+                    if(port_cnt > 0) {
+                        usleep(SHUB_INT_PIN_CHECK_TIME_US);
+                    }
+                    port_cnt++;
+                }
+                get_pa2_val = 255;
+                ret = shub_diag_mag_get_port_out_pa2(&get_pa2_val);
+                if(ret != 0) {
+                    printk("[shub]%s get port out err.\n", __func__);
+                    return -1;
+                }
+            } while(get_pa2_val != 0);
+        }
+        /* F_MB reg read */
+        memset(resData, 0, sizeof(resData));
+        ret = shub_diag_magSensorReadSendCmd(YAS537_REG_DATAR + 2, resData);
+        if(ret != 0) {
+            printk("[shub]%s F_MB reg read err.ret=%d\n", __func__, ret);
+            return -1;
+        }
+        busy = resData[0] >> 7;
+        busy_cnt++;
+    } while(busy != 0);
+    
+    /* measure read */
+    memset(mesData, 0, YAS_PCB_MEASURE_DATA_REG_NUM + 1);
+    ret = shub_diag_sensorMultiReadSendCmd(YAS537_REG_DATAR, mesData, YAS537_SLAVE_ADDRESS, YAS_PCB_MEASURE_DATA_REG_NUM);
+    if((ret != 0) || (mesData[0] != 0)) {
+        printk("[shub]%s measurement read err.ret=%d %d\n", __func__, ret, mesData[0]);
+        return -1;
     }
+
     return 0;
 }
 
-/* magnetic field data measure(one time call) */
+/* mag measure rcoil data check */
+static int invalid_magnetic_field(uint16_t *cur, uint16_t *last)
+{
+    int16_t invalid_thresh[] = {1500, 1500, 1500};
+    int i;
+    int ret = 0;
+
+    for (i = 0; i < 3; i++) {
+        if(ysa_rcoil_first_set_flg) {
+            if (invalid_thresh[i] < SHUB_ABS(cur[i] - last[i])) {
+                DBG_DIAG_IO("invalid_magnetic_field i=%d,cur=%d,last%d,div=%d\n", i, cur[i], last[i], SHUB_ABS(cur[i] - last[i]));
+                ret = 1;
+            }
+        }
+        last[i] = cur[i];
+    }
+    ysa_rcoil_first_set_flg = 1;
+    return ret;
+}
+
+/* magnetic field data measure */
 static int shub_diag_mag_data_measure(int32_t* revData)
 {
+    int mes_cnt;
+    int i;
     int ret;
-    int temperature;
-    int32_t mesData[3];
+    int rcoil;
+    int ouflow_flg;
+    int rcoil_setting = 0;
+    uint8_t mesData[YAS_PCB_MEASURE_DATA_REG_NUM + 1];
+//    uint16_t temperature;
+    uint16_t xy1y2[3];
+    int32_t h[3];
+    int32_t s[3];
+    
+    for(mes_cnt = 0; mes_cnt <= YAS537_RCOIL_RETRY_MAX; mes_cnt++) {
+        if(rcoil_setting) {
+            DBG_DIAG_IO("---Mag measurement retry[%d](cause=%d)\n", mes_cnt, rcoil_setting);
+            /* wait */
+            usleep(YAS537_RCOIL_RETRY_TIME_US);
+            /* coil data setting */
+            ret = shub_diag_mag_set_coil();
+            if(ret != 0) {
+                printk("[shub]%s coil data setting err.\n", __func__);
+                return -1;
+            }
+            rcoil_setting = 0;
+        }
+        /* mag measure start */
+        ret = shub_diag_mag_measure(mesData, YAS_PCB_MEASURE_COMMAND_START, 0);
+        if(ret != 0) {
+            return -1;
+        }
+        rcoil = (mesData[2+1] >> 6) & 0x01;
+//        temperature = (uint16_t)((mesData[0+1] << 8) | mesData[1+1]);
+        xy1y2[0] = (uint16_t)(((mesData[2+1] & 0x3f) << 8) | mesData[3+1]);
+        xy1y2[1] = (uint16_t)((mesData[4+1] << 8) | mesData[5+1]);
+        xy1y2[2] = (uint16_t)((mesData[6+1] << 8) | mesData[7+1]);
+        /* rcoil check */
+        if(rcoil == 0) {
+            if(invalid_magnetic_field(xy1y2, ysa_last_after_rcoil)) {
+                rcoil_setting = 1;
+                continue ;
+            }
+        }
+        /* raw data flow check */
+        ouflow_flg = 0;
+        for (i = 0; i < 3; i++) {
+            if (yas_overflow[i] <= xy1y2[i]) {
+                ouflow_flg = 1;
+                break;
+            }
+            if (xy1y2[i] <= yas_underflow[i]) {
+                ouflow_flg = 2;
+                break;
+            }
+        }
+        if(ouflow_flg == 1) {
+            rcoil_setting = 2;
+            continue ;
+        }
+        else if(ouflow_flg == 2) {
+            rcoil_setting = 3;
+            continue ;
+        }
+        DBG_DIAG_IO("Mag mes(raw   ),x=%d,y1=%d,y2=%d\n", xy1y2[0], xy1y2[1], xy1y2[2]);
+        if (ysaCalData.ver == 1) {
+            /* coordinate change  */
+            for (i = 0; i < 3; i++) {
+                s[i] = xy1y2[i] - 8192;
+            }
+            h[0] = (ysaCalData.k * (128*s[0] + ysaCalData.a2*s[1] + ysaCalData.a3*s[2])) / 8192;
+            h[1] = (ysaCalData.k * (ysaCalData.a4*s[0] + ysaCalData.a5*s[1] + ysaCalData.a6*s[2])) / 8192;
+            h[2] = (ysaCalData.k * (ysaCalData.a7*s[0] + ysaCalData.a8*s[1] + ysaCalData.a9*s[2])) / 8192;
+            /* change data flow check */
+            for (i = 0; i < 3; i++) {
+                if (h[i] < -8192) {
+                    h[i] = -8192;
+                }
+                if (8191 < h[i]) {
+                    h[i] = 8191;
+                }
+                xy1y2[i] = h[i] + 8192;
+            }
+            /* xy1y2 to xyz(uT) change */
+            revData[0] = ((xy1y2[0]) * 300) / 1000;
+            revData[1] = ((xy1y2[1] - xy1y2[2]) * 1732 / 10) / 1000;
+            revData[2] = ((-xy1y2[1] - xy1y2[2]) * 300) / 1000;
 
-    /* mag measure one time */
-    ret = shub_diag_mag_measure(mesData, &temperature, YAS_PCB_MEASURE_COMMAND_START);
-    if(ret != 0) {
-        return -1;
+            DBG_DIAG_IO("Mag mes(rawchg),x=%d,y1=%d,y2=%d, mes(uT),x=%d,y=%d,z=%d\n", xy1y2[0], xy1y2[1], xy1y2[2], revData[0], revData[1], revData[2]);
+            return 0;
+        }
+        else {
+            printk("[shub]%s cal_ver=%d err.\n", __func__, ysaCalData.ver);
+            return -1;
+        }
     }
-    /* temperature revision and coordinate change  */
-    shub_diag_mag_data_revision(mesData, temperature, revData);
-    return 0;
+
+    printk("[shub]%s Mag measure retry over.\n", __func__);
+    return -1;
 }
 
 /* acc data measure */
@@ -885,67 +1111,383 @@ static int shub_diag_gyro_data_measure(int16_t* revData)
     return 0;
 }
 
+/* SHMDS_HUB_0103_14 add S */
+static int shub_diag_acc_self_test_check(int16_t* accData)
+{
+	int i;
+	int ret;
+	int dis_ret;
+	int16_t out_nost[SELF_TEST_ACC_READTIMES + 1][3];
+	int16_t out_st[SELF_TEST_ACC_READTIMES + 1][3];
+	uint8_t setData;
+	
+	memset(out_nost, 0, sizeof(out_nost));
+	memset(out_st, 0, sizeof(out_st));
+	
+	ret = shub_diag_acc_self_test_initialize();
+	if(ret){
+		printk("[%d][shub]%s  initialize  err\n", __LINE__, __func__);
+		return -1;
+	}
+	
+	msleep(200);	
+	
+	ret = shub_diag_acc_self_test_average(out_nost);
+	if(ret){
+		printk("[%d][shub]%s  test_average  nost  error\n", __LINE__, __func__);
+		return -1;
+	}
+		
+	setData = 0x01;
+	ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL5_C, setData);
+	if(ret != 0) {
+        return -1;
+    }
+    
+    msleep(200);
+		
+	ret = shub_diag_acc_self_test_average(out_st);
+	if(ret){
+		printk("[%d][shub]%s  test_average  st  error\n", __LINE__, __func__);
+		return -1;
+	}
+
+	for(i=0;i < SELF_TEST_ACC_READTIMES; i++ ) {
+		DBG_DIAG_IO("[%d]%s  out_nost[%d][0]:%d  [1]:%d  [2]:%d\n", __LINE__, __func__, i, out_nost[i][0], out_nost[i][1], out_nost[i][2]);
+	}
+	for( i=0; i < SELF_TEST_ACC_READTIMES + 1; i++ ) {
+		if( i == SELF_TEST_ACC_READTIMES) {
+			DBG_DIAG_IO("[%d]%s  AVERAGE out_nost[0]:%d  [1]:%d  [2]:%d\n", __LINE__, __func__, out_nost[i][0], out_nost[i][1], out_nost[i][2]);
+			DBG_DIAG_IO("[%d]%s  AVERAGE out_st[0]:%d  [1]:%d  [2]:%d\n", __LINE__, __func__, out_st[i][0], out_st[i][1], out_st[i][2]);
+		} else{
+		DBG_DIAG_IO("[%d]%s  out_st[%d][0]:%d  [1]:%d  [2]:%d\n", __LINE__, __func__, i, out_st[i][0], out_st[i][1], out_st[i][2]);
+		}
+	}
+	
+
+	for( i = 0; i < 3; i++ ) {
+		accData[i] = abs( out_st[SELF_TEST_ACC_READTIMES][i] - out_nost[SELF_TEST_ACC_READTIMES][i] );
+		DBG_DIAG_IO("[%d]%s  accData[%d]:%d\n", __LINE__, __func__, i, accData[i]);
+	}
+		
+	if (( ( ACC_MIN_ST <= accData[0] ) && ( ACC_MAX_ST >= accData[0] ) ) &&
+		( ( ACC_MIN_ST <= accData[1] ) && ( ACC_MAX_ST >= accData[1] ) ) &&
+		( ( ACC_MIN_ST <= accData[2] ) && ( ACC_MAX_ST >= accData[2] ) ) ) {
+		/* OK */
+        printk("[%d][shub]%s  self  test  OK.\n", __LINE__, __func__ );
+        ret = 0;
+	} else {
+		/* NG */
+        printk("[%d][shub]%s  self  test  NG.\n", __LINE__, __func__ );
+        ret = -2;
+	}
+
+	DBG_DIAG_IO("%s min(ST_X)=%d, |OUTX_ST-OUTX_NOST|=%d, max(ST_X)=%d\n", __func__, ACC_MIN_ST, accData[0], ACC_MAX_ST );
+	DBG_DIAG_IO("%s min(ST_Y)=%d, |OUTY_ST-OUTY_NOST|=%d, max(ST_Y)=%d\n", __func__, ACC_MIN_ST, accData[1], ACC_MAX_ST );
+	DBG_DIAG_IO("%s min(ST_Z)=%d, |OUTZ_ST-OUTZ_NOST|=%d, max(ST_Z)=%d\n", __func__, ACC_MIN_ST, accData[2], ACC_MAX_ST );
+	
+	/* CTRL1 setting */
+	dis_ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL1_XL, 0x00 );
+	if(dis_ret != 0) {
+		printk("[%d][shub]%s  CTRL1  disable_error\n", __LINE__, __func__);
+        return dis_ret;
+    }
+
+	/* LSM6DS3_ACC_GYRO_CTRL5_C disable */
+    dis_ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL5_C, 0x00);
+    if(dis_ret != 0) {
+        printk("[%d][shub]%s CTRL5 disable_error\n", __LINE__, __func__);
+        return dis_ret;
+    }
+    
+    dis_ret = shub_diag_acc_initialize();
+	if(dis_ret != 0){
+		printk("[%d][shub]%s  end_initialize  err\n", __LINE__, __func__);
+		return dis_ret;
+	}
+    return ret;
+}
+
+static int shub_diag_acc_self_test_average(int16_t data[][3])
+{
+	int acc_cnt = 0;
+	int ret;
+	uint8_t readData[2];
+	int32_t sumData[3];
+	uint8_t check_init_flg = 1;
+	
+	memset(sumData, 0, sizeof(sumData));
+		
+	while(check_init_flg){
+		
+		ret = shub_diag_accGyroSensorReadSendCmd(LSM6DS3_ACC_GYRO_STATUS_REG,readData);
+		
+		if(CHECK_ACC_REG & readData[0]){
+			ret = shub_diag_acc_measure(data[acc_cnt]);
+			if(ret){
+				printk("[%d][shub]%s  acc_measure  err\n", __LINE__, __func__);
+				return -1;
+			}
+			check_init_flg = 0;
+		}
+	}
+	
+	while(acc_cnt != SELF_TEST_ACC_READTIMES){
+		
+		ret = shub_diag_accGyroSensorReadSendCmd(LSM6DS3_ACC_GYRO_STATUS_REG,readData);
+		
+		if(CHECK_ACC_REG & readData[0]){
+			ret = shub_diag_acc_measure(data[acc_cnt]);
+			if(ret){
+				printk("[%d][shub]%s  acc_measure  err\n", __LINE__, __func__);
+				return -1;
+			}
+			
+			sumData[0] += data[acc_cnt][0];
+			sumData[1] += data[acc_cnt][1];
+			sumData[2] += data[acc_cnt][2];
+			acc_cnt++;
+		}
+	}
+	
+	data[SELF_TEST_ACC_READTIMES][0] = sumData[0] / SELF_TEST_ACC_READTIMES;
+	data[SELF_TEST_ACC_READTIMES][1] = sumData[1] / SELF_TEST_ACC_READTIMES;
+	data[SELF_TEST_ACC_READTIMES][2] = sumData[2] / SELF_TEST_ACC_READTIMES;
+	
+	return 0;
+}
+
+static int shub_diag_gyro_self_test_check(int16_t* gyroData)
+{
+	int i;
+	int ret;
+	int dis_ret;
+	int16_t out_nost[SELF_TEST_GYRO_READTIMES + 1][3];
+	int16_t out_st[SELF_TEST_GYRO_READTIMES + 1][3];
+	uint8_t setData;
+	
+	memset(out_nost, 0, sizeof(out_nost));
+	memset(out_st, 0, sizeof(out_st));
+	
+	ret = shub_diag_gyro_self_test_initialize();
+	if(ret){
+		printk("[%d][shub]%s  initialize  err\n", __LINE__, __func__);
+		return -1;
+	}
+	
+	msleep(800);
+	
+	ret = shub_diag_gyro_self_test_average(out_nost);
+	if(ret){
+		printk("[%d][shub]%s  test_average  nost  error\n", __LINE__, __func__);
+		return -1;
+	}
+	
+	setData = 0x04;
+	ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL5_C, setData);
+	if(ret != 0) {
+        return -1;
+    }
+    
+    msleep(60);
+	
+	ret = shub_diag_gyro_self_test_average(out_st);
+	if(ret){
+		printk("[%d][shub]%s  test_average  error\n", __LINE__, __func__);
+		return -1;
+	}
+
+	for(i=0;i < SELF_TEST_GYRO_READTIMES; i++ ) {
+		DBG_DIAG_IO("[%d]%s  out_nost[%d][0]:%d  [1]:%d  [2]:%d\n", __LINE__, __func__, i, out_nost[i][0], out_nost[i][1], out_nost[i][2]);
+	}
+	for(i=0;i < SELF_TEST_GYRO_READTIMES + 1; i++ ) {
+		if(SELF_TEST_GYRO_READTIMES) {
+			DBG_DIAG_IO("[%d]%s  AVERAGE out_nost[0]:%d  [1]:%d  [2]:%d\n", __LINE__, __func__, out_nost[i][0], out_nost[i][1], out_nost[i][2]);
+			DBG_DIAG_IO("[%d]%s  AVERAGE out_st[0]:%d  [1]:%d  [2]:%d\n", __LINE__, __func__, out_st[i][0], out_st[i][1], out_st[i][2]);
+		} else{
+		DBG_DIAG_IO("[%d]%s  out_st[%d][0]:%d  [1]:%d  [2]:%d\n", __LINE__, __func__, i, out_st[i][0], out_st[i][1], out_st[i][2]);
+		}
+	}
+	
+	
+	for( i = 0; i < 3; i++ ) {
+		gyroData[i] = abs( out_st[SELF_TEST_GYRO_READTIMES][i] - out_nost[SELF_TEST_GYRO_READTIMES][i] );
+		DBG_DIAG_IO("[%d]%s  gyroData[%d]:%d\n", __LINE__, __func__, i, gyroData[i]);
+	}
+	
+	if (( ( GYRO_MIN_ST <= gyroData[0] ) && ( GYRO_MAX_ST >= gyroData[0] ) ) &&
+		( ( GYRO_MIN_ST <= gyroData[1] ) && ( GYRO_MAX_ST >= gyroData[1] ) ) &&
+		( ( GYRO_MIN_ST <= gyroData[2] ) && ( GYRO_MAX_ST >= gyroData[2] ) ) ) {
+		/* OK */
+        printk("[%d][shub]%s self test OK.\n", __LINE__, __func__ );
+        ret = 0;
+	} else {
+		/* NG */
+        printk("[%d][shub]%s self test NG.\n", __LINE__, __func__ );
+        ret = -2;
+	}
+	
+	DBG_DIAG_IO("%s min(ST_X)=%d, |OUTX_ST-OUTX_NOST|=%d, max(ST_X)=%d\n", __func__, GYRO_MIN_ST, gyroData[0], GYRO_MAX_ST );
+	DBG_DIAG_IO("%s min(ST_Y)=%d, |OUTY_ST-OUTY_NOST|=%d, max(ST_Y)=%d\n", __func__, GYRO_MIN_ST, gyroData[1], GYRO_MAX_ST );
+	DBG_DIAG_IO("%s min(ST_Z)=%d, |OUTZ_ST-OUTZ_NOST|=%d, max(ST_Z)=%d\n", __func__, GYRO_MIN_ST, gyroData[2], GYRO_MAX_ST );
+		
+	/* CTRL2 setting */
+	dis_ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL2_G, 0x00 );
+	if(dis_ret != 0) {
+        printk("[%d][shub]%s  CTRL2  disable_error\n", __LINE__, __func__);
+        return dis_ret;
+    }
+    
+	/* LSM6DS3_ACC_GYRO_CTRL5_C disable */
+    dis_ret = shub_diag_accGyroSensorWriteSendCmd(LSM6DS3_ACC_GYRO_CTRL5_C, 0x00);
+    if(dis_ret != 0) {
+        printk("[%d][shub]%s  CTRL5  disable_error\n", __LINE__, __func__);
+        return dis_ret;
+    }
+    
+    dis_ret = shub_diag_gyro_initialize();
+	if(dis_ret){
+		printk("[%d][shub]%s  end_initialize  err\n", __LINE__, __func__);
+		return dis_ret;
+	}
+    return ret;
+}
+
+static int shub_diag_gyro_self_test_average(int16_t data[][3])
+{
+	int gyro_cnt = 0;
+	int ret;
+	uint8_t readData[2];
+	int32_t sumData[3];
+	uint8_t check_init_flg = 1;
+	
+	memset(sumData, 0, sizeof(sumData));
+		
+	while(check_init_flg){
+		
+	ret = shub_diag_accGyroSensorReadSendCmd(LSM6DS3_ACC_GYRO_STATUS_REG,readData);
+		
+		if(CHECK_GYRO_REG & readData[0]){
+			ret = shub_diag_gyro_measure(data[gyro_cnt]);
+			if(ret){
+				printk("[%d][shub]%s  gyro_measure  err\n", __LINE__, __func__);
+				return -1;
+			}
+			check_init_flg = 0;
+		}
+	}
+	
+	while(gyro_cnt != SELF_TEST_GYRO_READTIMES){
+		
+		ret = shub_diag_accGyroSensorReadSendCmd(LSM6DS3_ACC_GYRO_STATUS_REG,readData);
+		
+		if(CHECK_GYRO_REG & readData[0]){
+			ret = shub_diag_gyro_measure(data[gyro_cnt]);
+			if(ret){
+				printk("[%d][shub]%s  acc_measure  err\n", __LINE__, __func__);
+				return -1;
+			}
+			
+			sumData[0] += data[gyro_cnt][0];
+			sumData[1] += data[gyro_cnt][1];
+			sumData[2] += data[gyro_cnt][2];
+			gyro_cnt++;
+		}
+	}
+	
+	data[SELF_TEST_GYRO_READTIMES][0] = sumData[0] / SELF_TEST_GYRO_READTIMES;
+	data[SELF_TEST_GYRO_READTIMES][1] = sumData[1] / SELF_TEST_GYRO_READTIMES;
+	data[SELF_TEST_GYRO_READTIMES][2] = sumData[2] / SELF_TEST_GYRO_READTIMES;
+	
+	return 0;
+}
+/* SHMDS_HUB_0103_14 add E */
+
 /* self test check */
 static int shub_diag_mag_self_test_check(int32_t *data)
 {
     int ret;
-    int sx;
-    int sy;
-    int temperature;
+    int sx = 0;
+    int sy = 0;
+    int port_cnt;
+    uint8_t get_pa2_val;
     uint8_t cmd;
-    int32_t mesDataP[3];
-    int32_t mesDataM[3];
+    uint8_t mesData[YAS_PCB_MEASURE_DATA_REG_NUM + 1];
+    int32_t dataP[3];
+    int32_t dataM[3];
 
-    /* initial setting */
+    /* mag initial setting */
     ret = shub_diag_mag_initialize();
     if(ret != 0) {
         return -1;
     }
-    /* cal data read */
+    /* cal data read setting */
     ret = shub_diag_mag_read_cal();
     if(ret != 0) {
         return -1;
     }
-    /* config data setting */
-    ret = shub_diag_mag_set_config();
+    /* mag initial2 setting */
+    ret = shub_diag_mag_initialize_2();
     if(ret != 0) {
         return -1;
     }
+    /* INT PIN check "H" */
+    port_cnt = 0;
+    do {
+        if(port_cnt >= SHUB_INT_PIN_CHECK_RETRY_MAX) {
+            printk("[shub]%s INT PIN is not HIGH. retry out.\n", __func__);
+            return -1;
+        }
+        else {
+            if(port_cnt > 0) {
+                usleep(SHUB_INT_PIN_CHECK_TIME_US);
+            }
+            port_cnt++;
+        }
+        get_pa2_val = 255;
+        ret = shub_diag_mag_get_port_out_pa2(&get_pa2_val);
+        if(ret != 0) {
+            printk("[shub]%s get port out err.\n", __func__);
+            return -1;
+        }
+    } while(get_pa2_val != 1);
 
-    /* coil data setting */
-    ret = shub_diag_mag_set_coil();
-    if(ret != 0) {
-        return -1;
-    }
-    /* offset adjust value calc */
-    ret = shub_diag_mag_offset_adjust_calc();
-    if(ret != 0) {
-        return -1;
-    }
-    /* mag measure */
+    /* mag measure plus */
     cmd = YAS_PCB_MEASURE_COMMAND_START | YAS_PCB_MEASURE_COMMAND_LDTC;
-    ret = shub_diag_mag_measure(mesDataP, &temperature, cmd);
+    ret = shub_diag_mag_measure(mesData, cmd, 1);
     if(ret != 0) {
         return -1;
     }
-    /* mag measure */
+    dataP[0] = (uint16_t)(((mesData[2+1] & 0x3f) << 8) | mesData[3+1]);
+    dataP[1] = (uint16_t)((mesData[4+1] << 8) | mesData[5+1]);
+    dataP[2] = (uint16_t)((mesData[6+1] << 8) | mesData[7+1]);
+    /* mag measure minus */
     cmd = YAS_PCB_MEASURE_COMMAND_START | YAS_PCB_MEASURE_COMMAND_LDTC | YAS_PCB_MEASURE_COMMAND_FORS;
-    ret = shub_diag_mag_measure(mesDataM, &temperature, cmd);
+    ret = shub_diag_mag_measure(mesData, cmd, 0);
     if(ret != 0) {
         return -1;
     }
-    /* NHX = k x (Xp-Xm)/1.8 */
-    sx = (int)(gstCorrect.s32K * 100 * (mesDataP[0] - mesDataM[0]));
-    sx /= 1000;
-    sx = (sx * 10) / 18;
-    /* NHY = k x a5 x (Yp-Ym)/1.8 */
-    sy = (int)(gstCorrect.s32K * gstCorrect.s32A5 * ((mesDataP[1] - mesDataM[1]) - (mesDataP[2] - mesDataM[2])));
-    sy /= 1000;
-    sy = (sy * 10) / 18;
-    /* 17<=NHX 22<=NHY */
-/* SHMDS_HUB_0103_05 mod S */
-    if((sx >= 17 * 10) && (sy >= 22 * 10)){
-/* SHMDS_HUB_0103_05 mod E */
+    dataM[0] = (uint16_t)(((mesData[2+1] & 0x3f) << 8) | mesData[3+1]);
+    dataM[1] = (uint16_t)((mesData[4+1] << 8) | mesData[5+1]);
+    dataM[2] = (uint16_t)((mesData[6+1] << 8) | mesData[7+1]);
+    
+    if (ysaCalData.ver == 1) {
+        /* MHx = 0.3 x (k/8192) x 128 x (Xp-Xm) */
+        /* NHX = MHx / 1.8 */
+        sx = ysaCalData.k * 128 * (dataP[0] - dataM[0]) / 8192 * 300;
+        sx /= 1000;
+        sx = (sx * 10) / 18;
+        /* MHy = 0.3 x (k/8192) x (a5 x (Y1p-Y1m)-a9 x (Y2p-Y2m))/sqrt(3) */
+        /* NHY = MHy / 1.8 */
+        sy = ysaCalData.k * (ysaCalData.a5 * (dataP[1] - dataM[1]) - ysaCalData.a9 * (dataP[2] - dataM[2])) / 8192 * 1732 / 10;
+        sy /= 1000;
+        sy = (sy * 10) / 18;
+    }
+    else {
+        printk("[shub]%s cal_ver=%d err.\n", __func__, ysaCalData.ver);
+    }
+    /* 24<=NHX 31<=NHY */
+    if((sx >= 24) && (sy >= 31)){
         /* OK */
         printk("[shub]%s self test OK. sx=%d sy=%d\n", __func__, sx, sy);
         ret = 0;
@@ -1214,7 +1756,7 @@ static long shub_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
                     }
                 }
                 if(res.rtn == 0){
-                    res.rtn = shub_diag_mag_data_measure_cont(&res.magData[0]);
+                    res.rtn = shub_diag_mag_data_measure(&res.magData[0]);
                 }
                 DBG_DIAG_IO("ioctl(cmd = Mag_Cont) : ret=%d, x=%d, y=%d, z=%d\n", 
                              res.rtn, res.magData[0],res.magData[1],res.magData[2]); // SHMDS_HUB_0701_01 add
@@ -1230,7 +1772,7 @@ static long shub_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
                 struct IoctlDiagRes res;
                 DBG_DIAG_IO("ioctl(cmd = Sensor_Init)\n"); // SHMDS_HUB_0701_01 add
                 memset(&res, 0, sizeof(struct IoctlDiagRes));
-                isFlowFlg = 0;
+                ysa_rcoil_first_set_flg = 0;
                 gyro_first_read_wait_flg = 1;
                 read_cal_init_flg = 0;
                 initial_gyro_flg = 0;
@@ -1254,18 +1796,18 @@ static long shub_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
                     }
                 }
                 if(res.rtn == 0){
-                    res.s32Cx = gstCorrect.s32Cx;
-                    res.s32Cy1 = gstCorrect.s32Cy1;
-                    res.s32Cy2 = gstCorrect.s32Cy2;
-                    res.s32A2 = gstCorrect.s32A2;
-                    res.s32A3 = gstCorrect.s32A3;
-                    res.s32A4 = gstCorrect.s32A4;
-                    res.s32A5 = gstCorrect.s32A5;
-                    res.s32A6 = gstCorrect.s32A6;
-                    res.s32A7 = gstCorrect.s32A7;
-                    res.s32A8 = gstCorrect.s32A8;
-                    res.s32A9 = gstCorrect.s32A9;
-                    res.s32K = gstCorrect.s32K;
+                    res.s32Cx = ysaCalData.cxy1y2[0];
+                    res.s32Cy1 = ysaCalData.cxy1y2[1];
+                    res.s32Cy2 = ysaCalData.cxy1y2[2];
+                    res.s32A2 = ysaCalData.a2;
+                    res.s32A3 = ysaCalData.a3;
+                    res.s32A4 = ysaCalData.a4;
+                    res.s32A5 = ysaCalData.a5;
+                    res.s32A6 = ysaCalData.a6;
+                    res.s32A7 = ysaCalData.a7;
+                    res.s32A8 = ysaCalData.a8;
+                    res.s32A9 = ysaCalData.a9;
+                    res.s32K = ysaCalData.k;
                 }
                 DBG_DIAG_IO("ioctl(cmd = Mag_Read_Cal) : ret=%d, data=...\n", res.rtn); // SHMDS_HUB_0701_01 add
                 ret = copy_to_user(argp, &res, sizeof(struct IoctlDiagMagCalData));
@@ -1436,6 +1978,42 @@ static long shub_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             }
             break;
 /* SHMDS_HUB_0103_06 add E */
+/* SHMDS_HUB_0103_14 add S */
+		case SHUB_DIAG_MES_ACC_SELF_TEST:
+            {
+				struct IoctlDiagRes res;
+                DBG_DIAG_IO("ioctl(cmd = ACC_SELF_TEST)\n");
+                memset(&res, 0, sizeof(struct IoctlDiagRes));
+				
+                res.rtn = shub_diag_acc_self_test_check(&res.accGyroData[0]);
+                
+                DBG_DIAG_IO("ioctl(cmd = ACC_SELF_TEST) : ret=%d, x=%d, y=%d, z=%d\n", 
+                             res.rtn, res.accGyroData[0], res.accGyroData[1], res.accGyroData[2]);
+                ret = copy_to_user(argp, &res, sizeof(struct IoctlDiagRes));
+                if (ret) {
+                    printk("error : shub_ioctl(cmd = SHUB_DIAG_MES_ACC_SELF_TEST)\n");
+                    return -EFAULT;
+                }
+            }
+            break;
+		case SHUB_DIAG_MES_GYRO_SELF_TEST:
+            {
+				struct IoctlDiagRes res;
+                DBG_DIAG_IO("ioctl(cmd = GYRO_SELF_TEST)\n");
+                memset(&res, 0, sizeof(struct IoctlDiagRes));
+				
+                res.rtn = shub_diag_gyro_self_test_check(&res.accGyroData[0]);
+                
+                DBG_DIAG_IO("ioctl(cmd = GYRO_SELF_TEST) : ret=%d, x=%d, y=%d, z=%d\n", 
+                             res.rtn, res.accGyroData[0], res.accGyroData[1], res.accGyroData[2]);
+                ret = copy_to_user(argp, &res, sizeof(struct IoctlDiagRes));             
+                if (ret) {
+                    printk("error : shub_ioctl(cmd = SHUB_DIAG_MES_GYRO_SELF_TEST)\n");
+                    return -EFAULT;
+                }
+            }
+            break;
+/* SHMDS_HUB_0103_14 add E */
         default:
             return -ENOTTY;
     }

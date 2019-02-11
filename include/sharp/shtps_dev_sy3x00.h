@@ -1,6 +1,6 @@
 /* include/sharp/shtps_dev_sy3x00.h
  *
- * Copyright (C) 2014 SHARP CORPORATION
+ * Copyright (C) 2015 SHARP CORPORATION
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -21,21 +21,33 @@
 #define SH_TOUCH_IF_DEVNAME 	"shtpsif"
 #define SH_TOUCH_IF_DEVPATH 	"/dev/shtpsif"
 
-#if defined(CONFIG_SHTPS_SY3000_TM3097_001)
+#if defined(CONFIG_SHTPS_SY3000_PLG541_001_1)
+	#define SHTPS_TM_TXNUM_MAX		24
+	#define SHTPS_TM_RXNUM_MAX		13
+#elif defined(CONFIG_SHTPS_SY3000_PLG541_001_2)
+	#define SHTPS_TM_TXNUM_MAX		24
+	#define SHTPS_TM_RXNUM_MAX		13
+#elif defined(CONFIG_SHTPS_SY3000_PLG543_001_1)
+	#define SHTPS_TM_TXNUM_MAX		22
+	#define SHTPS_TM_RXNUM_MAX		13
+#elif defined(CONFIG_SHTPS_SY3000_PLG543_001_2)
+	#define SHTPS_TM_TXNUM_MAX		22
+	#define SHTPS_TM_RXNUM_MAX		13
+#elif defined(CONFIG_SHTPS_SY3000_PLG543_001_3)
+	#define SHTPS_TM_TXNUM_MAX		22
+	#define SHTPS_TM_RXNUM_MAX		13
+#elif defined(CONFIG_SHTPS_SY3000_PLG543_001_4)
+	#define SHTPS_TM_TXNUM_MAX		22
+	#define SHTPS_TM_RXNUM_MAX		13
+#elif defined(CONFIG_SHTPS_SY3000_TM3097_001)
 	#define SHTPS_TM_TXNUM_MAX		30
 	#define SHTPS_TM_RXNUM_MAX		15
 #elif defined(CONFIG_SHTPS_SY3000_PLG475_001)
 	#define SHTPS_TM_TXNUM_MAX		26
 	#define SHTPS_TM_RXNUM_MAX		14
-#elif defined(CONFIG_SHTPS_SY3000_PLG485_001)
-	#define SHTPS_TM_TXNUM_MAX		28
-	#define SHTPS_TM_RXNUM_MAX		15
-#elif defined(CONFIG_SHTPS_SY3000_PLG480_001)
-	#define SHTPS_TM_TXNUM_MAX		28
-	#define SHTPS_TM_RXNUM_MAX		20
 #else
-	#define SHTPS_TM_TXNUM_MAX		30
-	#define SHTPS_TM_RXNUM_MAX		15
+	#define SHTPS_TM_TXNUM_MAX		19
+	#define SHTPS_TM_RXNUM_MAX		11
 #endif
 
 #define SHTPS_FINGER_MAX		5
@@ -109,6 +121,10 @@
 #define TPSDEV_WRITE_IMAGE_BUILTIN			_IOW ( TPS_IOC_MAGIC, 65, int)
 #define TPSDEV_WRITE_CONFIG_BUILTIN				_IOW ( TPS_IOC_MAGIC, 66, int)
 #define TPSDEV_GET_HYBRID_ADC			_IOR ( TPS_IOC_MAGIC, 67, unsigned int*)
+#define TPSDEV_GET_ADC_RANGE			_IOR ( TPS_IOC_MAGIC, 68, unsigned short*)
+#define TPSDEV_LPWG_DOUBLE_TAP_ENABLE	_IOW ( TPS_IOC_MAGIC, 69, int)
+#define TPSDEV_SET_GLOVE_MODE			_IOW ( TPS_IOC_MAGIC, 70, int)
+#define TPSDEV_SET_HIGH_REPORT_MODE		_IOW ( TPS_IOC_MAGIC, 71, int)
 
 
 #ifdef CONFIG_COMPAT
@@ -134,6 +150,7 @@
 #define COMPAT_TPSDEV_CALIBRATION_PEN_PARAM		_IOW ( TPS_IOC_MAGIC, 54, struct shtps_compat_ioctl_param)
 #define COMPAT_TPSDEV_GET_SERIAL_NUMBER			_IOR ( TPS_IOC_MAGIC, 62, shtps_ioctl_compat_pointer_param)
 #define COMPAT_TPSDEV_GET_HYBRID_ADC			_IOR ( TPS_IOC_MAGIC, 67, shtps_ioctl_compat_pointer_param)
+#define COMPAT_TPSDEV_GET_ADC_RANGE				_IOR ( TPS_IOC_MAGIC, 68, shtps_ioctl_compat_pointer_param)
 
 typedef __u32 shtps_ioctl_compat_pointer_param;
 struct shtps_compat_ioctl_param {
@@ -247,6 +264,7 @@ enum shtps_diag_tm_mode {
 	SHTPS_TMMODE_BASELINE,
 	SHTPS_TMMODE_BASELINE_RAW,
 	SHTPS_TMMODE_HYBRID_ADC,
+	SHTPS_TMMODE_ADC_RANGE,
 };
 
 enum{

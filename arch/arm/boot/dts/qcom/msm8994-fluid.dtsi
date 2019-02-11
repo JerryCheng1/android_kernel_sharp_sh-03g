@@ -300,15 +300,24 @@
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
 	qcom,cont-splash-enabled;
+	qcom,mdss-dsi-pan-enable-dynamic-fps;
+	qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
+	qcom,mdss-dsi-min-refresh-rate = <30>;
 };
 
 &dsi_dual_sharp_video_1 {
 	qcom,cont-splash-enabled;
+	qcom,mdss-dsi-pan-enable-dynamic-fps;
+	qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
+	qcom,mdss-dsi-min-refresh-rate = <30>;
 };
 
 &labibb {
 	status = "ok";
 	qpnp,qpnp-labibb-mode = "lcd";
+};
+
+&ibb_regulator {
 	qcom,qpnp-ibb-discharge-resistor = <32>;
 };
 
@@ -386,7 +395,7 @@
 			sil,fw-wake = <&msm_gpio 38 0>;
 			sil,reset-gpio = <&msm_gpio 58 0>;
 			sil,irq-gpio = <&msm_gpio 57 0>;
-			sil,i2c_port# = <1>;
+			sil,i2c-port = <1>;
 			pinctrl-names = "mhl_active";
 			pinctrl-0 = <&mhl_intr_active &mhl_reset_active>;
 		};
@@ -741,7 +750,6 @@
 	mtp_batterydata: qcom,battery-data {
 		qcom,batt-id-range-pct = <15>;
 		#include "batterydata-itech-3000mah.dtsi"
-		#include "batterydata-itech-3020mah.dtsi"
 	};
 };
 

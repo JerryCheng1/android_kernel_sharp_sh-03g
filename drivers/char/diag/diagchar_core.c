@@ -348,7 +348,7 @@ static int diagchar_close(struct inode *inode, struct file *file)
 	* This will specially help in case of ungraceful exit of any DCI client
 	* This call will remove any pending registrations of such client
 	*/
-	dci_entry = dci_lookup_client_entry_pid(current->pid);
+	dci_entry = dci_lookup_client_entry_pid(current->tgid);
 	if (dci_entry)
 		diag_dci_deinit_client(dci_entry);
 	/* If the exiting process is the socket process */
@@ -896,19 +896,6 @@ static int diag_switch_logging(int requested_mode)
 					driver->logging_mode);
 		return 0;
 	}
-
-	if (requested_mode != MEMORY_DEVICE_MODE)
-		diag_update_real_time_vote(DIAG_PROC_MEMORY_DEVICE,
-					   MODE_REALTIME, ALL_PROC);
-	else
-		diag_update_proc_vote(DIAG_PROC_MEMORY_DEVICE, VOTE_UP,
-				      ALL_PROC);
-
-	if (!(requested_mode == MEMORY_DEVICE_MODE &&
-					driver->logging_mode == USB_MODE))
-		queue_work(driver->diag_real_time_wq,
-						&driver->diag_real_time_work);
-
 	mutex_lock(&driver->diagchar_mutex);
 	temp = driver->logging_mode;
 	driver->logging_mode = requested_mode;
@@ -949,6 +936,19 @@ static int diag_switch_logging(int requested_mode)
 	}
 
 	driver->logging_process_id = current->tgid;
+	if (driver->logging_mode != MEMORY_DEVICE_MODE) {
+		diag_update_real_time_vote(DIAG_PROC_MEMORY_DEVICE,
+						MODE_REALTIME, ALL_PROC);
+	} else {
+		diag_update_proc_vote(DIAG_PROC_MEMORY_DEVICE, VOTE_UP,
+						ALL_PROC);
+	}
+
+	if (!(driver->logging_mode == MEMORY_DEVICE_MODE &&
+					temp == USB_MODE))
+		queue_work(driver->diag_real_time_wq,
+						&driver->diag_real_time_work);
+
 	status = diag_mux_switch_logging(new_mode);
 	if (status) {
 		if (requested_mode == MEMORY_DEVICE_MODE)
@@ -1157,6 +1157,13 @@ static int diag_ioctl_set_buffering_mode(unsigned long ioarg)
 
 	if (copy_from_user(&params, (void __user *)ioarg, sizeof(params)))
 		return -EFAULT;
+
+	if (params.peripheral >= NUM_SMD_CONTROL_CHANNELS)
+		return -EINVAL;
+
+	mutex_lock(&driver->mode_lock);
+	driver->buffering_flag[params.peripheral] = 1;
+	mutex_unlock(&driver->mode_lock);
 
 	return diag_send_peripheral_buffering_mode(&params);
 }

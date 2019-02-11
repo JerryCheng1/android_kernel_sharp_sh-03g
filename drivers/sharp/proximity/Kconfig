@@ -9,6 +9,15 @@ config SENSORS_PROXIMITY
 	tristate "Proximity Sensor Driver"
 	default n
 
+config PROXIMITY_DRV_MSM8992
+	tristate "Proximity for MSM8992"
+	default n
+	depends on SENSORS_PROXIMITY
+
+config PROXIMITY_DRV_MSM8994
+	tristate "Proximity for MSM8994"
+	default n
+	depends on SENSORS_PROXIMITY
 config PROXIMITY_MODEL_TYPE
 	int "PROXIMITY MODEL TYPE"
 	depends on SENSORS_PROXIMITY
@@ -31,7 +40,6 @@ config PROXIMITY_INT_IR
 config PROXIMITY_INT_HOST
     bool "connected to Host "
     depends on SENSORS_PROXIMITY
-
 endchoice
 
 endmenu

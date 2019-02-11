@@ -214,11 +214,11 @@ config USB_UAS
 	  say 'Y' or 'M' here and the kernel will use the right driver.
 
 	  If you compile this driver as a module, it will be named uas.
-# 2014.12.15 SHARP CUSTOMIZE ADD START
+
 config USB_STORAGE_SH_CUST_DETECT
 	bool "Detect insert/remove SD card"
 	depends on USB_STORAGE
 	help
 	  Supports for the detection of the insert/remove of the SD
 	  for SHARP device.
-# 2014.12.15 SHARP CUSTOMIZE ADD END
+

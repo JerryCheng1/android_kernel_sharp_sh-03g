@@ -28,8 +28,8 @@ struct mmc_gpio {
 #ifdef CONFIG_MMC_SD_BATTLOG_CUST_SH
 int mmc_cd_check_status(struct mmc_host *host)
 {
-        struct mmc_gpio *p = host->slot.handler_priv;
-        return p->status;
+	struct mmc_gpio *p = host->slot.handler_priv;
+	return p->status;
 }
 #endif /* CONFIG_MMC_SD_BATTLOG_CUST_SH */
 

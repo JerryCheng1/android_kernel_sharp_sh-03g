@@ -12,4 +12,10 @@ config SHCAMERA_PICT
         ---help---
           This flag enables Sharp Camera Picture Light.
 
+config SHCAMERA_PDAF
+        bool "Sharp Camera MH-1 companionchip"
+        default n
+        ---help---
+          This flag enables Sharp Camera MH-1 companionchip.
+
 endmenu

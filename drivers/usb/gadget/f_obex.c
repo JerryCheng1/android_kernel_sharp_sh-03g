@@ -473,7 +473,9 @@ fail:
 static void
 obex_old_unbind(struct usb_configuration *c, struct usb_function *f)
 {
+#ifndef CONFIG_USB_ANDROID_SH_CUST
 	obex_string_defs[OBEX_CTRL_IDX].id = 0;
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
 	usb_free_all_descriptors(f);
 	kfree(func_to_obex(f));
 #ifdef CONFIG_USB_ANDROID_SH_SERIALS

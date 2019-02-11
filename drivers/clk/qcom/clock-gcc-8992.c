@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -65,7 +65,6 @@ static DEFINE_VDD_REGULATORS(vdd_dig, VDD_DIG_NUM, 1, vdd_corner, NULL);
 
 #define GPLL0_MODE                                       (0x0000)
 #define SYS_NOC_USB3_AXI_CBCR                            (0x03FC)
-#define MSS_CFG_AHB_CBCR                                 (0x0280)
 #define MSS_Q6_BIMC_AXI_CBCR                             (0x0284)
 #define USB_30_BCR                                       (0x03C0)
 #define USB30_MASTER_CBCR                                (0x03C8)
@@ -257,7 +256,7 @@ static struct pll_vote_clk gpll4 = {
 	.status_mask = BIT(30),
 	.base = &virt_base,
 	.c = {
-		.rate = 1536000000,
+		.rate = 1376000000,
 		.parent = &gcc_xo.c,
 		.dbg_name = "gpll4",
 		.ops = &clk_ops_pll_vote,
@@ -310,6 +309,9 @@ static struct rcg_clk blsp1_qup1_i2c_apps_clk_src = {
 
 static struct clk_freq_tbl ftbl_blsp1_qup1_spi_apps_clk_src[] = {
 	F(    960000,         gcc_xo,   10,    1,     2),
+#if defined( CONFIG_SENSOR_SHGRIP )
+	F(   2000000, gpll0_out_main,   10,    1,    30),
+#endif /* #if defined( CONFIG_SENSOR_SHGRIP ) */
 	F(   4800000,         gcc_xo,    4,    0,     0),
 	F(   9600000,         gcc_xo,    2,    0,     0),
 	F(  15000000, gpll0_out_main,   10,    1,     4),
@@ -349,7 +351,23 @@ static struct rcg_clk blsp1_qup2_i2c_apps_clk_src = {
 };
 
 static struct clk_freq_tbl ftbl_blsp1_qup2_spi_apps_clk_src[] = {
+#if defined( CONFIG_SHTPS_SY3X00_DEV )
+	F(    400000,         gcc_xo,   12,    1,     4),
+	F(    600000,         gcc_xo,    8,    1,     4),
+	F(    800000,         gcc_xo,   12,    1,     2),
+#endif  /* #if defined( CONFIG_SHTPS_SY3X00_DEV ) */
 	F(    960000,         gcc_xo,   10,    1,     2),
+#if defined( CONFIG_SHTPS_SY3X00_DEV )
+	F(   1100000, gpll0_out_main,    5,    1,   109),
+	F(   1920000,         gcc_xo,   10,    1,     0),
+	F(   2000000, gpll0_out_main,   10,    1,    30),
+	F(   2400000,         gcc_xo,    8,    1,     0),
+	F(   3000000, gpll0_out_main,   10,    1,    20),
+	F(   3200000,         gcc_xo,    2,    1,     3),
+	F(   3400000, gpll0_out_main,    8,    1,    22),
+	F(   3750000, gpll0_out_main,   10,    1,    16),
+	F(   4000000, gpll0_out_main,   10,    1,    15),
+#endif	/* #if defined( CONFIG_SHTPS_SY3X00_DEV ) */
 	F(   4800000,         gcc_xo,    4,    0,     0),
 	F(   9600000,         gcc_xo,    2,    0,     0),
 	F(  15000000, gpll0_out_main,   10,    1,     4),
@@ -739,8 +757,17 @@ static struct rcg_clk blsp2_qup3_i2c_apps_clk_src = {
 
 static struct clk_freq_tbl ftbl_blsp2_qup3_spi_apps_clk_src[] = {
 	F(    960000,         gcc_xo,   10,    1,     2),
+#if defined( CONFIG_SENSORS_FPRINT_VFS61XX )
+	F(   2500000, gpll0_out_main,   12,    1,    20),
+#endif  /* #if defined( CONFIG_SENSORS_FPRINT_VFS61XX )  */
 	F(   4800000,         gcc_xo,    4,    0,     0),
+#if defined( CONFIG_SENSORS_FPRINT_VFS61XX )
+	F(   8000000, gpll0_out_main,    5,    1,    15),
+#endif  /* #if defined( CONFIG_SENSORS_FPRINT_VFS61XX )  */
 	F(   9600000,         gcc_xo,    2,    0,     0),
+#if defined( CONFIG_SENSORS_FPRINT_VFS61XX )
+	F(  12000000, gpll0_out_main, 12.5,    1,     4),
+#endif  /* #if defined( CONFIG_SENSORS_FPRINT_VFS61XX )  */
 	F(  15000000, gpll0_out_main,   10,    1,     4),
 	F(  19200000,         gcc_xo,    1,    0,     0),
 	F(  25000000, gpll0_out_main,   12,    1,     2),
@@ -779,6 +806,17 @@ static struct rcg_clk blsp2_qup4_i2c_apps_clk_src = {
 
 static struct clk_freq_tbl ftbl_blsp2_qup4_spi_apps_clk_src[] = {
 	F(    960000,         gcc_xo,   10,    1,     2),
+#if defined( CONFIG_SHUB_ML630Q790 )
+	F(   1100000, gpll0_out_main,    5,    1,   109),
+	F(   1920000,         gcc_xo,   10,    1,     0),
+	F(   2000000, gpll0_out_main,   10,    1,    30),
+	F(   2400000,         gcc_xo,    8,    1,     0),
+	F(   3000000, gpll0_out_main,   10,    1,    20),
+	F(   3200000,         gcc_xo,    2,    1,     3),
+	F(   3400000, gpll0_out_main,    8,    1,    22),
+	F(   3750000, gpll0_out_main,   10,    1,    16),
+	F(   4000000, gpll0_out_main,   10,    1,    15),
+#endif	/* #if defined( CONFIG_SHUB_ML630Q790 ) */
 	F(   4800000,         gcc_xo,    4,    0,     0),
 	F(   9600000,         gcc_xo,    2,    0,     0),
 	F(  15000000, gpll0_out_main,   10,    1,     4),
@@ -1103,8 +1141,8 @@ static struct clk_freq_tbl ftbl_sdcc1_apps_clk_src[] = {
 	F(  25000000, gpll0_out_main,   12,    1,     2),
 	F(  50000000, gpll0_out_main,   12,    0,     0),
 	F( 100000000, gpll0_out_main,    6,    0,     0),
-	F( 192000000, gpll4_out_main,    2,    0,     0),
-	F( 384000000, gpll4_out_main,    1,    0,     0),
+	F( 172000000, gpll4_out_main,    2,    0,     0),
+	F( 344000000, gpll4_out_main,    1,    0,     0),
 	F_END
 };
 
@@ -1134,10 +1172,28 @@ static struct clk_freq_tbl ftbl_sdcc2_4_apps_clk_src[] = {
 	F_END
 };
 
+#ifdef CONFIG_MMC_SD_ECO_MODE_CUST_SH
+static struct clk_freq_tbl ftbl_sdcc2_apps_clk_src[] = {
+	F(    144000,         gcc_xo,   16,    3,    25),
+	F(    400000,         gcc_xo,   12,    1,     4),
+	F(  20000000, gpll0_out_main,   15,    1,     2),
+	F(  25000000, gpll0_out_main,   12,    1,     2),
+	F(  48000000, gpll0_out_main,    1,    2,    25), /* this is setting for 48Mhz */
+	F(  50000000, gpll0_out_main,   12,    0,     0),
+	F( 100000000, gpll0_out_main,    6,    0,     0),
+	F( 200000000, gpll0_out_main,    3,    0,     0),
+	F_END
+};
+#endif /* CONFIG_MMC_SD_ECO_MODE_CUST_SH */
+
 static struct rcg_clk sdcc2_apps_clk_src = {
 	.cmd_rcgr_reg = SDCC2_APPS_CMD_RCGR,
 	.set_rate = set_rate_mnd,
+#ifdef CONFIG_MMC_SD_ECO_MODE_CUST_SH
+	.freq_tbl = ftbl_sdcc2_apps_clk_src,
+#else /* CONFIG_MMC_SD_ECO_MODE_CUST_SH */
 	.freq_tbl = ftbl_sdcc2_4_apps_clk_src,
+#endif /* CONFIG_MMC_SD_ECO_MODE_CUST_SH */
 	.current_freq = &rcg_dummy_freq,
 	.base = &virt_base,
 	.c = {
@@ -1838,17 +1894,6 @@ static struct branch_clk gcc_gp3_clk = {
 	},
 };
 
-static struct branch_clk gcc_mss_cfg_ahb_clk = {
-	.cbcr_reg = MSS_CFG_AHB_CBCR,
-	.has_sibling = 1,
-	.base = &virt_base,
-	.c = {
-		.dbg_name = "gcc_mss_cfg_ahb_clk",
-		.ops = &clk_ops_branch,
-		CLK_INIT(gcc_mss_cfg_ahb_clk.c),
-	},
-};
-
 static struct branch_clk gcc_mss_q6_bimc_axi_clk = {
 	.cbcr_reg = MSS_Q6_BIMC_AXI_CBCR,
 	.has_sibling = 0,
@@ -2142,15 +2187,25 @@ static struct branch_clk gcc_usb3_phy_aux_clk = {
 	},
 };
 
-static struct branch_clk gcc_usb3_phy_pipe_clk = {
-	.cbcr_reg = USB3_PHY_PIPE_CBCR,
-	.bcr_reg = USB3PHY_PHY_BCR,
-	.has_sibling = 1,
+static struct gate_clk gcc_usb3_phy_pipe_clk = {
+	.en_reg = USB3_PHY_PIPE_CBCR,
+	.en_mask = BIT(0),
+	.delay_us = 50,
 	.base = &virt_base,
 	.c = {
 		.dbg_name = "gcc_usb3_phy_pipe_clk",
-		.ops = &clk_ops_branch,
+		.ops = &clk_ops_gate,
 		CLK_INIT(gcc_usb3_phy_pipe_clk.c),
+	},
+};
+
+static struct reset_clk gcc_usb3phy_phy_reset = {
+	.reset_reg = USB3PHY_PHY_BCR,
+	.base = &virt_base,
+	.c = {
+		.dbg_name = "gcc_usb3phy_phy_reset",
+		.ops = &clk_ops_rst,
+		CLK_INIT(gcc_usb3phy_phy_reset.c),
 	},
 };
 
@@ -2239,7 +2294,6 @@ static struct mux_clk gcc_debug_mux = {
 		{ &debug_mmss_clk.c, 0x002b },
 		{ &debug_rpm_clk.c, 0xffff },
 		{ &gcc_sys_noc_usb3_axi_clk.c, 0x0006 },
-		{ &gcc_mss_cfg_ahb_clk.c, 0x0030 },
 		{ &gcc_mss_q6_bimc_axi_clk.c, 0x0031 },
 		{ &gcc_usb30_master_clk.c, 0x0050 },
 		{ &gcc_usb30_sleep_clk.c, 0x0051 },
@@ -2424,7 +2478,6 @@ static struct clk_lookup msm_clocks_gcc_8992[] = {
 	CLK_LIST(gcc_gp1_clk),
 	CLK_LIST(gcc_gp2_clk),
 	CLK_LIST(gcc_gp3_clk),
-	CLK_LIST(gcc_mss_cfg_ahb_clk),
 	CLK_LIST(gcc_mss_q6_bimc_axi_clk),
 	CLK_LIST(gcc_pcie_0_aux_clk),
 	CLK_LIST(gcc_pcie_0_cfg_ahb_clk),
@@ -2451,6 +2504,7 @@ static struct clk_lookup msm_clocks_gcc_8992[] = {
 	CLK_LIST(gcc_usb30_sleep_clk),
 	CLK_LIST(gcc_usb3_phy_aux_clk),
 	CLK_LIST(gcc_usb3_phy_pipe_clk),
+	CLK_LIST(gcc_usb3phy_phy_reset),
 	CLK_LIST(gcc_usb_hs_ahb_clk),
 	CLK_LIST(gcc_usb_hs_system_clk),
 	CLK_LIST(gcc_usb_phy_cfg_ahb2phy_clk),

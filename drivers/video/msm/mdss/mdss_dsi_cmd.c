@@ -601,7 +601,7 @@ int mdss_dsi_long_read_resp(struct dsi_buf *rp)
 	return rp->len;
 }
 
-#ifndef CONFIG_SHDISP /* CUST_ID_00049 */
+#ifndef CONFIG_SHDISP /* CUST_ID_00022 */
 static char set_tear_on[2] = {0x35, 0x00};
 static struct dsi_cmd_desc dsi_tear_on_cmd = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(set_tear_on)}, set_tear_on};
@@ -613,7 +613,7 @@ static struct dsi_cmd_desc dsi_tear_off_cmd = {
 
 void mdss_dsi_set_tear_on(struct mdss_dsi_ctrl_pdata *ctrl)
 {
-#ifndef CONFIG_SHDISP /* CUST_ID_00049 */
+#ifndef CONFIG_SHDISP /* CUST_ID_00022 */
 	struct dcs_cmd_req cmdreq;
 	struct mdss_panel_info *pinfo;
 
@@ -633,7 +633,7 @@ void mdss_dsi_set_tear_on(struct mdss_dsi_ctrl_pdata *ctrl)
 
 void mdss_dsi_set_tear_off(struct mdss_dsi_ctrl_pdata *ctrl)
 {
-#ifndef CONFIG_SHDISP /* CUST_ID_00049 */
+#ifndef CONFIG_SHDISP /* CUST_ID_00022 */
 	struct dcs_cmd_req cmdreq;
 	struct mdss_panel_info *pinfo;
 

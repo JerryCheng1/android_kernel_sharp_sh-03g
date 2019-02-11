@@ -62,7 +62,7 @@ module_param_named(
 #define PREVENT_WFI_VALUE 30
 #define PREVENT_PC_STANDALONE_VALUE 760
 #define PREVENT_PC_VALUE 775
-#endif  
+#endif
 
 /*
  * locking rule: all changes to constraints or notifiers lists
@@ -175,7 +175,7 @@ static void sh_qos_debug(struct pm_qos_request *req, s32 new_value,
 			}
 			if ( ((sh_debug_mask & SH_DEBUG_PREVENT_PC_STANDALONE) && (new_value < PREVENT_PC_STANDALONE_VALUE))||
 				((sh_debug_mask & SH_DEBUG_PREVENT_PC) && (new_value < PREVENT_PC_VALUE))){
-				if (timeout) { 
+				if (timeout) {
 					pr_info("QoS: [Update] req %pS, value %dus, timeout(us) %d\n",
 						req, new_value, timeout_us);
 				} else {
@@ -185,7 +185,7 @@ static void sh_qos_debug(struct pm_qos_request *req, s32 new_value,
 		}
 	}
 }
-#endif  
+#endif
 
 
 /* unlocked internal variant */
@@ -520,9 +520,9 @@ void pm_qos_add_request(struct pm_qos_request *req,
 		return;
 	}
 #ifdef CONFIG_SHSYS_CUST_DEBUG
-	if(sh_debug_mask != 0) 
+	if(sh_debug_mask != 0)
 		sh_qos_debug(req, value, false, 0);
-#endif  
+#endif
 
 	switch (req->type) {
 	case PM_QOS_REQ_AFFINE_CORES:
@@ -623,7 +623,7 @@ void pm_qos_update_request(struct pm_qos_request *req,
 #ifdef CONFIG_SHSYS_CUST_DEBUG
 	if(sh_debug_mask != 0)
 		sh_qos_debug(req, new_value, false, 0);
-#endif  
+#endif
 
 #ifdef CONFIG_SHSYS_CUST
 	if (delayed_work_pending(&req->work))
@@ -655,7 +655,7 @@ void pm_qos_update_request_timeout(struct pm_qos_request *req, s32 new_value,
 #ifdef CONFIG_SHSYS_CUST_DEBUG
 	if(sh_debug_mask != 0)
 		sh_qos_debug(req, new_value, true, timeout_us);
-#endif  
+#endif
 
 #ifdef CONFIG_SHSYS_CUST
 	if (delayed_work_pending(&req->work))
@@ -693,7 +693,7 @@ void pm_qos_remove_request(struct pm_qos_request *req)
 #ifdef CONFIG_SHSYS_CUST_DEBUG
 	if(sh_debug_mask != 0)
 		sh_qos_debug(req, PM_QOS_DEFAULT_VALUE, false, 0);
-#endif  
+#endif
 
 #ifdef CONFIG_SHSYS_CUST
 	if (delayed_work_pending(&req->work))

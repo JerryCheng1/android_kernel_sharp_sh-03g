@@ -57,10 +57,12 @@
 #endif /* CONFIG_SHTERM */
 #include <sharp/sh_smem.h>
 #include <sharp/shdisp_kerl.h>
-#include <sharp/shdisp_kerl_context.h>
 #include <sharp/shdisp_to_user_context.h>
+#ifdef CONFIG_PROXIMITY_INT_HOST
 #include <sharp/proximity.h>
+#endif /* CONFIG_PROXIMITY_INT_HOST */
 #include "shdisp_kerl_priv.h"
+#include "shdisp_kerl_context.h"
 #include "shdisp_system.h"
 #include "shdisp_type.h"
 #include "shdisp_dbg.h"
@@ -75,22 +77,27 @@
 #include <linux/input.h>
 #include <linux/miscdevice.h>
 #endif /* SHDISP_ALS_INT */
+#include <linux/leds.h>
+#ifdef SHDISP_SYSFS_LED
+#include "shdisp_led.h"
+#endif /* SHDISP_SYSFS_LED */
 
 #ifndef SHDISP_NOT_SUPPORT_DET
 void mdss_shdisp_video_transfer_ctrl(int onoff, int commit);
 void mdss_shdisp_lock_recovery(void);
 void mdss_shdisp_unlock_recovery(void);
+int mdss_shdisp_cmd_tearcheck_enable(bool enable);
 #endif /* SHDISP_NOT_SUPPORT_DET */
 
 static int shdisp_kerl_register_driver(void);
 
-#if defined(CONFIG_SHDISP_PANEL_ARIA)
+#if defined(CONFIG_SHDISP_PANEL_ARIA) || defined(CONFIG_SHDISP_PANEL_HAYABUSA)
 #ifdef SHDISP_DET_DSI_MIPI_ERROR
 extern void mdss_shdisp_dsi_mipi_err_clear(void);
 extern int mdss_shdisp_dsi_mipi_err_ctrl(bool enable);
 #endif /* SHDISP_DET_DSI_MIPI_ERROR */
 extern void mdss_shdisp_mdp_cmd_kickoff(void);
-#endif /* CONFIG_SHDISP_PANEL_ARIA */
+#endif /* CONFIG_SHDISP_PANEL */
 
 extern int mdss_shdisp_mdp_hr_video_suspend(void);
 extern int mdss_shdisp_mdp_hr_video_resume(void);
@@ -103,12 +110,16 @@ extern void mdss_shdisp_fps_led_stop(void);
 /* ------------------------------------------------------------------------- */
 #define SHDISP_NAME "shdisp"
 
-#define SHDISP_BOOT_MODE_NORMAL             (0xFFFF)
-#define SHDISP_BOOT_MODE_OFF_CHARGE         (0x0020)
-#define SHDISP_BOOT_MODE_USB_OFFCHARGE      (0x0021)
-
 #define SHDISP_ALS_IRQ_REQ_BK_CTL           (0x01)
 #define SHDISP_ALS_IRQ_REQ_DBC              (0x02)
+
+#if defined(CONFIG_ANDROID_ENGINEERING)
+#if defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+#define SHDISP_FPS_LED_PANEL_SUPPORT
+#elif defined(CONFIG_SHDISP_PANEL_ANDY)
+#define SHDISP_FPS_LED_HOST_SUPPORT
+#endif /* CONFIG_SHDISP_PANEL_HAYABUSA */
+#endif /* CONFIG_ANDROID_ENGINEERING */
 
 /* ------------------------------------------------------------------------- */
 /* VARIABLES                                                                 */
@@ -195,12 +206,75 @@ static struct {
 #if defined(CONFIG_ANDROID_ENGINEERING)
 static struct file_operations proc_fops;
 #endif /* CONFIG_ANDROID_ENGINEERING */
+
+#ifdef SHDISP_FPS_LED_PANEL_SUPPORT
+#define ADDR_PAGE        (0xFF)
+#define PAGE_FPS_REG     (0x26)
+#define ADDR_FPS_REG     (0x8A)
+#define FPS_LED_INTERVAL (66667)
+
+enum {
+    FPS_LED_STATE_NONE,
+    FPS_LED_STATE_1HZ,
+    FPS_LED_STATE_15HZ,
+    FPS_LED_STATE_30HZ,
+    FPS_LED_STATE_60HZ,
+    FPS_LED_STATE_120HZ,
+    MAX_FPS_LED_STATE
+};
+
+static const char *shdisp_fps_led_state_str[MAX_FPS_LED_STATE] = {
+    "NONE",
+    "1HZ",
+    "15HZ",
+    "30HZ",
+    "60HZ",
+    "120HZ",
+};
+
+static const char shdisp_fps_led_color[MAX_FPS_LED_STATE][3] = {
+    [FPS_LED_STATE_NONE]  = {0, 0, 0},
+    [FPS_LED_STATE_1HZ]   = {0, 0, 1},
+    [FPS_LED_STATE_15HZ]  = {0, 1, 0},
+    [FPS_LED_STATE_30HZ]  = {1, 1, 0},
+    [FPS_LED_STATE_60HZ]  = {1, 0, 0},
+    [FPS_LED_STATE_120HZ] = {1, 1, 1},
+};
+
+static struct {
+    bool enable;
+    bool suspend;
+    bool panel_on;
+    int state;
+    int interval;
+    struct workqueue_struct *workq;
+    struct delayed_work work;
+} shdisp_fps_led_ctx = {0};
+
+static void shdisp_fps_led_resume(void);
+static void shdisp_fps_led_suspend(void);
+#endif /* SHDISP_FPS_LED_PANEL_SUPPORT */
+
 /* ------------------------------------------------------------------------- */
 /* PROTOTYPES                                                                */
 /* ------------------------------------------------------------------------- */
 static void shdisp_init_context(void);
 static void shdisp_get_boot_context(void);
 static void shdisp_boot_context_initialize(void);
+
+#ifdef SHDISP_SYSFS_LED
+static int  shdisp_SQE_tri_led_on(int no, struct shdisp_tri_led *sysfs_ledx);
+static void shdisp_led_set_red1(struct led_classdev *led_cdev, enum led_brightness value);
+static void shdisp_led_set_green1(struct led_classdev *led_cdev, enum led_brightness value);
+static void shdisp_led_set_blue1(struct led_classdev *led_cdev, enum led_brightness value);
+#ifdef SHDISP_COLOR_LED_TWIN
+static void shdisp_led_set_red2(struct led_classdev *led_cdev, enum led_brightness value);
+static void shdisp_led_set_green2(struct led_classdev *led_cdev, enum led_brightness value);
+static void shdisp_led_set_blue2(struct led_classdev *led_cdev, enum led_brightness value);
+#endif /* SHDISP_COLOR_LED_TWIN */
+static void shdisp_clean_sysfs_led(void);
+static void shdisp_clean_normal_led(void);
+#endif /* SHDISP_SYSFS_LED */
 
 static int shdisp_check_initialized(void);
 static int shdisp_check_upper_unit(void);
@@ -212,6 +286,7 @@ static struct shdisp_argc_lut *shdisp_get_argc_lut(void);
 static struct shdisp_igc_lut *shdisp_get_igc_lut(void);
 static int shdisp_bdic_subscribe_check(struct shdisp_subscribe *subscribe);
 static int shdisp_bdic_unsubscribe_check(int irq_type);
+static int shdisp_bdic_bkl_notify(int notify);
 
 static int shdisp_open(struct inode *inode, struct file *filp);
 static long shdisp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
@@ -232,10 +307,16 @@ static int shdisp_ioctl_get_flicker_low_param(void __user *argp);
 static int shdisp_ioctl_bkl_set_auto_mode(void __user *argp);
 static int shdisp_ioctl_bkl_set_dtv_mode(void __user *argp);
 static int shdisp_ioctl_bkl_set_emg_mode(void __user *argp);
+#ifdef SHDISP_LOWBKL
+static int shdisp_ioctl_bkl_set_lowbkl_mode(void __user *argp);
+#endif /* SHDISP_LOWBKL */
 static int shdisp_ioctl_bkl_set_chg_mode(void __user *argp);
-static int shdisp_ioctl_panel_set_gammatable_and_voltage(void __user *argp);
-static int shdisp_ioctl_panel_get_gammatable_and_voltage(void __user *argp);
-static int shdisp_ioctl_panel_set_gamma(void __user *argp);
+#ifdef SHDISP_TRV_NM2
+static int shdisp_ioctl_set_trv_param(void __user *argp);
+#endif /* SHDISP_TRV_NM2 */
+static int shdisp_ioctl_panel_set_gmmtable_and_voltage(void __user *argp);
+static int shdisp_ioctl_panel_get_gmmtable_and_voltage(void __user *argp);
+static int shdisp_ioctl_panel_set_gmm(void __user *argp);
 static int shdisp_ioctl_get_ave_ado(void __user *argp);
 static int shdisp_ioctl_get_als(void __user *argp);
 #ifdef SHDISP_TRI_LED2
@@ -251,6 +332,15 @@ static int shdisp_ioctl_set_alsint(void __user *argp);
 static int shdisp_ioctl_get_alsint(void __user *argp);
 static int shdisp_ioctl_get_light_info(void __user *argp);
 #endif /* SHDISP_ALS_INT */
+#ifdef SHDISP_LED_INT
+static int shdisp_led_auto_low_enable(void);
+static int shdisp_led_auto_low_disable(void);
+static int shdisp_ioctl_set_led_auto_low_mode(void __user *argp);
+#endif /* SHDISP_LED_INT */
+static int shdisp_ioctl_set_mfr(void __user *argp);
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+static int shdisp_ioctl_set_illumi_triple_color(void __user *argp);
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
 
 static int shdisp_SQE_main_lcd_power_on(void);
 static int shdisp_SQE_main_lcd_power_off(void);
@@ -265,7 +355,16 @@ static int shdisp_SQE_post_shutdown(void);
 static int shdisp_SQE_main_bkl_ctl(int type, struct shdisp_main_bkl_ctl *bkl);
 static int shdisp_SQE_main_bkl_set_dtv_mode(int dtv_mode);
 static int shdisp_SQE_main_bkl_set_emg_mode(int emg_mode);
+#ifdef SHDISP_LOWBKL
+static int shdisp_SQE_main_bkl_set_lowbkl_mode(int lowbkl_mode);
+#endif /* SHDISP_LOWBKL */
 static int shdisp_SQE_main_bkl_set_chg_mode(int chg_mode);
+#ifdef SHDISP_TRV_NM2
+static int shdisp_SQE_set_trv_param(struct shdisp_trv_param param);
+#endif /* SHDISP_TRV_NM2 */
+
+static bool shdisp_led_set_color_reject(void);
+static int shdisp_tri_led_set_color(struct shdisp_tri_led *tri_led);
 static int shdisp_SQE_tri_led_set_color(struct shdisp_tri_led *tri_led);
 static int shdisp_SQE_bdic_write_reg(unsigned char reg, unsigned char val);
 static int shdisp_SQE_bdic_read_reg(unsigned char reg, unsigned char *val);
@@ -286,9 +385,9 @@ static int shdisp_SQE_do_recovery(void);
 #endif /* SHDISP_NOT_SUPPORT_DET */
 static int shdisp_SQE_event_subscribe(struct shdisp_subscribe *subscribe);
 static int shdisp_SQE_event_unsubscribe(int irq_type);
-static int shdisp_SQE_set_gammatable_and_voltage(struct shdisp_diag_gamma_info *gamma_info);
-static int shdisp_SQE_get_gammatable_and_voltage(struct shdisp_diag_gamma_info *gamma_info);
-static int shdisp_SQE_set_gamma(struct shdisp_diag_gamma *gamma);
+static int shdisp_SQE_set_gmmtable_and_voltage(struct shdisp_diag_gamma_info *gmm_info);
+static int shdisp_SQE_get_gmmtable_and_voltage(struct shdisp_diag_gamma_info *gmm_info);
+static int shdisp_SQE_set_gmm(struct shdisp_diag_gamma *gmm);
 static int shdisp_SQE_get_ave_ado(struct shdisp_ave_ado *ave_ado);
 static int shdisp_SQE_get_als(struct shdisp_photo_sensor_raw_val *val);
 #ifdef SHDISP_ALS_INT
@@ -302,6 +401,11 @@ static int shdisp_SQE_tri_led_set_color2(struct shdisp_tri_led *tri_led);
 static int shdisp_SQE_insert_sp_pierce(void);
 static int shdisp_SQE_remove_sp_pierce(void);
 #endif  /* SHDISP_TRI_LED2 */
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+static int shdisp_SQE_set_illumi_triple_color(struct shdisp_illumi_triple_color * illumi_triple_color);
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
+
 static int shdisp_SQE_set_irq_mask(int irq_msk_ctl);
 static int shdisp_SQE_vcom_tracking(int tracking);
 #ifndef SHDISP_NOT_SUPPORT_DET
@@ -309,7 +413,7 @@ static void shdisp_SQE_lcd_det_recovery(void);
 #endif  /* SHDISP_NOT_SUPPORT_DET */
 static int shdisp_SQE_psals_recovery(void);
 
-static irqreturn_t shdisp_gpio_int_isr( int irq_num, void *data );
+static irqreturn_t shdisp_gpio_int_isr(int irq_num, void *data);
 static void shdisp_workqueue_handler_gpio(struct work_struct *work);
 static void shdisp_workqueue_gpio_task(struct work_struct *work);
 static int shdisp_do_detin_recovery(void);
@@ -376,6 +480,47 @@ static struct file_operations shdisp_fops = {
 #endif
     .release        = shdisp_release,
 };
+
+#ifdef SHDISP_SYSFS_LED
+static struct led_classdev red1_led = {
+        .name           = "sh-red1",
+        .brightness     = LED_OFF,
+        .brightness_set = shdisp_led_set_red1,
+        .max_brightness = 255,
+};
+static struct led_classdev green1_led = {
+        .name           = "sh-green1",
+        .brightness     = LED_OFF,
+        .brightness_set = shdisp_led_set_green1,
+        .max_brightness = 255,
+};
+static struct led_classdev blue1_led = {
+        .name           = "sh-blue1",
+        .brightness     = LED_OFF,
+        .brightness_set = shdisp_led_set_blue1,
+        .max_brightness = 255,
+};
+#ifdef SHDISP_COLOR_LED_TWIN
+static struct led_classdev red2_led = {
+        .name           = "sh-red2",
+        .brightness     = LED_OFF,
+        .brightness_set = shdisp_led_set_red2,
+        .max_brightness = 255,
+};
+static struct led_classdev green2_led = {
+        .name           = "sh-green2",
+        .brightness     = LED_OFF,
+        .brightness_set = shdisp_led_set_green2,
+        .max_brightness = 255,
+};
+static struct led_classdev blue2_led = {
+        .name           = "sh-blue2",
+        .brightness     = LED_OFF,
+        .brightness_set = shdisp_led_set_blue2,
+        .max_brightness = 255,
+};
+#endif /* SHDISP_COLOR_LED_TWIN */
+#endif /* SHDISP_SYSFS_LED */
 
 /* ------------------------------------------------------------------------- */
 /* DEBUG MACROS                                                              */
@@ -465,6 +610,16 @@ int shdisp_api_main_lcd_power_off(void)
     }
 
     SHDISP_PERFORMANCE("SUSPEND PANEL POWER-OFF 0010 END");
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+    if (shdisp_bdic_API_LED_is_running_illumi_triple_color()) {
+        SHDISP_DEBUG("illumi stop on lcd power off");
+        shdisp_bdic_API_LED_clear_illumi_triple_color();
+        shdisp_semaphore_start();
+        shdisp_bdic_API_TRI_LED_off();
+        shdisp_clean_normal_led();
+        shdisp_semaphore_end(__func__);
+    }
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
     SHDISP_TRACE("out");
 
     return SHDISP_RESULT_SUCCESS;
@@ -805,12 +960,31 @@ int shdisp_api_shutdown(int seq)
 {
     SHDISP_TRACE("in");
 
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+    if (seq == SHDISP_PRE_SHUTDOWN) {
+        if (shdisp_bdic_API_LED_is_running_illumi_triple_color()) {
+            shdisp_bdic_API_LED_clear_illumi_triple_color();
+        }
+    }
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
+
     shdisp_semaphore_start();
     shdisp_SQE_shutdown(seq);
     shdisp_semaphore_end(__func__);
 
     SHDISP_TRACE("out");
     return SHDISP_RESULT_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_api_pre_blank_notify                                               */
+/* ------------------------------------------------------------------------- */
+void shdisp_api_pre_blank_notify(void)
+{
+#ifdef SHDISP_FPS_LED_PANEL_SUPPORT
+    shdisp_fps_led_ctx.panel_on = false;
+    shdisp_fps_led_suspend();
+#endif /* SHDISP_FPS_LED_PANEL_SUPPORT */
 }
 
 /* ------------------------------------------------------------------------- */
@@ -975,7 +1149,7 @@ int shdisp_api_prox_sensor_pow_ctl(int power_mode, struct shdisp_prox_params *pr
         return SHDISP_RESULT_FAILURE;
     }
 
-    SHDISP_DEBUG(":power_mode=%d", power_mode );
+    SHDISP_DEBUG(":power_mode=%d", power_mode);
 
     if (power_mode == SHDISP_PROX_SENSOR_POWER_ON) {
         if (prox_params == NULL) {
@@ -1042,11 +1216,9 @@ int shdisp_api_get_main_disp_status(void)
 {
     int ret = SHDISP_MAIN_DISP_OFF;
 
-    SHDISP_TRACE("in.");
-
     ret = shdisp_kerl_ctx.main_disp_status;
 
-    SHDISP_TRACE("out status=%d", ret);
+    SHDISP_INFO("out status=%d", ret);
     return ret;
 }
 
@@ -1090,9 +1262,19 @@ int shdisp_api_remove_sp_pierce(void)
 int shdisp_api_tri_led_set_color(struct shdisp_tri_led *tri_led)
 {
     int ret;
+    unsigned char color;
+
+    color = shdisp_bdic_API_TRI_LED_get_color_index_and_reedit(tri_led);
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+    if (shdisp_bdic_API_LED_is_running_illumi_triple_color()) {
+        shdisp_bdic_API_LED_clear_illumi_triple_color();
+    }
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
 
     shdisp_semaphore_start();
-    ret = shdisp_SQE_tri_led_set_color(tri_led);
+    shdisp_kerl_ctx.led_set_color_reject = (color != 0);
+    ret = shdisp_tri_led_set_color(tri_led);
     shdisp_semaphore_end(__func__);
 
     if (ret != SHDISP_RESULT_SUCCESS) {
@@ -1138,7 +1320,7 @@ int shdisp_api_do_mipi_dsi_det_recovery(void)
 /* ------------------------------------------------------------------------- */
 /* shdisp_api_set_freq_param                                                 */
 /* ------------------------------------------------------------------------- */
-int shdisp_api_set_freq_param(void *freq)
+int shdisp_api_set_freq_param(struct shdisp_freq_params *freq)
 {
     int ret= SHDISP_RESULT_SUCCESS;
 
@@ -1160,11 +1342,7 @@ int shdisp_api_set_freq_param(void *freq)
     }
 
     shdisp_semaphore_start();
-#if defined(CONFIG_SHDISP_PANEL_ANDY)
-    ret = shdisp_andy_API_set_freq_param(freq);
-#elif defined(CONFIG_SHDISP_PANEL_ARIA)
-    ret = shdisp_aria_API_set_freq_param(freq);
-#endif /* CONFIG_SHDISP_PANEL_ANDY */
+    ret = shdisp_panel_API_set_freq_param(freq);
     shdisp_semaphore_end(__func__);
 
     SHDISP_TRACE("out (ret=%d)", ret);
@@ -1253,35 +1431,6 @@ int shdisp_API_do_lcd_det_recovery(void)
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_det_mipi_err_ctrl                                                  */
-/* ------------------------------------------------------------------------- */
-static void shdisp_det_mipi_err_ctrl(bool enable)
-{
-    SHDISP_TRACE("in enable=%d", enable);
-
-    if (enable) {
-#if defined(CONFIG_SHDISP_PANEL_ANDY)
-        (void)shdisp_panel_API_set_irq(SHDISP_IRQ_ENABLE);
-#elif defined(CONFIG_SHDISP_PANEL_ARIA)
-#ifdef SHDISP_DET_DSI_MIPI_ERROR
-        (void)mdss_shdisp_dsi_mipi_err_ctrl(true);
-#endif  /* SHDISP_DET_DSI_MIPI_ERROR */
-#endif  /* CONFIG_SHDISP_PANEL_ANDY || CONFIG_SHDISP_PANEL_ARIA */
-    }else{
-#if defined(CONFIG_SHDISP_PANEL_ANDY)
-        (void)shdisp_panel_API_set_irq(SHDISP_IRQ_DISABLE);
-#elif defined(CONFIG_SHDISP_PANEL_ARIA)
-#ifdef SHDISP_DET_DSI_MIPI_ERROR
-        (void)mdss_shdisp_dsi_mipi_err_ctrl(false);
-#endif  /* SHDISP_DET_DSI_MIPI_ERROR */
-#endif  /* CONFIG_SHDISP_PANEL_ANDY || CONFIG_SHDISP_PANEL_ARIA */
-    }
-
-    SHDISP_TRACE("out");
-    return;
-}
-
-/* ------------------------------------------------------------------------- */
 /* shdisp_API_psals_recovery_subscribe                                       */
 /* ------------------------------------------------------------------------- */
 void shdisp_API_psals_recovery_subscribe(void)
@@ -1308,6 +1457,34 @@ void shdisp_API_psals_recovery_unsubscribe(void)
     shdisp_event_unsubscribe(SHDISP_IRQ_TYPE_I2CERR);
 
     SHDISP_TRACE("out");
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_API_check_upper_unit                                               */
+/* ------------------------------------------------------------------------- */
+int shdisp_API_check_upper_unit(void)
+{
+    return shdisp_check_upper_unit();
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_API_semaphore_start                                                */
+/* ------------------------------------------------------------------------- */
+void shdisp_API_semaphore_start(void)
+{
+    SHDISP_INFO("in");
+    shdisp_semaphore_start();
+    SHDISP_INFO("out");
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_API_semaphore_end                                                  */
+/* ------------------------------------------------------------------------- */
+void shdisp_API_semaphore_end(void)
+{
+    SHDISP_INFO("in");
+    shdisp_semaphore_end(__func__);
+    SHDISP_INFO("out");
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1360,6 +1537,50 @@ static int shdisp_bdic_unsubscribe_check(int irq_type)
 }
 
 /* ------------------------------------------------------------------------- */
+/* shdisp_bdic_bkl_notify                                                    */
+/* ------------------------------------------------------------------------- */
+static int shdisp_bdic_bkl_notify(int notify)
+{
+    unsigned long int notify_value = 0, notify_brightness = 0;
+    struct shdisp_bdic_bkl_info bkl_info;
+#if defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+    struct shdisp_panel_mode p_mode;
+    memset(&p_mode, 0x00, sizeof(p_mode));
+#endif /* CONFIG_SHDISP_PANEL_HAYABUSA */
+
+    SHDISP_TRACE("in");
+    memset(&bkl_info, 0x00, sizeof(bkl_info));
+    shdisp_bdic_API_LCD_BKL_get_param(&bkl_info);
+    if (bkl_info.mode != SHDISP_BDIC_BKL_MODE_OFF) {
+        notify_value = 1;
+    }
+    notify_brightness = bkl_info.value;
+#ifdef CONFIG_SHTERM
+    if (notify | SHTERM_INFO_BACKLIGHT) {
+        shterm_k_set_info(SHTERM_INFO_BACKLIGHT, notify_value);
+    }
+    if (notify | SHTERM_INFO_BACKLIGHT_LEV) {
+        shterm_k_set_info(SHTERM_INFO_BACKLIGHT_LEV, notify_brightness);
+    }
+#endif  /* CONFIG_SHTERM */
+#if defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+    if (shdisp_kerl_ctx.driver_is_open) {
+        if (shdisp_kerl_ctx.main_disp_status == SHDISP_MAIN_DISP_ON) {
+            p_mode.bkl_mode = bkl_info.mode;
+            p_mode.bkl_param = bkl_info.param;
+#ifdef SHDISP_TRV_NM2
+            p_mode.trv_mode = shdisp_kerl_ctx.trv_status;
+#endif /* SHDISP_TRV_NM2 */
+            shdisp_panel_API_chg_mode(p_mode);
+        }
+    }
+#endif /* CONFIG_SHDISP_PANEL_HAYABUSA */
+    SHDISP_TRACE("out");
+
+    return SHDISP_RESULT_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
 /* INITIALIZE                                                                */
 /* ------------------------------------------------------------------------- */
 /* ------------------------------------------------------------------------- */
@@ -1370,6 +1591,8 @@ static void shdisp_init_context(void)
     if (shdisp_smem_read_flag != 0) {
         return;
     }
+
+    memset(&shdisp_kerl_ctx, 0, sizeof(shdisp_kerl_ctx));
 
     shdisp_get_boot_context();
 
@@ -1394,6 +1617,27 @@ static void shdisp_init_context(void)
     shdisp_kerl_ctx.tri_led.ontime              = shdisp_kerl_ctx.boot_ctx.tri_led.ontime;
     shdisp_kerl_ctx.tri_led.interval            = shdisp_kerl_ctx.boot_ctx.tri_led.interval;
     shdisp_kerl_ctx.tri_led.count               = shdisp_kerl_ctx.boot_ctx.tri_led.count;
+
+#ifdef SHDISP_SYSFS_LED
+    shdisp_kerl_ctx.sysfs_led1.red              =0;
+    shdisp_kerl_ctx.sysfs_led1.green            =0;
+    shdisp_kerl_ctx.sysfs_led1.blue             =0;
+    shdisp_kerl_ctx.sysfs_led1.ext_mode         =0;
+    shdisp_kerl_ctx.sysfs_led1.led_mode         =0;
+    shdisp_kerl_ctx.sysfs_led1.ontime           =0;
+    shdisp_kerl_ctx.sysfs_led1.interval         =0;
+    shdisp_kerl_ctx.sysfs_led1.count            =0;
+#ifdef SHDISP_COLOR_LED_TWIN
+    shdisp_kerl_ctx.sysfs_led2.red              =0;
+    shdisp_kerl_ctx.sysfs_led2.green            =0;
+    shdisp_kerl_ctx.sysfs_led2.blue             =0;
+    shdisp_kerl_ctx.sysfs_led2.ext_mode         =0;
+    shdisp_kerl_ctx.sysfs_led2.led_mode         =0;
+    shdisp_kerl_ctx.sysfs_led2.ontime           =0;
+    shdisp_kerl_ctx.sysfs_led2.interval         =0;
+    shdisp_kerl_ctx.sysfs_led2.count            =0;
+#endif /* SHDISP_COLOR_LED_TWIN */
+#endif /* SHDISP_SYSFS_LED */
 
     shdisp_smem_read_flag = 1;
 #ifdef SHDISP_TRI_LED2
@@ -1454,7 +1698,6 @@ static void shdisp_get_boot_context(void)
     } else {
         memcpy(&(shdisp_kerl_ctx.boot_ctx), &sh_smem_common->shdisp_data_buf, sizeof(struct shdisp_boot_context));
     }
-
     return;
 }
 
@@ -1489,7 +1732,7 @@ static void shdisp_boot_context_initialize(void)
     shdisp_kerl_ctx.boot_ctx.vcom_nvram                  = 0;
 
     memset(&(shdisp_kerl_ctx.boot_ctx.photo_sensor_adj), 0, sizeof(struct shdisp_photo_sensor_adj));
-    memset(&(shdisp_kerl_ctx.boot_ctx.lcddr_phy_gamma), 0, sizeof(struct shdisp_lcddr_phy_gamma_reg));
+    memset(&(shdisp_kerl_ctx.boot_ctx.lcddr_phy_gmm), 0, sizeof(struct shdisp_lcddr_phy_gmm_reg));
 
     for (i = 0; i < SHDISP_IGC_LUT_ENTRIES; i++) {
         if (i == 0) {
@@ -1658,6 +1901,9 @@ static long shdisp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     case SHDISP_IOCTL_LCDDR_WRITE_REG:
         ret = shdisp_ioctl_lcddr_write_reg(argp);
         break;
+    case SHDISP_IOCTL_SET_MFR:
+        ret = shdisp_ioctl_set_mfr(argp);
+        break;
     case SHDISP_IOCTL_LCDDR_READ_REG:
         ret = shdisp_ioctl_lcddr_read_reg(argp);
         break;
@@ -1676,26 +1922,31 @@ static long shdisp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
     case SHDISP_IOCTL_BKL_SET_EMG_MODE:
         ret = shdisp_ioctl_bkl_set_emg_mode(argp);
         break;
+#ifdef SHDISP_LOWBKL
+    case SHDISP_IOCTL_BKL_SET_LOWBKL_MODE:
+        ret = shdisp_ioctl_bkl_set_lowbkl_mode(argp);
+        break;
+#endif /* SHDISP_LOWBKL */
     case SHDISP_IOCTL_BKL_SET_CHG_MODE:
         ret = shdisp_ioctl_bkl_set_chg_mode(argp);
         break;
     case SHDISP_IOCTL_GET_FLICKER_LOW_PARAM:
         ret = shdisp_ioctl_get_flicker_low_param(argp);
         break;
-    case SHDISP_IOCTL_SET_GAMMATABLE_AND_VOLTAGE:
-        SHDISP_TRACE("SHDISP_IOCTL_SET_GAMMATABLE_AND_VOLTAGE Requested. cmd=%08X", cmd);
-        ret = shdisp_ioctl_panel_set_gammatable_and_voltage(argp);
-        SHDISP_TRACE("SHDISP_IOCTL_SET_GAMMATABLE_AND_VOLTAGE Completed ret:%d", ret);
+    case SHDISP_IOCTL_SET_GMMTABLE_AND_VOLTAGE:
+        SHDISP_TRACE("SHDISP_IOCTL_SET_GMMTABLE_AND_VOLTAGE Requested. cmd=%08X", cmd);
+        ret = shdisp_ioctl_panel_set_gmmtable_and_voltage(argp);
+        SHDISP_TRACE("SHDISP_IOCTL_SET_GMMTABLE_AND_VOLTAGE Completed ret:%d", ret);
         break;
-    case SHDISP_IOCTL_GET_GAMMATABLE_AND_VOLTAGE:
-        SHDISP_TRACE("SHDISP_IOCTL_GET_GAMMATABLE_AND_VOLTAGE Requested. cmd=%08X", cmd);
-        ret = shdisp_ioctl_panel_get_gammatable_and_voltage(argp);
-        SHDISP_TRACE("SHDISP_IOCTL_GET_GAMMATABLE_AND_VOLTAGE Completed ret:%d", ret);
+    case SHDISP_IOCTL_GET_GMMTABLE_AND_VOLTAGE:
+        SHDISP_TRACE("SHDISP_IOCTL_GET_GMMTABLE_AND_VOLTAGE Requested. cmd=%08X", cmd);
+        ret = shdisp_ioctl_panel_get_gmmtable_and_voltage(argp);
+        SHDISP_TRACE("SHDISP_IOCTL_GET_GMMTABLE_AND_VOLTAGE Completed ret:%d", ret);
         break;
-    case SHDISP_IOCTL_SET_GAMMA:
-        SHDISP_TRACE("SHDISP_IOCTL_SET_GAMMA Requested. cmd=%08X", cmd);
-        ret = shdisp_ioctl_panel_set_gamma(argp);
-        SHDISP_TRACE("SHDISP_IOCTL_SET_GAMMA Completed ret:%d", ret);
+    case SHDISP_IOCTL_SET_GMM:
+        SHDISP_TRACE("SHDISP_IOCTL_SET_GMM Requested. cmd=%08X", cmd);
+        ret = shdisp_ioctl_panel_set_gmm(argp);
+        SHDISP_TRACE("SHDISP_IOCTL_SET_GMM Completed ret:%d", ret);
         break;
     case SHDISP_IOCTL_GET_AVE_ADO:
         SHDISP_TRACE("SHDISP_IOCTL_GET_AVE_ADO Requested. cmd=%08X", cmd);
@@ -1738,6 +1989,21 @@ static long shdisp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         ret = shdisp_ioctl_get_light_info(argp);
         break;
 #endif /* SHDISP_ALS_INT */
+#ifdef SHDISP_LED_INT
+    case SHDISP_IOCTL_SET_LED_AUTO_LOW_MODE:
+        ret = shdisp_ioctl_set_led_auto_low_mode(argp);
+        break;
+#endif /* SHDISP_LED_INT */
+#ifdef SHDISP_TRV_NM2
+    case SHDISP_IOCTL_SET_TRV_PARAM:
+        ret = shdisp_ioctl_set_trv_param(argp);
+        break;
+#endif /* SHDISP_TRV_NM2 */
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+    case SHDISP_IOCTL_SET_ILLUMI_TRI_COLOR:
+        ret = shdisp_ioctl_set_illumi_triple_color(argp);
+        break;
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
     default:
         SHDISP_ERR("<INVALID_VALUE> cmd(0x%08x).", cmd);
         ret = -EFAULT;
@@ -1782,6 +2048,11 @@ static int shdisp_ioctl_get_context(void __user *argp)
     shdisp_user_ctx.main_disp_status            = shdisp_kerl_ctx.boot_ctx.main_disp_status;
     memcpy(&(shdisp_user_ctx.igc_lut), &(shdisp_kerl_ctx.boot_ctx.igc_lut), sizeof(struct shdisp_igc_lut));
     shdisp_user_ctx.is_vcom_tracking            = 0;
+    if (shdisp_SYS_API_get_debugflg() & SHDISP_DEBUGFLG_BIT_USER_LOG) {
+        shdisp_user_ctx.log_lv_all              = 1;
+    } else {
+        shdisp_user_ctx.log_lv_all              = 0;
+    }
 
     shdisp_semaphore_start();
 
@@ -1816,6 +2087,12 @@ static int shdisp_ioctl_tri_led_set_color(void __user *argp)
         return SHDISP_RESULT_SUCCESS;
     }
 
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+    if (shdisp_bdic_API_LED_is_running_illumi_triple_color()) {
+        shdisp_bdic_API_LED_clear_illumi_triple_color();
+    }
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
     shdisp_semaphore_start();
 
     ret = copy_from_user(&tri_led, argp, sizeof(struct shdisp_tri_led));
@@ -1993,6 +2270,62 @@ static int shdisp_ioctl_get_sp_pierce_state(void __user *argp)
 }
 #endif  /* SHDISP_TRI_LED2 */
 
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+/* ------------------------------------------------------------------------- */
+/* shdisp_ioctl_set_illumi_triple_color                                      */
+/* ------------------------------------------------------------------------- */
+static int shdisp_ioctl_set_illumi_triple_color(void __user *argp)
+{
+
+    int ret;
+    struct shdisp_illumi_triple_color illumi_triple_color;
+    int i = 0;
+    int size;
+
+    if (shdisp_check_bdic_exist() != SHDISP_RESULT_SUCCESS) {
+        SHDISP_DEBUG("bdic is not exist");
+        return SHDISP_RESULT_SUCCESS;
+    }
+
+    if (shdisp_kerl_ctx.shutdown_in_progress) {
+        SHDISP_DEBUG("canceled: set_color is in progress");
+        return SHDISP_RESULT_SUCCESS;
+    }
+
+    if (shdisp_bdic_API_LED_is_running_illumi_triple_color()) {
+        shdisp_bdic_API_LED_clear_illumi_triple_color();
+    }
+
+    shdisp_semaphore_start();
+
+    ret = copy_from_user(&illumi_triple_color, argp, sizeof(illumi_triple_color));
+
+    if (ret != 0) {
+        SHDISP_ERR("<RESULT_FAILURE> copy_from_user.");
+        shdisp_semaphore_end(__func__);
+        return ret;
+    }
+
+    size = sizeof(illumi_triple_color.colors) / sizeof(illumi_triple_color.colors[0]);
+    for (i = 0; i != size; i++) {
+        SHDISP_DEBUG("colors[%d] red = %d, green=%d, blue=%d", i, illumi_triple_color.colors[i].red,
+                     illumi_triple_color.colors[i].green, illumi_triple_color.colors[i].blue);
+    }
+    SHDISP_DEBUG("count = %d", illumi_triple_color.count);
+
+    ret = shdisp_SQE_set_illumi_triple_color(&illumi_triple_color);
+
+    shdisp_semaphore_end(__func__);
+
+    if (ret != SHDISP_RESULT_SUCCESS) {
+        SHDISP_ERR("<RESULT_FAILURE> shdisp_SQE_tri_led_set_color.");
+        return -EIO;
+    }
+
+    return SHDISP_RESULT_SUCCESS;
+}
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
+
 /* ------------------------------------------------------------------------- */
 /* shdisp_ioctl_bdic_write_reg                                               */
 /* ------------------------------------------------------------------------- */
@@ -2164,7 +2497,7 @@ static int shdisp_ioctl_get_lux(void __user *argp)
 
     ret = shdisp_SQE_get_lux(&(val));
 
-    SHDISP_DEBUG(" value=0x%04X, lux=%u, mode=%d", val.value, val.lux, val.mode );
+    SHDISP_DEBUG(" value=0x%04X, lux=%u, mode=%d", val.value, val.lux, val.mode);
 
     if (ret != SHDISP_RESULT_SUCCESS) {
         SHDISP_ERR("<RESULT_FAILURE> shdisp_SQE_get_lux.");
@@ -2524,6 +2857,37 @@ static int shdisp_ioctl_bkl_set_emg_mode(void __user *argp)
     return SHDISP_RESULT_SUCCESS;
 }
 
+#ifdef SHDISP_LOWBKL
+/* ------------------------------------------------------------------------- */
+/* shdisp_ioctl_bkl_set_lowbkl_mode                                          */
+/* ------------------------------------------------------------------------- */
+static int shdisp_ioctl_bkl_set_lowbkl_mode(void __user *argp)
+{
+    int ret;
+    int lowbkl_mode;
+
+    ret = copy_from_user(&lowbkl_mode, argp, sizeof(int));
+
+    if (ret != 0) {
+        SHDISP_ERR("<RESULT_FAILURE> copy_from_user.");
+        return ret;
+    }
+
+    shdisp_semaphore_start();
+
+    ret = shdisp_SQE_main_bkl_set_lowbkl_mode(lowbkl_mode);
+
+    shdisp_semaphore_end(__func__);
+
+    if (ret != SHDISP_RESULT_SUCCESS) {
+        SHDISP_ERR("<RESULT_FAILURE> shdisp_SQE_main_bkl_set_lowbkl_mode.");
+        return -EIO;
+    }
+
+    return SHDISP_RESULT_SUCCESS;
+}
+#endif /* SHDISP_LOWBKL */
+
 /* ------------------------------------------------------------------------- */
 /* shdisp_ioctl_bkl_set_chg_mode                                             */
 /* ------------------------------------------------------------------------- */
@@ -2553,13 +2917,38 @@ static int shdisp_ioctl_bkl_set_chg_mode(void __user *argp)
     return SHDISP_RESULT_SUCCESS;
 }
 
+#ifdef SHDISP_TRV_NM2
 /* ------------------------------------------------------------------------- */
-/* shdisp_ioctl_panel_set_gammatable_and_voltage                             */
+/* shdisp_ioctl_set_trv_param                                                */
 /* ------------------------------------------------------------------------- */
-static int shdisp_ioctl_panel_set_gammatable_and_voltage(void __user *argp)
+static int shdisp_ioctl_set_trv_param(void __user *argp)
+{
+    int ret = -EIO;
+    struct shdisp_trv_param param;
+
+    ret = copy_from_user(&param, argp, sizeof(param));
+    if (ret) {
+        SHDISP_ERR("copy_from_user() failure. ret=%d", ret);
+        return ret;
+    }
+
+    shdisp_semaphore_start();
+
+    ret = shdisp_SQE_set_trv_param(param);
+
+    shdisp_semaphore_end(__func__);
+
+    return ret;
+}
+#endif /* SHDISP_TRV_NM2 */
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_ioctl_panel_set_gmmtable_and_voltage                               */
+/* ------------------------------------------------------------------------- */
+static int shdisp_ioctl_panel_set_gmmtable_and_voltage(void __user *argp)
 {
     int ret;
-    struct shdisp_diag_gamma_info gamma_info;
+    struct shdisp_diag_gamma_info gmm_info;
 
     if (shdisp_check_initialized() != SHDISP_RESULT_SUCCESS) {
         return -EIO;
@@ -2567,7 +2956,7 @@ static int shdisp_ioctl_panel_set_gammatable_and_voltage(void __user *argp)
 
     shdisp_semaphore_start();
 
-    ret = copy_from_user(&gamma_info,
+    ret = copy_from_user(&gmm_info,
                          argp,
                          sizeof(struct shdisp_diag_gamma_info));
     if (ret != 0) {
@@ -2576,24 +2965,24 @@ static int shdisp_ioctl_panel_set_gammatable_and_voltage(void __user *argp)
         return ret;
     }
 
-    ret = shdisp_SQE_set_gammatable_and_voltage(&gamma_info);
+    ret = shdisp_SQE_set_gmmtable_and_voltage(&gmm_info);
 
     shdisp_semaphore_end(__func__);
 
     if (ret != SHDISP_RESULT_SUCCESS) {
-        SHDISP_ERR("<RESULT_FAILURE> shdisp_SQE_set_gammatable_and_voltage.");
+        SHDISP_ERR("<RESULT_FAILURE> shdisp_SQE_set_gmmtable_and_voltage.");
         return -EIO;
     }
     return SHDISP_RESULT_SUCCESS;
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_ioctl_panel_get_gammatable_and_voltage                             */
+/* shdisp_ioctl_panel_get_gmmtable_and_voltage                               */
 /* ------------------------------------------------------------------------- */
-static int shdisp_ioctl_panel_get_gammatable_and_voltage(void __user *argp)
+static int shdisp_ioctl_panel_get_gmmtable_and_voltage(void __user *argp)
 {
     int ret;
-    struct shdisp_diag_gamma_info gamma_info;
+    struct shdisp_diag_gamma_info gmm_info;
 
     if (shdisp_check_initialized() != SHDISP_RESULT_SUCCESS) {
         return -EIO;
@@ -2601,17 +2990,17 @@ static int shdisp_ioctl_panel_get_gammatable_and_voltage(void __user *argp)
 
     shdisp_semaphore_start();
 
-    memset(&gamma_info, 0, sizeof(gamma_info));
-    ret = shdisp_SQE_get_gammatable_and_voltage(&gamma_info);
+    memset(&gmm_info, 0, sizeof(gmm_info));
+    ret = shdisp_SQE_get_gmmtable_and_voltage(&gmm_info);
 
     if (ret != SHDISP_RESULT_SUCCESS) {
-        SHDISP_ERR("<RESULT_FAILURE> shdisp_SQE_get_gammatable_and_voltage.");
+        SHDISP_ERR("<RESULT_FAILURE> shdisp_SQE_get_gmmtable_and_voltage.");
         shdisp_semaphore_end(__func__);
         return -EIO;
     }
 
     ret = copy_to_user(argp,
-                       &gamma_info,
+                       &gmm_info,
                        sizeof(struct shdisp_diag_gamma_info));
 
     shdisp_semaphore_end(__func__);
@@ -2624,12 +3013,12 @@ static int shdisp_ioctl_panel_get_gammatable_and_voltage(void __user *argp)
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_ioctl_panel_set_gamma                                              */
+/* shdisp_ioctl_panel_set_gmm                                                */
 /* ------------------------------------------------------------------------- */
-static int shdisp_ioctl_panel_set_gamma(void __user *argp)
+static int shdisp_ioctl_panel_set_gmm(void __user *argp)
 {
     int ret;
-    struct shdisp_diag_gamma gamma;
+    struct shdisp_diag_gamma gmm;
 
     if (shdisp_check_initialized() != SHDISP_RESULT_SUCCESS) {
         return -EIO;
@@ -2637,7 +3026,7 @@ static int shdisp_ioctl_panel_set_gamma(void __user *argp)
 
     shdisp_semaphore_start();
 
-    ret = copy_from_user(&gamma,
+    ret = copy_from_user(&gmm,
                          argp,
                          sizeof(struct shdisp_diag_gamma));
     if (ret != 0) {
@@ -2647,12 +3036,12 @@ static int shdisp_ioctl_panel_set_gamma(void __user *argp)
     }
 
 
-    ret = shdisp_SQE_set_gamma(&gamma);
+    ret = shdisp_SQE_set_gmm(&gmm);
 
     shdisp_semaphore_end(__func__);
 
     if (ret != SHDISP_RESULT_SUCCESS) {
-        SHDISP_ERR("<RESULT_FAILURE> shdisp_SQE_set_gamma.");
+        SHDISP_ERR("<RESULT_FAILURE> shdisp_SQE_set_gmm.");
         return -EIO;
     }
     return SHDISP_RESULT_SUCCESS;
@@ -2943,6 +3332,84 @@ static int shdisp_ioctl_get_light_info(void __user *argp)
 }
 #endif /* SHDISP_ALS_INT */
 
+#ifdef SHDISP_LED_INT
+/* ------------------------------------------------------------------------- */
+/* shdisp_ioctl_set_led_auto_low_mode                                        */
+/* ------------------------------------------------------------------------- */
+static int shdisp_ioctl_set_led_auto_low_mode(void __user *argp)
+{
+    int ret;
+    struct shdisp_led_auto_low_mode_param param;
+
+    ret = copy_from_user(&param, argp, sizeof(param));
+    if (ret) {
+        SHDISP_ERR("copy_from_user() failure. ret=%d", ret);
+        return ret;
+    }
+
+    shdisp_semaphore_start();
+
+    if (param.enable) {
+        ret = shdisp_led_auto_low_enable();
+        if (ret == SHDISP_RESULT_SUCCESS) {
+            ret = 0;
+        } else {
+            ret = -EIO;
+        }
+    } else {
+        ret = shdisp_led_auto_low_disable();
+        if (ret == SHDISP_RESULT_SUCCESS) {
+            ret = 0;
+        } else {
+            ret = -EIO;
+        }
+    }
+
+    shdisp_semaphore_end(__func__);
+
+    return ret;
+}
+#endif /* SHDISP_LED_INT */
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_ioctl_set_mfr                                                      */
+/* ------------------------------------------------------------------------- */
+static int shdisp_ioctl_set_mfr(void __user *argp)
+{
+    int ret;
+    int val = 0;
+
+    if (shdisp_kerl_ctx.main_disp_status != SHDISP_MAIN_DISP_ON) {
+        return SHDISP_RESULT_SUCCESS;
+    }
+
+    if (shdisp_check_upper_unit() != SHDISP_RESULT_SUCCESS) {
+        SHDISP_DEBUG("upper_unit nothing");
+        return SHDISP_RESULT_SUCCESS;
+    }
+
+    shdisp_semaphore_start();
+
+    ret = copy_from_user(&val, argp, sizeof(int));
+
+    if (ret != 0) {
+        SHDISP_ERR("<RESULT_FAILURE> copy_from_user.");
+        shdisp_semaphore_end(__func__);
+        return ret;
+    }
+
+    ret = shdisp_panel_API_mfr(val);
+
+    shdisp_semaphore_end(__func__);
+
+    if (ret != SHDISP_RESULT_SUCCESS) {
+        SHDISP_ERR("<RESULT_FAILURE> shdisp_ioctl_set_mfr.");
+        return -EIO;
+    }
+
+    return SHDISP_RESULT_SUCCESS;
+}
+
 /* ------------------------------------------------------------------------- */
 /* SEQUENCE                                                                  */
 /* ------------------------------------------------------------------------- */
@@ -3033,6 +3500,11 @@ static int shdisp_SQE_main_lcd_start_display(void)
 #ifdef CONFIG_SHTERM
     shterm_k_set_info(SHTERM_INFO_LCDPOW, 1);
 #endif  /* CONFIG_SHTERM */
+
+#ifdef SHDISP_FPS_LED_PANEL_SUPPORT
+    shdisp_fps_led_ctx.panel_on = true;
+    shdisp_fps_led_resume();
+#endif /* SHDISP_FPS_LED_PANEL_SUPPORT */
 
     SHDISP_TRACE("out ret=%04x", ret);
     return ret;
@@ -3174,7 +3646,6 @@ static int shdisp_SQE_post_shutdown(void)
 static int shdisp_SQE_main_bkl_ctl(int type, struct shdisp_main_bkl_ctl *bkl)
 {
     struct shdisp_main_bkl_ctl temp, request;
-    unsigned long int notify_value = 0, notify_brightness = 0;
 
     SHDISP_TRACE("in");
     if (type >= NUM_SHDISP_MAIN_BKL_DEV_TYPE) {
@@ -3193,18 +3664,12 @@ static int shdisp_SQE_main_bkl_ctl(int type, struct shdisp_main_bkl_ctl *bkl)
     switch (request.mode) {
     case SHDISP_MAIN_BKL_MODE_OFF:
         shdisp_bdic_API_LCD_BKL_off();
-        notify_value = 0;
-        notify_brightness = 0;
         break;
     case SHDISP_MAIN_BKL_MODE_FIX:
         shdisp_bdic_API_LCD_BKL_fix_on(request.param);
-        notify_value = 1;
-        shdisp_bdic_API_LCD_BKL_get_param( &notify_brightness );
         break;
     case SHDISP_MAIN_BKL_MODE_AUTO:
         shdisp_bdic_API_LCD_BKL_auto_on(request.param);
-        notify_value = 1;
-        shdisp_bdic_API_LCD_BKL_get_param( &notify_brightness );
         break;
     default:
         break;
@@ -3212,11 +3677,7 @@ static int shdisp_SQE_main_bkl_ctl(int type, struct shdisp_main_bkl_ctl *bkl)
 
     shdisp_kerl_ctx.main_bkl.mode  = request.mode;
     shdisp_kerl_ctx.main_bkl.param = request.param;
-
-#ifdef CONFIG_SHTERM
-    shterm_k_set_info(SHTERM_INFO_BACKLIGHT, notify_value);
-    shterm_k_set_info(SHTERM_INFO_BACKLIGHT_LEV, notify_brightness);
-#endif  /* CONFIG_SHTERM */
+    shdisp_bdic_bkl_notify(SHTERM_INFO_BACKLIGHT | SHTERM_INFO_BACKLIGHT_LEV);
 
     SHDISP_TRACE("out");
     return SHDISP_RESULT_SUCCESS;
@@ -3227,8 +3688,6 @@ static int shdisp_SQE_main_bkl_ctl(int type, struct shdisp_main_bkl_ctl *bkl)
 /* ------------------------------------------------------------------------- */
 static int shdisp_SQE_main_bkl_set_dtv_mode(int dtv_mode)
 {
-    unsigned long int notify_brightness = 0;
-
     if (dtv_mode == SHDISP_MAIN_BKL_DTV_OFF) {
         SHDISP_DEBUG("BKL_DTV_MODE : DTV_OFF");
         shdisp_bdic_API_LCD_BKL_dtv_off();
@@ -3239,12 +3698,7 @@ static int shdisp_SQE_main_bkl_set_dtv_mode(int dtv_mode)
         SHDISP_ERR("<INVALID_VALUE> dtv_mode(%d).", dtv_mode);
         return SHDISP_RESULT_FAILURE;
     }
-
-    shdisp_bdic_API_LCD_BKL_get_param( &notify_brightness );
-#ifdef CONFIG_SHTERM
-    shterm_k_set_info(SHTERM_INFO_BACKLIGHT_LEV, notify_brightness);
-#endif  /* CONFIG_SHTERM */
-
+    shdisp_bdic_bkl_notify(SHTERM_INFO_BACKLIGHT_LEV);
     return SHDISP_RESULT_SUCCESS;
 }
 
@@ -3253,36 +3707,63 @@ static int shdisp_SQE_main_bkl_set_dtv_mode(int dtv_mode)
 /* ------------------------------------------------------------------------- */
 static int shdisp_SQE_main_bkl_set_emg_mode(int emg_mode)
 {
-    unsigned long int notify_brightness = 0;
+    SHDISP_TRACE("in emg_mode=%d", emg_mode);
 
-    if (emg_mode == SHDISP_MAIN_BKL_EMG_OFF) {
-        SHDISP_DEBUG("BKL_EMG_MODE : NORMAL");
-        shdisp_bdic_API_LCD_BKL_emg_off();
-    } else if (emg_mode == SHDISP_MAIN_BKL_EMG_ON) {
-        SHDISP_DEBUG("BKL_EMG_MODE : EMERGENCY");
-        shdisp_bdic_API_LCD_BKL_emg_on();
-    } else {
-        SHDISP_ERR("<INVALID_VALUE> emg_mode(%d).", emg_mode);
+    if ((emg_mode < 0) || (emg_mode >= NUM_SHDISP_MAIN_BKL_EMG)) {
+        SHDISP_ERR("invalid emg_mode. emg_mode=%d", emg_mode);
         return SHDISP_RESULT_FAILURE;
     }
 
-    shdisp_kerl_ctx.thermal_status = emg_mode;
+    switch (emg_mode) {
+    case SHDISP_MAIN_BKL_EMG_OFF:
+        SHDISP_DEBUG("EMG_OFF");
+        shdisp_bdic_API_LCD_BKL_set_emg_mode(SHDISP_BDIC_BKL_EMG_OFF);
+        break;
+    case SHDISP_MAIN_BKL_EMG_ON_LEVEL0:
+        SHDISP_DEBUG("EMG_ON_LEVEL0");
+        shdisp_bdic_API_LCD_BKL_set_emg_mode(SHDISP_BDIC_BKL_EMG_ON_LEVEL0);
+        break;
+    case SHDISP_MAIN_BKL_EMG_ON_LEVEL1:
+        SHDISP_DEBUG("EMG_ON_LEVEL1");
+        shdisp_bdic_API_LCD_BKL_set_emg_mode(SHDISP_BDIC_BKL_EMG_ON_LEVEL1);
+        break;
+    }
 
-    shdisp_bdic_API_LCD_BKL_get_param( &notify_brightness );
-#ifdef CONFIG_SHTERM
-    shterm_k_set_info(SHTERM_INFO_BACKLIGHT_LEV, notify_brightness);
-#endif  /* CONFIG_SHTERM */
+    shdisp_kerl_ctx.thermal_status = emg_mode;
+    shdisp_bdic_bkl_notify(SHTERM_INFO_BACKLIGHT_LEV);
+
+    SHDISP_TRACE("out");
+    return SHDISP_RESULT_SUCCESS;
+}
+
+#ifdef SHDISP_LOWBKL
+/* ------------------------------------------------------------------------- */
+/* shdisp_SQE_main_bkl_set_lowbkl_mode                                       */
+/* ------------------------------------------------------------------------- */
+static int shdisp_SQE_main_bkl_set_lowbkl_mode(int lowbkl_mode)
+{
+    if (lowbkl_mode == SHDISP_MAIN_BKL_LOWBKL_MODE_OFF) {
+        SHDISP_DEBUG("BKL_LOWBKL_MODE : OFF");
+        shdisp_bdic_API_LCD_BKL_lowbkl_off();
+    } else if (lowbkl_mode == SHDISP_MAIN_BKL_LOWBKL_MODE_ON) {
+        SHDISP_DEBUG("BKL_LOWBKL_MODE : ON");
+        shdisp_bdic_API_LCD_BKL_lowbkl_on();
+    } else {
+        SHDISP_ERR("<INVALID_VALUE> lowbkl_mode(%d).", lowbkl_mode);
+        return SHDISP_RESULT_FAILURE;
+    }
+
+    shdisp_bdic_bkl_notify(SHTERM_INFO_BACKLIGHT_LEV);
 
     return SHDISP_RESULT_SUCCESS;
 }
+#endif /* SHDISP_LOWBKL */
 
 /* ------------------------------------------------------------------------- */
 /* shdisp_SQE_main_bkl_set_chg_mode                                          */
 /* ------------------------------------------------------------------------- */
 static int shdisp_SQE_main_bkl_set_chg_mode(int chg_mode)
 {
-    unsigned long int notify_brightness = 0;
-
     if (chg_mode == SHDISP_MAIN_BKL_CHG_OFF) {
         SHDISP_DEBUG("BKL_CHG_MODE : OFF");
         shdisp_bdic_API_LCD_BKL_chg_off();
@@ -3295,19 +3776,101 @@ static int shdisp_SQE_main_bkl_set_chg_mode(int chg_mode)
     }
 
     shdisp_kerl_ctx.usb_chg_status = chg_mode;
-
-    shdisp_bdic_API_LCD_BKL_get_param( &notify_brightness );
-#ifdef CONFIG_SHTERM
-    shterm_k_set_info(SHTERM_INFO_BACKLIGHT_LEV, notify_brightness);
-#endif  /* CONFIG_SHTERM */
-
+    shdisp_bdic_bkl_notify(SHTERM_INFO_BACKLIGHT_LEV);
     return SHDISP_RESULT_SUCCESS;
 }
 
+#ifdef SHDISP_TRV_NM2
 /* ------------------------------------------------------------------------- */
-/* shdisp_SQE_tri_led_set_color                                              */
+/* shdisp_SQE_set_trv_param                                                  */
 /* ------------------------------------------------------------------------- */
-static int shdisp_SQE_tri_led_set_color(struct shdisp_tri_led *tri_led)
+static int shdisp_SQE_set_trv_param(struct shdisp_trv_param param)
+{
+    int ret;
+
+    SHDISP_TRACE("in");
+
+    ret = shdisp_bdic_API_LCD_BKL_trv_param(param);
+    if (ret != SHDISP_RESULT_SUCCESS) {
+        SHDISP_ERR("<RESULT_FAILURE> shdisp_bdic_API_LCD_BKL_trv_param.");
+        return -EIO;
+    }
+    shdisp_kerl_ctx.trv_status = param.request;
+    shdisp_bdic_bkl_notify(SHTERM_INFO_BACKLIGHT_LEV);
+
+    SHDISP_TRACE("out");
+    return ret;
+}
+#endif /* SHDISP_TRV_NM2 */
+
+#ifdef SHDISP_SYSFS_LED
+/* ------------------------------------------------------------------------- */
+/* shdisp_SQE_tri_led_on                                                     */
+/* ------------------------------------------------------------------------- */
+static int shdisp_SQE_tri_led_on(int no, struct shdisp_tri_led *led)
+{
+    struct shdisp_tri_led sys_led;
+    int ret;
+
+    if (shdisp_led_set_color_reject()) {
+        SHDISP_DEBUG("reject request.");
+        return SHDISP_RESULT_SUCCESS;
+    }
+
+    switch (no) {
+    case SYSFS_LED_SH_LED_1:
+        sys_led = shdisp_kerl_ctx.sysfs_led1;
+        break;
+#ifdef SHDISP_COLOR_LED_TWIN
+    case SYSFS_LED_SH_LED_2:
+        sys_led = shdisp_kerl_ctx.sysfs_led2;
+        break;
+#endif /* SHDISP_COLOR_LED_TWIN */
+    default:
+        break;
+    }
+
+     if ((sys_led.red   == led->red) &&
+        (sys_led.green == led->green) &&
+        (sys_led.blue  == led->blue)) {
+        SHDISP_DEBUG("same leds request.");
+        return SHDISP_RESULT_SUCCESS;
+    }
+
+    if ((led->red   == 0) &&
+        (led->green == 0) &&
+        (led->blue  == 0)) {
+        SHDISP_DEBUG("leds off. no=%d", no);
+        ret = shdisp_bdic_API_LED_off(no);
+    } else {
+        SHDISP_DEBUG("leds on. no=%d, red=%d, green:%d, blue:%d",
+                      no, led->red, led->green, led->blue);
+        ret = shdisp_bdic_API_LED_on(no, *led);
+        shdisp_clean_normal_led();
+    }
+
+    switch (no) {
+    case SYSFS_LED_SH_LED_1:
+        shdisp_kerl_ctx.sysfs_led1 = *led;
+        break;
+#ifdef SHDISP_COLOR_LED_TWIN
+    case SYSFS_LED_SH_LED_2:
+        shdisp_kerl_ctx.sysfs_led2 = *led;
+        break;
+#endif /* SHDISP_COLOR_LED_TWIN */
+    default:
+        break;
+    }
+
+    return ret;
+}
+
+#endif /* SHDISP_SYSFS_LED */
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_tri_led_set_color                                                  */
+/* ------------------------------------------------------------------------- */
+static int shdisp_tri_led_set_color(struct shdisp_tri_led *tri_led)
 {
     unsigned char color, xstb_ch012;
     struct shdisp_tri_led  led;
@@ -3315,7 +3878,7 @@ static int shdisp_SQE_tri_led_set_color(struct shdisp_tri_led *tri_led)
     led.red = tri_led->red;
     led.green = tri_led->green;
     led.blue = tri_led->blue;
-    color = shdisp_bdic_API_TRI_LED_get_color_index_and_reedit( &led );
+    color = shdisp_bdic_API_TRI_LED_get_color_index_and_reedit(&led);
 
     if (tri_led->led_mode == SHDISP_TRI_LED_MODE_NORMAL) {
         if ((shdisp_kerl_ctx.tri_led.red      == led.red) &&
@@ -3372,19 +3935,14 @@ static int shdisp_SQE_tri_led_set_color(struct shdisp_tri_led *tri_led)
         case SHDISP_TRI_LED_MODE_EMOPATTERN:
             shdisp_bdic_API_TRI_LED_emopattern_on(tri_led->interval, tri_led->count);
             break;
-#ifdef SHDISP_EXTEND_COLOR_LED
-        case SHDISP_TRI_LED_MODE_PATTERN1:
-            shdisp_bdic_API_TRI_LED_pattern1_on(tri_led->interval, tri_led->count);
-            break;
-        case SHDISP_TRI_LED_MODE_PATTERN2:
-            shdisp_bdic_API_TRI_LED_pattern2_on(tri_led->interval, tri_led->count);
-            break;
-#endif  /* SHDISP_EXTEND_COLOR_LED */
 #endif  /* SHDISP_ANIME_COLOR_LED */
         default:
             SHDISP_ERR("led_mode=%d not supported.", tri_led->led_mode);
             break;
         }
+#ifdef SHDISP_SYSFS_LED
+        shdisp_clean_sysfs_led();
+#endif /* SHDISP_SYSFS_LED */
     } else {
         shdisp_bdic_API_TRI_LED_off();
     }
@@ -3419,11 +3977,41 @@ static int shdisp_SQE_tri_led_set_color(struct shdisp_tri_led *tri_led)
     return SHDISP_RESULT_SUCCESS;
 }
 
+/* ------------------------------------------------------------------------- */
+/* shdisp_led_set_color_reject                                               */
+/* ------------------------------------------------------------------------- */
+static bool shdisp_led_set_color_reject(void)
+{
+    bool ret = false;
+    if (shdisp_kerl_ctx.led_set_color_reject) {
+        ret = true;
+    }
+#ifdef SHDISP_FPS_LED_PANEL_SUPPORT
+    if (shdisp_fps_led_ctx.enable) {
+        ret = true;
+    }
+#endif /* SHDISP_FPS_LED_PANEL_SUPPORT */
+    return ret;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_SQE_tri_led_set_color                                              */
+/* ------------------------------------------------------------------------- */
+static int shdisp_SQE_tri_led_set_color(struct shdisp_tri_led *tri_led)
+{
+    if (shdisp_led_set_color_reject()) {
+        SHDISP_DEBUG("reject request.");
+        return SHDISP_RESULT_SUCCESS;
+    }
+
+    return shdisp_tri_led_set_color(tri_led);
+}
+
 #ifdef SHDISP_TRI_LED2
 /* ------------------------------------------------------------------------- */
-/* shdisp_SQE_tri_led_set_color2                                             */
+/* shdisp_tri_led_set_color2                                                 */
 /* ------------------------------------------------------------------------- */
-static int shdisp_SQE_tri_led_set_color2(struct shdisp_tri_led *tri_led)
+static int shdisp_tri_led_set_color2(struct shdisp_tri_led *tri_led)
 {
     unsigned char color;
     struct shdisp_tri_led led;
@@ -3504,14 +4092,6 @@ static int shdisp_SQE_tri_led_set_color2(struct shdisp_tri_led *tri_led)
             case SHDISP_TRI_LED_MODE_EMOPATTERN:
                 shdisp_bdic_API_TRI_LED_emopattern_on2(tri_led->interval, tri_led->count);
                 break;
-#ifdef SHDISP_EXTEND_COLOR_LED
-            case SHDISP_TRI_LED_MODE_PATTERN1:
-                shdisp_bdic_API_TRI_LED_pattern1_on2(tri_led->interval, tri_led->count);
-                break;
-            case SHDISP_TRI_LED_MODE_PATTERN2:
-                shdisp_bdic_API_TRI_LED_pattern2_on2(tri_led->interval, tri_led->count);
-                break;
-#endif  /* SHDISP_EXTEND_COLOR_LED */
 #endif  /* SHDISP_ANIME_COLOR_LED */
             default:
                 SHDISP_ERR("led_mode=%d not supported.", tri_led->led_mode);
@@ -3576,6 +4156,19 @@ static int shdisp_SQE_tri_led_set_color2(struct shdisp_tri_led *tri_led)
 
     SHDISP_TRACE("out");
     return SHDISP_RESULT_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_SQE_tri_led_set_color2                                             */
+/* ------------------------------------------------------------------------- */
+static int shdisp_SQE_tri_led_set_color2(struct shdisp_tri_led *tri_led)
+{
+    if (shdisp_led_set_color_reject()) {
+        SHDISP_DEBUG("reject request.");
+        return SHDISP_RESULT_SUCCESS;
+    }
+
+    return shdisp_tri_led_set_color2(tri_led);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -3648,6 +4241,35 @@ static int shdisp_SQE_remove_sp_pierce(void)
     return SHDISP_RESULT_SUCCESS;
 }
 #endif  /* SHDISP_TRI_LED2 */
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+/* ------------------------------------------------------------------------- */
+/* shdisp_set_illumi_triple_color                                            */
+/* ------------------------------------------------------------------------- */
+static int shdisp_set_illumi_triple_color(struct shdisp_illumi_triple_color * illumi_triple_color)
+{
+    shdisp_bdic_API_LED_set_illumi_triple_color(*illumi_triple_color);
+    return SHDISP_RESULT_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_SQE_set_illumi_triple_color                                        */
+/* ------------------------------------------------------------------------- */
+static int shdisp_SQE_set_illumi_triple_color(struct shdisp_illumi_triple_color * illumi_triple_color)
+{
+    int ret;
+
+    shdisp_clean_sysfs_led();
+    ret =  shdisp_set_illumi_triple_color(illumi_triple_color);
+
+    shdisp_kerl_ctx.tri_led.red = illumi_triple_color->colors[ILLUMI_FRAME_FIRST].red;
+    shdisp_kerl_ctx.tri_led.green = illumi_triple_color->colors[ILLUMI_FRAME_FIRST].green;
+    shdisp_kerl_ctx.tri_led.blue = illumi_triple_color->colors[ILLUMI_FRAME_FIRST].blue;
+    shdisp_kerl_ctx.tri_led.led_mode = SHDISP_TRI_LED_MODE_ILLUMI_TRIPLE_COLOR;
+
+    return ret;
+}
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
 
 /* ------------------------------------------------------------------------- */
 /* shdisp_SQE_bdic_write_reg                                                 */
@@ -3997,39 +4619,50 @@ static int shdisp_SQE_do_recovery(void)
 #if defined(CONFIG_SHDISP_PANEL_ANDY)
     mdss_shdisp_video_transfer_ctrl(false, false);
     mdss_shdisp_set_lp00_mode(false);
-#endif /* CONFIG_SHDISP_PANEL_ANDY */
+#endif /* CONFIG_SHDISP_PANEL */
 
     shdisp_panel_API_power_off(SHDISP_PANEL_POWER_RECOVERY_OFF);
 
     shdisp_kerl_ctx.main_disp_status = SHDISP_MAIN_DISP_OFF;
 
-#if defined(CONFIG_SHDISP_PANEL_ANDY)   /* CONFIG_SHDISP_PANEL_ANDY */
-    msleep(500);
-#elif defined(CONFIG_SHDISP_PANEL_ARIA) /* CONFIG_SHDISP_PANEL_ARIA */
-    msleep(40);
+#if defined(CONFIG_SHDISP_PANEL_ANDY)
+    shdisp_SYS_API_msleep(500);
+#elif defined(CONFIG_SHDISP_PANEL_ARIA)
+    shdisp_SYS_API_msleep(40);
+#elif defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+    shdisp_SYS_API_msleep(100);
 #else  /* CONFIG_SHDISP_PANEL_XXXX */
 #warning "unknown panel!!!"
-    msleep(500);
-#endif  /* CONFIG_SHDISP_PANEL_ANDY || CONFIG_SHDISP_PANEL_ARIA */
+    shdisp_SYS_API_msleep(500);
+#endif  /* CONFIG_SHDISP_PANEL */
+
+#if defined(CONFIG_SHDISP_PANEL_ARIA) || defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+    mdss_shdisp_cmd_tearcheck_enable(false);
+#endif  /* CONFIG_SHDISP_PANEL */
 
     shdisp_kerl_ctx.main_disp_status = SHDISP_MAIN_DISP_ON;
     shdisp_panel_API_power_on(SHDISP_PANEL_POWER_RECOVERY_ON);
 
 #if defined(CONFIG_SHDISP_PANEL_ANDY)
     mdss_shdisp_set_lp00_mode(true);
-#endif /* CONFIG_SHDISP_PANEL_ANDY */
+#endif /* CONFIG_SHDISP_PANEL */
 
     shdisp_panel_API_disp_on();
 
-#if defined(CONFIG_SHDISP_PANEL_ARIA)
+#if defined(CONFIG_SHDISP_PANEL_ARIA) || defined(CONFIG_SHDISP_PANEL_HAYABUSA)
     mdss_shdisp_mdp_cmd_kickoff();
-#endif  /* CONFIG_SHDISP_PANEL_ARIA */
+#endif  /* CONFIG_SHDISP_PANEL */
 
     shdisp_panel_API_start_display();
 
+#if defined(CONFIG_SHDISP_PANEL_ARIA) || defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+    mdss_shdisp_cmd_tearcheck_enable(true);
+    shdisp_SYS_API_msleep(17);
+#endif  /* CONFIG_SHDISP_PANEL */
+
 #if defined(CONFIG_SHDISP_PANEL_ANDY)
     mdss_shdisp_video_transfer_ctrl(true, false);
-#endif /* CONFIG_SHDISP_PANEL_ANDY */
+#endif /* CONFIG_SHDISP_PANEL */
 
     shdisp_panel_API_post_video_start();
 
@@ -4151,9 +4784,9 @@ static int shdisp_SQE_event_unsubscribe(int irq_type)
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_SQE_set_gammatable_and_voltage                                     */
+/* shdisp_SQE_set_gmmtable_and_voltage                                       */
 /* ------------------------------------------------------------------------- */
-static int shdisp_SQE_set_gammatable_and_voltage(struct shdisp_diag_gamma_info *gamma_info)
+static int shdisp_SQE_set_gmmtable_and_voltage(struct shdisp_diag_gamma_info *gmm_info)
 {
     int ret;
 
@@ -4161,10 +4794,10 @@ static int shdisp_SQE_set_gammatable_and_voltage(struct shdisp_diag_gamma_info *
         return SHDISP_RESULT_SUCCESS;
     }
 
-    ret = shdisp_panel_API_diag_set_gammatable_and_voltage(gamma_info);
+    ret = shdisp_panel_API_diag_set_gmmtable_and_voltage(gmm_info);
 
     if (ret != SHDISP_RESULT_SUCCESS) {
-        SHDISP_ERR("<RESULT_FAILURE> shdisp_panel_API_diag_set_gammatable_and_voltage.");
+        SHDISP_ERR("<RESULT_FAILURE> shdisp_panel_API_diag_set_gmmtable_and_voltage.");
         return SHDISP_RESULT_FAILURE;
     }
 
@@ -4173,9 +4806,9 @@ static int shdisp_SQE_set_gammatable_and_voltage(struct shdisp_diag_gamma_info *
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_SQE_get_gammatable_and_voltage                                     */
+/* shdisp_SQE_get_gmmtable_and_voltage                                       */
 /* ------------------------------------------------------------------------- */
-static int shdisp_SQE_get_gammatable_and_voltage(struct shdisp_diag_gamma_info *gamma_info)
+static int shdisp_SQE_get_gmmtable_and_voltage(struct shdisp_diag_gamma_info *gmm_info)
 {
     int ret;
 
@@ -4183,10 +4816,10 @@ static int shdisp_SQE_get_gammatable_and_voltage(struct shdisp_diag_gamma_info *
         return SHDISP_RESULT_SUCCESS;
     }
 
-    ret = shdisp_panel_API_diag_get_gammatable_and_voltage(gamma_info);
+    ret = shdisp_panel_API_diag_get_gmmtable_and_voltage(gmm_info);
 
     if (ret != SHDISP_RESULT_SUCCESS) {
-        SHDISP_ERR("<RESULT_FAILURE> shdisp_panel_API_diag_get_gammatable_and_voltage.");
+        SHDISP_ERR("<RESULT_FAILURE> shdisp_panel_API_diag_get_gmmtable_and_voltage.");
         return SHDISP_RESULT_FAILURE;
     }
 
@@ -4194,9 +4827,9 @@ static int shdisp_SQE_get_gammatable_and_voltage(struct shdisp_diag_gamma_info *
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_SQE_set_gamma                                                      */
+/* shdisp_SQE_set_gmm                                                        */
 /* ------------------------------------------------------------------------- */
-static int shdisp_SQE_set_gamma(struct shdisp_diag_gamma *gamma)
+static int shdisp_SQE_set_gmm(struct shdisp_diag_gamma *gmm)
 {
     int ret;
 
@@ -4204,10 +4837,10 @@ static int shdisp_SQE_set_gamma(struct shdisp_diag_gamma *gamma)
         return SHDISP_RESULT_SUCCESS;
     }
 
-    ret = shdisp_panel_API_diag_set_gamma(gamma);
+    ret = shdisp_panel_API_diag_set_gmm(gmm);
 
     if (ret != SHDISP_RESULT_SUCCESS) {
-        SHDISP_ERR("<RESULT_FAILURE> shdisp_panel_API_diag_set_gamma.");
+        SHDISP_ERR("<RESULT_FAILURE> shdisp_panel_API_diag_set_gmm.");
         return SHDISP_RESULT_FAILURE;
     }
 
@@ -4265,17 +4898,15 @@ static void shdisp_SQE_lcd_det_recovery(void)
             SHDISP_DEBUG("recovery completed");
             shdisp_bdic_API_IRQ_det_irq_ctrl(true);
 
-            /* enable REQOUT error interrupt for andy panel */
+            /* enable REQOUT error interrupt for andy,hayabusa panel */
 #if defined(CONFIG_SHDISP_PANEL_ANDY)
             shdisp_SYS_API_delay_us(20 * 1000);
 #endif  /* CONFIG_SHDISP_PANEL_ANDY */
 
-#if defined(CONFIG_SHDISP_PANEL_ARIA)
 #ifdef SHDISP_DET_DSI_MIPI_ERROR
             /* reject the mipi error detecting contention */
             mdss_shdisp_dsi_mipi_err_clear();
 #endif  /* SHDISP_DET_DSI_MIPI_ERROR */
-#endif  /* CONFIG_SHDISP_PANEL_ARIA */
 
             /* enable the mipi error detection */
             shdisp_det_mipi_err_ctrl(true);
@@ -4321,7 +4952,9 @@ static int shdisp_SQE_psals_recovery(void)
 
     if (ps_flg == SHDISP_DEV_STATE_ON) {
         /* notify to proximity module that recovery is staring */
+#ifdef CONFIG_PROXIMITY_INT_HOST
         PROX_recovery_start_func();
+#endif /* CONFIG_PROXIMITY_INT_HOST */
     }
 
     shdisp_semaphore_start();
@@ -4347,8 +4980,10 @@ static int shdisp_SQE_psals_recovery(void)
     if (ps_flg == SHDISP_DEV_STATE_ON) {
 
         /* notify to proximity module that recovery is ending */
-        msleep(20);
+       shdisp_SYS_API_msleep(20);
+#ifdef CONFIG_PROXIMITY_INT_HOST
         PROX_recovery_end_func();
+#endif /* CONFIG_PROXIMITY_INT_HOST */
     }
 
     SHDISP_DEBUG("main_disp_status=%d", shdisp_kerl_ctx.main_disp_status)
@@ -4425,7 +5060,7 @@ static void shdisp_semaphore_end(const char *func)
 /* ------------------------------------------------------------------------- */
 /* shdisp_gpio_int_isr                                                       */
 /* ------------------------------------------------------------------------- */
-static irqreturn_t shdisp_gpio_int_isr( int irq_num, void *data )
+static irqreturn_t shdisp_gpio_int_isr(int irq_num, void *data)
 {
     irqreturn_t rc = IRQ_HANDLED;
     int ret;
@@ -4449,6 +5084,7 @@ static irqreturn_t shdisp_gpio_int_isr( int irq_num, void *data )
 
     return rc;
 }
+
 /* ------------------------------------------------------------------------- */
 /* shdisp_workqueue_handler_gpio                                             */
 /* ------------------------------------------------------------------------- */
@@ -4468,7 +5104,7 @@ static void shdisp_workqueue_handler_gpio(struct work_struct *work)
     do {
         ret = shdisp_bdic_API_IRQ_check_fac();
         if (ret != SHDISP_RESULT_SUCCESS) {
-            SHDISP_DEBUG("no factory");
+            SHDISP_DEBUG("no factor");
             break;
         }
 
@@ -4480,7 +5116,7 @@ static void shdisp_workqueue_handler_gpio(struct work_struct *work)
             }
 
             if (shdisp_wq_gpio_task) {
-                qdata = kmalloc( sizeof(shdisp_queue_data), GFP_KERNEL );
+                qdata = kmalloc(sizeof(shdisp_queue_data), GFP_KERNEL);
                 if (qdata != NULL) {
                     qdata->irq_GFAC = nBDIC_QueFac;
                     list_add_tail(&qdata->list, &shdisp_queue_data.list);
@@ -4551,8 +5187,8 @@ static void shdisp_workqueue_gpio_task(struct work_struct *work)
         }
 
         if (entryFirst != NULL) {
-            list_del( &entryFirst->list );
-            kfree( entryFirst );
+            list_del(&entryFirst->list);
+            kfree(entryFirst);
         } else {
             SHDISP_DEBUG("no entry");
             up(&shdisp_sem_irq_fac);
@@ -4568,7 +5204,7 @@ static void shdisp_workqueue_gpio_task(struct work_struct *work)
                 nFirst_GFAC = -1;
                 switch (nFirstBDIC_GFAC) {
                 case SHDISP_BDIC_IRQ_TYPE_ALS:
-                        nFirst_GFAC = SHDISP_IRQ_TYPE_ALS;
+                        nFirst_GFAC = SHDISP_IRQ_TYPE_ALS_REQ;
                         break;
                 case SHDISP_BDIC_IRQ_TYPE_PS:
                         nFirst_GFAC = SHDISP_IRQ_TYPE_PS;
@@ -4622,41 +5258,6 @@ static void shdisp_workqueue_gpio_task(struct work_struct *work)
     shdisp_wake_unlock();
 
     return;
-}
-
-/* ------------------------------------------------------------------------- */
-/* shdisp_do_detin_recovery                                                  */
-/* ------------------------------------------------------------------------- */
-static int shdisp_do_detin_recovery(void)
-{
-    int ret;
-#ifdef SHDISP_RESET_LOG
-    struct shdisp_dbg_error_code err_code;
-#endif /* SHDISP_RESET_LOG */
-
-    SHDISP_DEBUG("enable_irq for DET before");
-    shdisp_semaphore_start();
-    ret = shdisp_bdic_API_RECOVERY_check_restoration();
-    shdisp_semaphore_end(__func__);
-    if (ret == SHDISP_RESULT_FAILURE) {
-        SHDISP_ERR("lcd det bdic");
-#ifdef SHDISP_RESET_LOG
-        err_code.mode = SHDISP_DBG_MODE_LINUX;
-        err_code.type = SHDISP_DBG_TYPE_PANEL;
-        err_code.code = SHDISP_DBG_CODE_ERROR_DETECT;
-        err_code.subcode = SHDISP_DBG_SUBCODE_ESD_DETIN;
-        shdisp_dbg_API_err_output(&err_code, 0);
-        shdisp_dbg_API_set_subcode(SHDISP_DBG_SUBCODE_ESD_DETIN);
-#endif /* SHDISP_RESET_LOG */
-        shdisp_do_lcd_det_recovery();
-    } else {
-        SHDISP_DEBUG("lcd det bdic detects the false");
-        shdisp_bdic_API_IRQ_det_irq_ctrl(true);
-    }
-    SHDISP_DEBUG("enable_irq for DET after");
-    shdisp_SYS_API_set_irq(SHDISP_IRQ_ENABLE);
-
-    return SHDISP_RESULT_SUCCESS;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -4856,6 +5457,76 @@ static void shdisp_workqueue_pierce(struct work_struct *work)
 #endif  /* SHDISP_TRI_LED2 */
 
 /* ------------------------------------------------------------------------- */
+/* shdisp_det_mipi_err_ctrl                                                  */
+/* ------------------------------------------------------------------------- */
+static void shdisp_det_mipi_err_ctrl(bool enable)
+{
+    SHDISP_TRACE("in enable=%d", enable);
+
+    if (enable) {
+#if defined(CONFIG_SHDISP_PANEL_ANDY)
+        (void)shdisp_panel_API_set_irq(SHDISP_IRQ_ENABLE);
+#elif defined(CONFIG_SHDISP_PANEL_ARIA) || defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+#if defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+        (void)shdisp_panel_API_set_irq(SHDISP_IRQ_ENABLE);
+#endif /* CONFIG_SHDISP_PANEL_HAYABUSA */
+#ifdef SHDISP_DET_DSI_MIPI_ERROR
+        (void)mdss_shdisp_dsi_mipi_err_ctrl(true);
+#endif  /* SHDISP_DET_DSI_MIPI_ERROR */
+#endif  /* CONFIG_SHDISP_PANEL */
+    }else{
+#if defined(CONFIG_SHDISP_PANEL_ANDY)
+        (void)shdisp_panel_API_set_irq(SHDISP_IRQ_DISABLE);
+#elif defined(CONFIG_SHDISP_PANEL_ARIA) || defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+#ifdef SHDISP_DET_DSI_MIPI_ERROR
+        (void)mdss_shdisp_dsi_mipi_err_ctrl(false);
+#endif  /* SHDISP_DET_DSI_MIPI_ERROR */
+#if defined(CONFIG_SHDISP_PANEL_HAYABUSA)
+        (void)shdisp_panel_API_set_irq(SHDISP_IRQ_DISABLE);
+#endif /* CONFIG_SHDISP_PANEL_HAYABUSA */
+#endif  /* CONFIG_SHDISP_PANEL */
+    }
+
+    SHDISP_TRACE("out");
+    return;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_do_detin_recovery                                                  */
+/* ------------------------------------------------------------------------- */
+static int shdisp_do_detin_recovery(void)
+{
+    int ret;
+#ifdef SHDISP_RESET_LOG
+    struct shdisp_dbg_error_code err_code;
+#endif /* SHDISP_RESET_LOG */
+
+    SHDISP_DEBUG("enable_irq for DET before");
+    shdisp_semaphore_start();
+    ret = shdisp_bdic_API_RECOVERY_check_restoration();
+    shdisp_semaphore_end(__func__);
+    if (ret == SHDISP_RESULT_FAILURE) {
+        SHDISP_ERR("lcd det bdic");
+#ifdef SHDISP_RESET_LOG
+        err_code.mode = SHDISP_DBG_MODE_LINUX;
+        err_code.type = SHDISP_DBG_TYPE_PANEL;
+        err_code.code = SHDISP_DBG_CODE_ERROR_DETECT;
+        err_code.subcode = SHDISP_DBG_SUBCODE_ESD_DETIN;
+        shdisp_dbg_API_err_output(&err_code, 0);
+        shdisp_dbg_API_set_subcode(SHDISP_DBG_SUBCODE_ESD_DETIN);
+#endif /* SHDISP_RESET_LOG */
+        shdisp_do_lcd_det_recovery();
+    } else {
+        SHDISP_DEBUG("lcd det bdic detects the false");
+        shdisp_bdic_API_IRQ_det_irq_ctrl(true);
+    }
+    SHDISP_DEBUG("enable_irq for DET after");
+    shdisp_SYS_API_set_irq(SHDISP_IRQ_ENABLE);
+
+    return SHDISP_RESULT_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
 /* shdisp_do_lcd_det_recovery                                                */
 /* ------------------------------------------------------------------------- */
 static int shdisp_do_lcd_det_recovery(void)
@@ -4953,13 +5624,13 @@ static void shdisp_lcd_det_recovery(void)
         return;
     }
 
-#if defined(CONFIG_SHDISP_PANEL_ANDY)
+#if defined(CONFIG_SHDISP_PANEL_ANDY) || defined(CONFIG_SHDISP_PANEL_HAYABUSA)
     mdss_shdisp_mdp_hr_video_suspend();
-#endif /* CONFIG_SHDISP_PANEL_ANDY */
+#endif /* CONFIG_SHDISP_PANEL_ANDY || CONFIG_SHDISP_PANEL_HAYABUSA */
     shdisp_SQE_lcd_det_recovery();
-#if defined(CONFIG_SHDISP_PANEL_ANDY)
+#if defined(CONFIG_SHDISP_PANEL_ANDY) || defined(CONFIG_SHDISP_PANEL_HAYABUSA)
     mdss_shdisp_mdp_hr_video_resume();
-#endif /* CONFIG_SHDISP_PANEL_ANDY */
+#endif /* CONFIG_SHDISP_PANEL_ANDY || CONFIG_SHDISP_PANEL_HAYABUSA */
 
     shdisp_semaphore_end(__func__);
 
@@ -5027,7 +5698,7 @@ static int shdisp_do_als_int_report(int ginf2_val)
 {
     SHDISP_TRACE("in");
 
-    if(ginf2_val != 0) {
+    if (ginf2_val != 0) {
         shdisp_input_subsystem_report(ginf2_val);
         shdisp_set_als_int_unsubscribe(ginf2_val);
     }
@@ -5105,6 +5776,129 @@ static int shdisp_set_als_int_unsubscribe(int trigger)
     return ret;
 }
 #endif /* SHDISP_ALS_INT */
+
+#ifdef SHDISP_LED_INT
+/* ------------------------------------------------------------------------- */
+/* shdisp_led_auto_low_isr                                                   */
+/* ------------------------------------------------------------------------- */
+static void shdisp_led_auto_low_isr(void)
+{
+    SHDISP_TRACE("in");
+
+    shdisp_semaphore_start();
+
+    if (!shdisp_kerl_ctx.led_auto_low_enable) {
+        SHDISP_WARN("disabled.");
+        shdisp_semaphore_end(__func__);
+    }
+
+    shdisp_bdic_API_led_auto_low_process();
+
+    shdisp_semaphore_end(__func__);
+
+    SHDISP_TRACE("out");
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_led_auto_low_subscribe                                             */
+/* ------------------------------------------------------------------------- */
+static int shdisp_led_auto_low_subscribe(void)
+{
+    int ret;
+    struct shdisp_subscribe subs;
+
+    SHDISP_TRACE("in");
+
+    subs.irq_type = SHDISP_IRQ_TYPE_ALS_REQ;
+    subs.callback = shdisp_led_auto_low_isr;
+    ret = shdisp_event_subscribe(&subs);
+
+    SHDISP_TRACE("out ret=%d", ret);
+
+   return ret;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_led_auto_low_unsubscribe                                           */
+/* ------------------------------------------------------------------------- */
+static int shdisp_led_auto_low_unsubscribe(void)
+{
+    int ret = 0;
+
+    SHDISP_TRACE("in");
+
+    ret = shdisp_event_unsubscribe(SHDISP_IRQ_TYPE_ALS_REQ);
+
+    SHDISP_TRACE("out ret=%d", ret);
+
+    return ret;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_led_auto_low_enable                                                */
+/* ------------------------------------------------------------------------- */
+static int shdisp_led_auto_low_enable(void)
+{
+    int ret;
+
+    SHDISP_TRACE("in");
+
+    if (shdisp_kerl_ctx.led_auto_low_enable) {
+        SHDISP_DEBUG("already enabled.");
+        return SHDISP_RESULT_SUCCESS;
+    }
+
+    ret = shdisp_bdic_API_led_auto_low_enable(true);
+    if (ret != SHDISP_RESULT_SUCCESS) {
+        SHDISP_ERR("enable failure.");
+        return SHDISP_RESULT_FAILURE;
+    }
+
+    ret = shdisp_led_auto_low_subscribe();
+    if (ret != SHDISP_RESULT_SUCCESS) {
+        SHDISP_ERR("subscribe failure.");
+        shdisp_bdic_API_led_auto_low_enable(false);
+        return SHDISP_RESULT_FAILURE;
+    }
+
+    shdisp_kerl_ctx.led_auto_low_enable = true;
+
+    SHDISP_TRACE("out");
+
+    return SHDISP_RESULT_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_led_auto_low_disable                                               */
+/* ------------------------------------------------------------------------- */
+static int shdisp_led_auto_low_disable(void)
+{
+    int ret;
+
+    SHDISP_TRACE("in");
+
+    if (!shdisp_kerl_ctx.led_auto_low_enable) {
+        SHDISP_DEBUG("already disabled.");
+        return SHDISP_RESULT_SUCCESS;
+    }
+
+    ret = shdisp_led_auto_low_unsubscribe();
+    if (ret != SHDISP_RESULT_SUCCESS) {
+        SHDISP_ERR("unsubscribe failure.");
+    }
+
+    ret = shdisp_bdic_API_led_auto_low_enable(false);
+    if (ret != SHDISP_RESULT_SUCCESS) {
+        SHDISP_ERR("disable failure.");
+    }
+
+    shdisp_kerl_ctx.led_auto_low_enable = false;
+
+    SHDISP_TRACE("out");
+
+    return SHDISP_RESULT_SUCCESS;
+}
+#endif /* SHDISP_LED_INT */
 
 /* ------------------------------------------------------------------------- */
 /* shdisp_do_psals_recovery                                                  */
@@ -5204,7 +5998,32 @@ static void shdisp_psals_recovery(void)
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_event_subscribe                                                */
+/* shdisp_event_unsubscribe                                                  */
+/* ------------------------------------------------------------------------- */
+static int shdisp_event_unsubscribe(int irq_type)
+{
+    int ret;
+
+    SHDISP_PERFORMANCE("RESUME PANEL EVENT-UNSUBSCRIBE 0010 START");
+
+    if (shdisp_bdic_unsubscribe_check(irq_type) != SHDISP_RESULT_SUCCESS) {
+        return SHDISP_RESULT_FAILURE;
+    }
+
+    ret = shdisp_SQE_event_unsubscribe(irq_type);
+
+    if (ret != SHDISP_RESULT_SUCCESS) {
+        SHDISP_ERR("<RESULT_FAILURE> shdisp_SQE_event_unsubscribe.");
+        return SHDISP_RESULT_FAILURE;
+    }
+
+    SHDISP_PERFORMANCE("RESUME PANEL EVENT-UNSUBSCRIBE 0010 END");
+
+    return SHDISP_RESULT_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_event_subscribe                                                    */
 /* ------------------------------------------------------------------------- */
 static int shdisp_event_subscribe(struct shdisp_subscribe *subscribe)
 {
@@ -5238,30 +6057,515 @@ static int shdisp_event_subscribe(struct shdisp_subscribe *subscribe)
 
 }
 
+#ifdef SHDISP_SYSFS_LED
+inline static unsigned int shdisp_led_cnv_current_value(unsigned int value)
+{
+    if (value) {
+        value = value >> 1;
+        if (!value) {
+            value++;
+        }
+    }
+    return value;
+}
+
 /* ------------------------------------------------------------------------- */
-/* shdisp_event_unsubscribe                                                  */
+/* shdisp_led_set_red1                                                       */
 /* ------------------------------------------------------------------------- */
-static int shdisp_event_unsubscribe(int irq_type)
+static void shdisp_led_set_red1(struct led_classdev *led_cdev, enum led_brightness value)
+{
+    struct shdisp_tri_led led;
+
+    memset(&led, 0x00, sizeof(led));
+
+    if (shdisp_check_initialized() != SHDISP_RESULT_SUCCESS) {
+        SHDISP_DEBUG("out1");
+        return;
+    }
+
+    if (shdisp_check_bdic_exist() != SHDISP_RESULT_SUCCESS) {
+        SHDISP_DEBUG("out2");
+        return;
+    }
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+    if (shdisp_bdic_API_LED_is_running_illumi_triple_color()) {
+        shdisp_bdic_API_LED_clear_illumi_triple_color();
+    }
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
+
+    led.red = shdisp_led_cnv_current_value(value);
+    led.green = shdisp_kerl_ctx.sysfs_led1.green;
+    led.blue = shdisp_kerl_ctx.sysfs_led1.blue;
+
+    SHDISP_DEBUG("/sys/class/leds/sh-red1/brightness is %d", value);
+    shdisp_semaphore_start();
+
+    shdisp_SQE_tri_led_on(SYSFS_LED_SH_LED_1, &led);
+
+    shdisp_semaphore_end(__func__);
+
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_led_set_green1                                                     */
+/* ------------------------------------------------------------------------- */
+static void shdisp_led_set_green1(struct led_classdev *led_cdev, enum led_brightness value)
+{
+    struct shdisp_tri_led led;
+
+    memset(&led, 0x00, sizeof(led));
+
+    if (shdisp_check_initialized() != SHDISP_RESULT_SUCCESS) {
+        SHDISP_DEBUG("out1");
+        return;
+    }
+
+    if (shdisp_check_bdic_exist() != SHDISP_RESULT_SUCCESS) {
+        SHDISP_DEBUG("out2");
+        return;
+    }
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+    if (shdisp_bdic_API_LED_is_running_illumi_triple_color()) {
+        shdisp_bdic_API_LED_clear_illumi_triple_color();
+    }
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
+
+    led.red = shdisp_kerl_ctx.sysfs_led1.red;
+    led.green = shdisp_led_cnv_current_value(value);
+    led.blue = shdisp_kerl_ctx.sysfs_led1.blue;
+
+    SHDISP_DEBUG("/sys/class/leds/sh-green1/brightness is %d", value);
+    shdisp_semaphore_start();
+
+    shdisp_SQE_tri_led_on(SYSFS_LED_SH_LED_1, &led);
+
+    shdisp_semaphore_end(__func__);
+
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_led_set_blue1                                                      */
+/* ------------------------------------------------------------------------- */
+static void shdisp_led_set_blue1(struct led_classdev *led_cdev, enum led_brightness value)
+{
+    struct shdisp_tri_led led;
+
+    memset(&led, 0x00, sizeof(led));
+
+    if (shdisp_check_initialized() != SHDISP_RESULT_SUCCESS) {
+        SHDISP_DEBUG("out1");
+        return;
+    }
+
+    if (shdisp_check_bdic_exist() != SHDISP_RESULT_SUCCESS) {
+        SHDISP_DEBUG("out2");
+        return;
+    }
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+    if (shdisp_bdic_API_LED_is_running_illumi_triple_color()) {
+        shdisp_bdic_API_LED_clear_illumi_triple_color();
+    }
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
+
+    led.red = shdisp_kerl_ctx.sysfs_led1.red;
+    led.green = shdisp_kerl_ctx.sysfs_led1.green;
+    led.blue = shdisp_led_cnv_current_value(value);
+
+    SHDISP_DEBUG("/sys/class/leds/sh-blue1/brightness is %d", value);
+    shdisp_semaphore_start();
+
+    shdisp_SQE_tri_led_on(SYSFS_LED_SH_LED_1, &led);
+
+    shdisp_semaphore_end(__func__);
+
+}
+
+#ifdef SHDISP_COLOR_LED_TWIN
+/* ------------------------------------------------------------------------- */
+/* shdisp_led_set_red2                                                       */
+/* ------------------------------------------------------------------------- */
+static void shdisp_led_set_red2(struct led_classdev *led_cdev, enum led_brightness value)
+{
+    struct shdisp_tri_led led;
+
+    memset(&led, 0x00, sizeof(led));
+
+    if (shdisp_check_initialized() != SHDISP_RESULT_SUCCESS) {
+        SHDISP_DEBUG("out1");
+        return;
+    }
+
+    if (shdisp_check_bdic_exist() != SHDISP_RESULT_SUCCESS) {
+        SHDISP_DEBUG("out2");
+        return;
+    }
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+    if (shdisp_bdic_API_LED_is_running_illumi_triple_color()) {
+        shdisp_bdic_API_LED_clear_illumi_triple_color();
+    }
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
+
+    led.red = shdisp_led_cnv_current_value(value);
+    led.green = shdisp_kerl_ctx.sysfs_led2.green;
+    led.blue = shdisp_kerl_ctx.sysfs_led2.blue;
+
+    SHDISP_DEBUG("/sys/class/leds/sh-red2/brightness is %d", value);
+    shdisp_semaphore_start();
+
+    shdisp_SQE_tri_led_on(SYSFS_LED_SH_LED_2, &led);
+
+    shdisp_semaphore_end(__func__);
+
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_led_set_green2                                                     */
+/* ------------------------------------------------------------------------- */
+static void shdisp_led_set_green2(struct led_classdev *led_cdev, enum led_brightness value)
+{
+    struct shdisp_tri_led led;
+
+    memset(&led, 0x00, sizeof(led));
+
+    if (shdisp_check_initialized() != SHDISP_RESULT_SUCCESS) {
+        SHDISP_DEBUG("out1");
+        return;
+    }
+
+    if (shdisp_check_bdic_exist() != SHDISP_RESULT_SUCCESS) {
+        SHDISP_DEBUG("out2");
+        return;
+    }
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+    if (shdisp_bdic_API_LED_is_running_illumi_triple_color()) {
+        shdisp_bdic_API_LED_clear_illumi_triple_color();
+    }
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
+
+    led.red = shdisp_kerl_ctx.sysfs_led2.red;
+    led.green = shdisp_led_cnv_current_value(value);
+    led.blue = shdisp_kerl_ctx.sysfs_led2.blue;
+
+    SHDISP_DEBUG("/sys/class/leds/sh-green2/brightness is %d", value);
+    shdisp_semaphore_start();
+
+    shdisp_SQE_tri_led_on(SYSFS_LED_SH_LED_2, &led);
+
+    shdisp_semaphore_end(__func__);
+
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_led_set_blue2                                                      */
+/* ------------------------------------------------------------------------- */
+static void shdisp_led_set_blue2(struct led_classdev *led_cdev, enum led_brightness value)
+{
+    struct shdisp_tri_led led;
+
+    memset(&led, 0x00, sizeof(led));
+
+    if (shdisp_check_initialized() != SHDISP_RESULT_SUCCESS) {
+        SHDISP_DEBUG("out1");
+        return;
+    }
+
+    if (shdisp_check_bdic_exist() != SHDISP_RESULT_SUCCESS) {
+        SHDISP_DEBUG("out2");
+        return;
+    }
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+    if (shdisp_bdic_API_LED_is_running_illumi_triple_color()) {
+        shdisp_bdic_API_LED_clear_illumi_triple_color();
+    }
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
+
+    led.red = shdisp_kerl_ctx.sysfs_led2.red;
+    led.green = shdisp_kerl_ctx.sysfs_led2.green;
+    led.blue = shdisp_led_cnv_current_value(value);
+
+    SHDISP_DEBUG("/sys/class/leds/sh-blue2/brightness is %d", value);
+    shdisp_semaphore_start();
+
+    shdisp_SQE_tri_led_on(SYSFS_LED_SH_LED_2, &led);
+
+    shdisp_semaphore_end(__func__);
+
+}
+#endif /* SHDISP_COLOR_LED_TWIN */
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_clear_sysfs_led                                                    */
+/* ------------------------------------------------------------------------- */
+static void shdisp_clean_sysfs_led(void) {
+
+       shdisp_kerl_ctx.sysfs_led1.red = 0;
+       shdisp_kerl_ctx.sysfs_led1.green = 0;
+       shdisp_kerl_ctx.sysfs_led1.blue = 0;
+#ifdef SHDISP_COLOR_LED_TWIN
+       shdisp_kerl_ctx.sysfs_led2.red = 0;
+       shdisp_kerl_ctx.sysfs_led2.green = 0;
+       shdisp_kerl_ctx.sysfs_led2.blue = 0;
+#endif /* SHDISP_COLOR_LED_TWIN */
+
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_clear_normal_led                                                   */
+/* ------------------------------------------------------------------------- */
+static void shdisp_clean_normal_led(void) {
+
+      shdisp_kerl_ctx.tri_led.red = 0;
+      shdisp_kerl_ctx.tri_led.green = 0;
+      shdisp_kerl_ctx.tri_led.blue = 0;
+      shdisp_kerl_ctx.tri_led.led_mode = SHDISP_TRI_LED_MODE_NORMAL;
+}
+
+#endif /* SHDISP_SYSFS_LED */
+
+#ifdef SHDISP_FPS_LED_PANEL_SUPPORT
+/* ------------------------------------------------------------------------- */
+/* shdisp_fps_led_read_reg                                                   */
+/* ------------------------------------------------------------------------- */
+static int shdisp_fps_led_read_reg(unsigned char *fps_reg)
 {
     int ret;
+    char page;
 
-    SHDISP_PERFORMANCE("RESUME PANEL EVENT-UNSUBSCRIBE 0010 START");
-
-    if (shdisp_bdic_unsubscribe_check(irq_type) != SHDISP_RESULT_SUCCESS) {
-        return SHDISP_RESULT_FAILURE;
-    }
-
-    ret = shdisp_SQE_event_unsubscribe(irq_type);
-
+    page = PAGE_FPS_REG;
+    ret = shdisp_panel_API_mipi_diag_write_reg(
+            SHDISP_DTYPE_DCS_WRITE1,
+            ADDR_PAGE,
+            &page,
+            sizeof(page));
     if (ret != SHDISP_RESULT_SUCCESS) {
-        SHDISP_ERR("<RESULT_FAILURE> shdisp_SQE_event_unsubscribe.");
         return SHDISP_RESULT_FAILURE;
     }
 
-    SHDISP_PERFORMANCE("RESUME PANEL EVENT-UNSUBSCRIBE 0010 END");
+    ret = shdisp_panel_API_mipi_diag_read_reg(
+            SHDISP_DTYPE_DCS_READ,
+            ADDR_FPS_REG,
+            fps_reg,
+            sizeof(*fps_reg));
+    if (ret != SHDISP_RESULT_SUCCESS) {
+        return SHDISP_RESULT_FAILURE;
+    }
 
     return SHDISP_RESULT_SUCCESS;
 }
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_fps_led_set_color                                                  */
+/* ------------------------------------------------------------------------- */
+static void shdisp_fps_led_set_color(int state)
+{
+    struct shdisp_tri_led param;
+
+    param.red   = shdisp_fps_led_color[state][0];
+    param.green = shdisp_fps_led_color[state][1];
+    param.blue  = shdisp_fps_led_color[state][2];
+    param.ext_mode = SHDISP_TRI_LED_EXT_MODE_DISABLE;
+    param.led_mode = SHDISP_TRI_LED_MODE_NORMAL;
+
+    shdisp_tri_led_set_color(&param);
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_fps_led_work                                                       */
+/* ------------------------------------------------------------------------- */
+static void shdisp_fps_led_work(struct work_struct *work)
+{
+    int ret;
+    int bit_cnt;
+    int state, bef_state;
+    unsigned char fps_reg = 0;
+
+    SHDISP_TRACE("in");
+
+    if (!shdisp_fps_led_ctx.enable || shdisp_fps_led_ctx.suspend) {
+        SHDISP_DEBUG("out2 enable=%d suspend=%d",
+                shdisp_fps_led_ctx.enable,
+                shdisp_fps_led_ctx.suspend);
+        return;
+    }
+
+    queue_delayed_work(
+            shdisp_fps_led_ctx.workq,
+            &shdisp_fps_led_ctx.work,
+            usecs_to_jiffies(shdisp_fps_led_ctx.interval));
+
+    state = shdisp_fps_led_ctx.state;
+    bef_state = state;
+
+    shdisp_semaphore_start();
+    if (shdisp_fps_led_ctx.panel_on) {
+        ret = shdisp_fps_led_read_reg(&fps_reg);
+        if (ret == SHDISP_RESULT_SUCCESS) {
+            bit_cnt = hweight8(fps_reg);
+            if (bit_cnt >= 8) {
+                state = FPS_LED_STATE_120HZ;
+            } else if (bit_cnt >= 4) {
+                state = FPS_LED_STATE_60HZ;
+            } else if (bit_cnt >= 2) {
+                state = FPS_LED_STATE_30HZ;
+            } else if (bit_cnt >= 1) {
+                state = FPS_LED_STATE_15HZ;
+            } else {
+                state = FPS_LED_STATE_1HZ;
+            }
+            SHDISP_DEBUG("fps_reg=%02x state=%s", fps_reg, shdisp_fps_led_state_str[state]);
+        }
+    } else {
+        state = FPS_LED_STATE_NONE;
+    }
+    shdisp_semaphore_end(__func__);
+
+    if (state != bef_state) {
+        shdisp_semaphore_start();
+        shdisp_fps_led_set_color(state);
+        shdisp_semaphore_end(__func__);
+    }
+
+    shdisp_fps_led_ctx.state = state;
+
+    SHDISP_TRACE("out");
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_fps_led_start                                                      */
+/* ------------------------------------------------------------------------- */
+static void shdisp_fps_led_start(void)
+{
+    SHDISP_TRACE("in");
+
+    if (shdisp_fps_led_ctx.enable) {
+        SHDISP_DEBUG("out2 enable=%d",
+                shdisp_fps_led_ctx.enable);
+        return;
+    }
+
+    if (!shdisp_fps_led_ctx.workq) {
+        SHDISP_ERR("workq is NULL.");
+        return;
+    }
+
+    shdisp_fps_led_ctx.enable = true;
+    shdisp_fps_led_ctx.state = FPS_LED_STATE_NONE;
+    shdisp_fps_led_ctx.interval = FPS_LED_INTERVAL;
+
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+    if (shdisp_bdic_API_LED_is_running_illumi_triple_color()) {
+        shdisp_bdic_API_LED_clear_illumi_triple_color();
+    }
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
+    shdisp_semaphore_start();
+    shdisp_fps_led_set_color(FPS_LED_STATE_NONE);
+    shdisp_semaphore_end(__func__);
+
+    if (shdisp_fps_led_ctx.panel_on) {
+        shdisp_fps_led_ctx.suspend = false;
+        queue_delayed_work(
+                shdisp_fps_led_ctx.workq,
+                &shdisp_fps_led_ctx.work,
+                usecs_to_jiffies(shdisp_fps_led_ctx.interval));
+    } else {
+        shdisp_fps_led_ctx.suspend = true;
+    }
+
+    SHDISP_TRACE("out");
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_fps_led_stop                                                       */
+/* ------------------------------------------------------------------------- */
+static void shdisp_fps_led_stop(void)
+{
+    SHDISP_TRACE("in");
+
+    if (!shdisp_fps_led_ctx.enable) {
+        SHDISP_DEBUG("out2 enable=%d",
+                shdisp_fps_led_ctx.enable);
+        return;
+    }
+
+    if (!shdisp_fps_led_ctx.workq) {
+        SHDISP_ERR("workq is NULL.");
+        return;
+    }
+
+    shdisp_fps_led_ctx.enable = false;
+    cancel_delayed_work_sync(&shdisp_fps_led_ctx.work);
+
+    shdisp_semaphore_start();
+    shdisp_fps_led_set_color(FPS_LED_STATE_NONE);
+    shdisp_semaphore_end(__func__);
+
+    SHDISP_TRACE("out");
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_fps_led_resume                                                     */
+/* ------------------------------------------------------------------------- */
+static void shdisp_fps_led_resume(void)
+{
+    SHDISP_TRACE("in");
+
+    if (!shdisp_fps_led_ctx.enable || !shdisp_fps_led_ctx.suspend) {
+        SHDISP_DEBUG("out2 enable=%d suspend=%d",
+                shdisp_fps_led_ctx.enable,
+                shdisp_fps_led_ctx.suspend);
+        return;
+    }
+
+    if (!shdisp_fps_led_ctx.workq) {
+        SHDISP_ERR("workq is NULL.");
+        return;
+    }
+
+    shdisp_fps_led_ctx.suspend = false;
+    queue_delayed_work(
+            shdisp_fps_led_ctx.workq,
+            &shdisp_fps_led_ctx.work,
+            usecs_to_jiffies(shdisp_fps_led_ctx.interval * 3));
+
+    SHDISP_TRACE("out");
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_fps_led_suspend                                                    */
+/* ------------------------------------------------------------------------- */
+static void shdisp_fps_led_suspend(void)
+{
+    SHDISP_TRACE("in");
+
+    if (!shdisp_fps_led_ctx.enable || shdisp_fps_led_ctx.suspend) {
+        SHDISP_DEBUG("out2 enable=%d suspend=%d",
+                shdisp_fps_led_ctx.enable,
+                shdisp_fps_led_ctx.suspend);
+        return;
+    }
+
+    if (!shdisp_fps_led_ctx.workq) {
+        SHDISP_ERR("workq is NULL.");
+        return;
+    }
+
+    shdisp_fps_led_ctx.suspend = true;
+    cancel_delayed_work_sync(&shdisp_fps_led_ctx.work);
+    shdisp_fps_led_ctx.state = FPS_LED_STATE_NONE;
+
+    shdisp_semaphore_start();
+    shdisp_fps_led_set_color(FPS_LED_STATE_NONE);
+    shdisp_semaphore_end(__func__);
+
+    SHDISP_TRACE("out");
+}
+#endif /* SHDISP_FPS_LED_PANEL_SUPPORT */
 
 /* ------------------------------------------------------------------------- */
 /* OTHER                                                                     */
@@ -5308,7 +6612,6 @@ static int shdisp_proc_write(struct file *file, const char *buffer, unsigned lon
     int paramlen = 0;
     int needalloc = 0;
     struct shdisp_tri_led tri_led;
-    struct shdisp_lcddr_reg panel_reg;
     int recovery_error_flag;
     int recovery_error_count;
 
@@ -5346,8 +6649,9 @@ static int shdisp_proc_write(struct file *file, const char *buffer, unsigned lon
                                                                                shdisp_pfs.par[2], shdisp_pfs.par[3]);
 
     switch (shdisp_pfs.id) {
-    case SHDISP_DEBUG_DSI_WRITE:
-        if (len < 6) {
+    case SHDISP_DEBUG_DSI_DCS_WRITE:
+    case SHDISP_DEBUG_DSI_GEN_WRITE:
+        if (len < 8) {
             SHDISP_ERR("(%d): DSI_WRITE param error", shdisp_pfs.id);
             goto out;
         }
@@ -5453,6 +6757,8 @@ static int shdisp_proc_write(struct file *file, const char *buffer, unsigned lon
             prox_params.threshold_low  = (unsigned int)shdisp_pfs.par[1];
             prox_params.threshold_high = (unsigned int)shdisp_pfs.par[2];
 
+            shdisp_bdic_API_set_prox_sensor_param(&prox_params);
+
             ret = shdisp_SQE_prox_sensor_pow_ctl(SHDISP_PROX_SENSOR_POWER_ON);
             break;
         default:
@@ -5553,6 +6859,11 @@ static int shdisp_proc_write(struct file *file, const char *buffer, unsigned lon
         break;
 
     case SHDISP_DEBUG_RGB_LED:
+#if defined(SHDISP_ILLUMI_TRIPLE_COLOR_LED) && defined(SHDISP_ANIME_COLOR_LED)
+        if (shdisp_bdic_API_LED_is_running_illumi_triple_color()) {
+            shdisp_bdic_API_LED_clear_illumi_triple_color();
+        }
+#endif /* SHDISP_ILLUMI_TRIPLE_COLOR_LED && SHDISP_ANIME_COLOR_LED */
         tri_led.red      = ((shdisp_pfs.par[0] >> 8) & 0x00FF);
         tri_led.green    = ( shdisp_pfs.par[0]       & 0x00FF);
         tri_led.blue     = ((shdisp_pfs.par[1] >> 8) & 0x00FF);
@@ -5567,7 +6878,7 @@ static int shdisp_proc_write(struct file *file, const char *buffer, unsigned lon
     case SHDISP_DEBUG_LED_REG_DUMP:
         if (shdisp_pfs.par[0] == 1) {
             shdisp_bdic_API_TRI_LED2_INFO_output();
-        }else {
+        } else {
             shdisp_bdic_API_TRI_LED_INFO_output();
         }
         break;
@@ -5585,32 +6896,43 @@ static int shdisp_proc_write(struct file *file, const char *buffer, unsigned lon
 
         break;
 
-#ifdef SHDISP_TRI_LED2
     case SHDISP_DEBUG_PIERCE_INOUT:
         if (shdisp_pfs.par[0] == 0) {
             printk("[SHDISP] Smart phone pierce Removed.\n");
-            ret = shdisp_SQE_remove_sp_pierce();
-        } else if(shdisp_pfs.par[0] == 1) {
+            ret = leds_api_remove_sp_pierce();
+        } else if (shdisp_pfs.par[0] == 1) {
             printk("[SHDISP] Smart phone pierce Inserted.\n");
-            ret = shdisp_SQE_insert_sp_pierce();
+            ret = leds_api_insert_sp_pierce();
         }
         break;
-#endif  /* SHDISP_TRI_LED2 */
 
     case SHDISP_DEBUG_LCD_POWER_CHG:
         shdisp_kerl_ctx.main_disp_status = SHDISP_MAIN_DISP_OFF;
         shdisp_semaphore_start();
-        if (shdisp_pfs.par[0] == 0) {
-            printk("[SHDISP_DEBUG][%s] lcd_power_off \n", __func__);
-            shdisp_SQE_main_lcd_power_off();
-        } else if (shdisp_pfs.par[0] == 1) {
+        switch (shdisp_pfs.par[0]) {
+        case 1:
             printk("[SHDISP_DEBUG][%s] lcd_power_on(NORMAL) \n", __func__);
             first_lcd_on = true;
             shdisp_SQE_main_lcd_power_on();
-        } else if (shdisp_pfs.par[0] == 2) {
+            break;
+        case 2:
             printk("[SHDISP_DEBUG][%s] lcd_power_on(FIRST) \n", __func__);
             first_lcd_on = false;
             shdisp_SQE_main_lcd_power_on();
+            break;
+        case 3:
+            printk("[SHDISP_DEBUG][%s] lcd_power_off(NORMAL) \n", __func__);
+            shdisp_SQE_main_lcd_power_off();
+            break;
+        case 4:
+            printk("[SHDISP_DEBUG][%s] lcd_power_off(SHUTDOWN) \n", __func__);
+            shdisp_kerl_ctx.shutdown_in_progress = true;
+            shdisp_SQE_main_lcd_power_off();
+            shdisp_kerl_ctx.shutdown_in_progress = false;
+            break;
+        default:
+            printk("[SHDISP_DEBUG][%s] SHDISP_DEBUG_LCD_POWER_CHG unknown param \n", __func__);
+            break;
         }
         shdisp_semaphore_end(__func__);
         break;
@@ -5620,11 +6942,19 @@ static int shdisp_proc_write(struct file *file, const char *buffer, unsigned lon
         break;
 
     case SHDISP_DEBUG_FPS_LED:
+#if defined(SHDISP_FPS_LED_PANEL_SUPPORT)
+        if (shdisp_pfs.par[0]) {
+            shdisp_fps_led_start();
+        } else {
+            shdisp_fps_led_stop();
+        }
+#elif defined(SHDISP_FPS_LED_HOST_SUPPORT)
         if (shdisp_pfs.par[0]) {
             mdss_shdisp_fps_led_start();
         } else {
             mdss_shdisp_fps_led_stop();
         }
+#endif /* SHDISP_FPS_LED_PANEL_SUPPORT */
         break;
 
     case SHDISP_DEBUG_DISPLAYLOG_ERROR_LOG_TEST:
@@ -5659,9 +6989,19 @@ static int shdisp_proc_write(struct file *file, const char *buffer, unsigned lon
 
 #ifndef SHDISP_NOT_SUPPORT_BKL_EMG_MODE
     case SHDISP_DEBUG_EMG_BLK_MODE:
+        shdisp_semaphore_start();
         shdisp_SQE_main_bkl_set_emg_mode(shdisp_pfs.par[0]);
+        shdisp_semaphore_end(__func__);
         break;
 #endif /* SHDISP_NOT_SUPPORT_BKL_EMG_MODE */
+
+#ifdef SHDISP_LOWBKL
+    case SHDISP_DEBUG_LOW_BLK_MODE:
+        shdisp_semaphore_start();
+        shdisp_SQE_main_bkl_set_lowbkl_mode(shdisp_pfs.par[0]);
+        shdisp_semaphore_end(__func__);
+        break;
+#endif /* SHDISP_LOWBKL */
 
     case SHDISP_DEBUG_RECOVERY_NG:
         if (shdisp_pfs.par[0] == 1) {
@@ -5676,6 +7016,9 @@ static int shdisp_proc_write(struct file *file, const char *buffer, unsigned lon
         } else if (shdisp_pfs.par[0] == 4) {
             recovery_error_flag = SHDISP_DBG_RECOVERY_ERROR_DISPON_READ;
             printk("[SHDISP] set recovery check error disp on (read)\n");
+        } else if (shdisp_pfs.par[0] == 5) {
+            recovery_error_flag = SHDISP_DBG_BDIC_ERROR_DCDC1;
+            printk("[SHDISP] set bdic dcdc1 error\n");
         } else {
             recovery_error_flag = SHDISP_DBG_RECOVERY_ERROR_NONE;
             printk("[SHDISP] set recovery check error none\n");
@@ -5696,52 +7039,89 @@ static int shdisp_proc_write(struct file *file, const char *buffer, unsigned lon
         break;
 #endif /* SHDISP_ALS_INT */
 
-    case SHDISP_DEBUG_DSI_WRITE:
-        panel_reg.size = param[0];
-        panel_reg.address = param[1];
-        memset(panel_reg.buf, 0, sizeof(panel_reg.buf));
+    case SHDISP_DEBUG_DSI_GEN_WRITE:
+    case SHDISP_DEBUG_DSI_DCS_WRITE:
+    {
+        struct shdisp_dsi_cmd_req dsi_req;
+        unsigned char buf[SHDISP_LCDDR_BUF_MAX];
 
-        SHDISP_DEBUG("PANEL INFO ->>");
-        SHDISP_DEBUG(" Address : %02Xh", panel_reg.address);
-        SHDISP_DEBUG(" Size    : %2d", panel_reg.size);
-        for (i = 0; i < panel_reg.size; i++) {
-            panel_reg.buf[i] = param[i + 2];
+        memset(&dsi_req, 0x00, sizeof(dsi_req));
+        memset(buf, 0x00, sizeof(buf));
+        dsi_req.data = buf;
+
+        if (shdisp_pfs.id == SHDISP_DEBUG_DSI_GEN_WRITE) {
+            dsi_req.dtype = SHDISP_DTYPE_GEN_WRITE;
+        } else {
+            dsi_req.dtype = SHDISP_DTYPE_DCS_WRITE;
+        }
+        dsi_req.size = param[0];
+        dsi_req.addr = param[1];
+        dsi_req.mode = param[2];
+
+        SHDISP_DEBUG(" Size    : %2d", dsi_req.size);
+        SHDISP_DEBUG(" Address : %02Xh", dsi_req.addr);
+        SHDISP_DEBUG(" Mode    : %02Xh", dsi_req.mode);
+        for (i = 0; i < dsi_req.size; i++) {
+            dsi_req.data[i] = param[i + 3];
             if ((i % 8) == 0) {
                 printk("[SHDISP_DEBUG][%s]  WData    : ", __func__);
             }
-            printk("%02X ", panel_reg.buf[i]);
+            printk("%02X ", dsi_req.data[i]);
             if ((i % 8) == 7) {
                 printk("\n");
             }
         }
         printk("\n");
-        shdisp_SQE_panel_write_reg(&panel_reg);
 
+        shdisp_semaphore_start();
+        ret = shdisp_panel_API_dsi_write_reg(&dsi_req);
+        shdisp_semaphore_end(__func__);
         break;
+    }
 
-    case SHDISP_DEBUG_DSI_READ:
-        panel_reg.size    = ((shdisp_pfs.par[0] >> 8) & 0x00FF);
-        panel_reg.address = ( shdisp_pfs.par[0]       & 0x00FF);
-        memset(panel_reg.buf, 0, sizeof(panel_reg.buf));
-        ret = shdisp_SQE_panel_read_reg(&panel_reg);
+    case SHDISP_DEBUG_DSI_GEN_READ:
+    case SHDISP_DEBUG_DSI_DCS_READ:
+    {
+        struct shdisp_dsi_cmd_req dsi_req;
+        unsigned char buf[SHDISP_LCDDR_BUF_MAX];
+
+        memset(&dsi_req, 0x00, sizeof(dsi_req));
+        memset(buf, 0x00, sizeof(buf));
+        dsi_req.data = buf;
+
+        if (shdisp_pfs.id == SHDISP_DEBUG_DSI_GEN_READ) {
+            dsi_req.dtype = SHDISP_DTYPE_GEN_READ;
+        } else {
+            dsi_req.dtype = SHDISP_DTYPE_DCS_READ;
+        }
+        dsi_req.size    = ((shdisp_pfs.par[0] >> 8) & 0x00FF);
+        dsi_req.addr    = ( shdisp_pfs.par[0]       & 0x00FF);
+        dsi_req.mode    = ((shdisp_pfs.par[1] >> 8) & 0x00FF);
 
         SHDISP_DEBUG("PANEL INFO ->>");
-        SHDISP_DEBUG(" Address : %02Xh", panel_reg.address);
-        SHDISP_DEBUG(" Size    : %2d", panel_reg.size);
+        SHDISP_DEBUG(" Size    : %2d", dsi_req.size);
+        SHDISP_DEBUG(" Address : %02Xh", dsi_req.addr);
+        SHDISP_DEBUG(" Mode    : %02Xh", dsi_req.mode);
         SHDISP_DEBUG_CONSOLE("<COMMAND = DSI_READ>\n");
-        SHDISP_DEBUG_CONSOLE("  IN     : Address=0x%02X Size=%d\n", panel_reg.address, panel_reg.size);
-        for (i = 0; i < panel_reg.size; i++) {
+        SHDISP_DEBUG_CONSOLE("  IN     : Address=0x%02X Size=%d\n", dsi_req.addr, dsi_req.size);
+
+        shdisp_semaphore_start();
+        ret = shdisp_panel_API_dsi_read_reg(&dsi_req);
+        shdisp_semaphore_end(__func__);
+
+        for (i = 0; i < dsi_req.size; i++) {
             if ((i % 16) == 0) {
                 printk("[SHDISP_DEBUG][%s]  RData    :", __func__);
                 SHDISP_DEBUG_CONSOLE("  OUT    : RData[%2d]=", i);
             }
-            printk(" %02X", panel_reg.buf[i]);
-            SHDISP_DEBUG_CONSOLE(" %02X", panel_reg.buf[i]);
-            if ((i % 16) == 15 || i == (panel_reg.size - 1)) {
+            printk(" %02X", dsi_req.data[i]);
+            SHDISP_DEBUG_CONSOLE(" %02X", dsi_req.data[i]);
+            if ((i % 16) == 15 || i == (dsi_req.size - 1)) {
                 printk("\n");
                 SHDISP_DEBUG_CONSOLE("\n");
             }
         }
+
         if (ret == SHDISP_RESULT_SUCCESS) {
             SHDISP_DEBUG_CONSOLE("  RESULT = OK\n");
         } else {
@@ -5749,6 +7129,7 @@ static int shdisp_proc_write(struct file *file, const char *buffer, unsigned lon
         }
 
         break;
+    }
 
     case SHDISP_DEBUG_SET_IRQ:
         if (shdisp_pfs.par[0] == 0) {
@@ -5782,7 +7163,7 @@ out:
 /* ------------------------------------------------------------------------- */
 /* shdisp_proc_read                                                          */
 /* ------------------------------------------------------------------------- */
-static int shdisp_proc_read( char *page, char **start, off_t offset, int count, int *eof, void *data )
+static int shdisp_proc_read(char *page, char **start, off_t offset, int count, int *eof, void *data)
 {
     int len = 0;
 
@@ -5812,13 +7193,16 @@ static ssize_t shdisp_proc_file_read(struct file *file, char __user *buf, size_t
      * the offset entirely for writes..
      */
     pos = *ppos;
-    if (pos > MAX_NON_LFS)
+    if (pos > MAX_NON_LFS) {
         return 0;
-    if (nbytes > MAX_NON_LFS - pos)
+    }
+    if (nbytes > (MAX_NON_LFS - pos)) {
         nbytes = MAX_NON_LFS - pos;
+    }
 
-    if (!(page = (char*) __get_free_page(GFP_TEMPORARY)))
+    if (!(page = (char*) __get_free_page(GFP_TEMPORARY))) {
         return -ENOMEM;
+    }
 
     while ((nbytes > 0) && !eof) {
         count = min_t(size_t, PROC_BLOCK_SIZE, nbytes);
@@ -5827,8 +7211,9 @@ static ssize_t shdisp_proc_file_read(struct file *file, char __user *buf, size_t
         n = shdisp_proc_read(page, &start, *ppos,
                   count, &eof, NULL);
 
-        if (n == 0)   /* end of file */
+        if (n == 0) { /* end of file */
             break;
+        }
         if (n < 0) {  /* error */
             if (retval == 0)
                 retval = n;
@@ -5868,14 +7253,16 @@ static ssize_t shdisp_proc_file_read(struct file *file, char __user *buf, size_t
                        "proc_file_read: Apparent buffer overflow!\n");
                 n = PAGE_SIZE - startoff;
             }
-            if (n > count)
+            if (n > count) {
                 n = count;
+            }
         }
 
         n -= copy_to_user(buf, start < page ? page : start, n);
         if (n == 0) {
-            if (retval == 0)
+            if (retval == 0) {
                 retval = -EFAULT;
+            }
             break;
         }
 
@@ -5976,18 +7363,25 @@ static void shdisp_dbg_info_output(int mode)
                 shdisp_kerl_ctx.boot_ctx.ledc_status.ledc_req.led_mode);
         printk("[SHDISP] boot_ctx.ledc_status.ledc_req.on_count = %d.\n",
                 shdisp_kerl_ctx.boot_ctx.ledc_status.ledc_req.on_count);
-        printk("[SHDISP] boot_ctx.lcddr_phy_gamma.status        = 0x%02X.\n", shdisp_kerl_ctx.boot_ctx.lcddr_phy_gamma.status);
-        printk("[SHDISP] boot_ctx.lcddr_phy_gamma.buf           = ");
-        for (i = 0; i < SHDISP_LCDDR_PHY_GAMMA_BUF_MAX; i++) {
-            printk("%02X,", shdisp_kerl_ctx.boot_ctx.lcddr_phy_gamma.buf[i]);
+        printk("[SHDISP] boot_ctx.lcddr_phy_gmm.status        = 0x%02X.\n", shdisp_kerl_ctx.boot_ctx.lcddr_phy_gmm.status);
+        printk("[SHDISP] boot_ctx.lcddr_phy_gmm.buf           = ");
+        for (i = 0; i < SHDISP_LCDDR_PHY_GMM_BUF_MAX; i++) {
+            printk("%02X,", shdisp_kerl_ctx.boot_ctx.lcddr_phy_gmm.buf[i]);
         }
         printk("\n");
-        printk("[SHDISP] boot_ctx.lcddr_phy_gamma.applied_voltage = ");
+        printk("[SHDISP] boot_ctx.lcddr_phy_gmm.applied_voltage = ");
         for (i = 0; i < SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE; i++) {
-            printk("%02X,", shdisp_kerl_ctx.boot_ctx.lcddr_phy_gamma.applied_voltage[i]);
+            printk("%02X,", shdisp_kerl_ctx.boot_ctx.lcddr_phy_gmm.applied_voltage[i]);
         }
+#if defined(CONFIG_SHDISP_PANEL_HAYABUSA)
         printk("\n");
-        printk("[SHDISP] boot_ctx.lcddr_phy_gamma.chksum        = 0x%04X.\n", shdisp_kerl_ctx.boot_ctx.lcddr_phy_gamma.chksum);
+        printk("[SHDISP] boot_ctx.lcddr_phy_gmm.adv_gmm     = ");
+        for (i = 0; i < SHDISP_LCDDR_ADVANCED_GAMMA_SIZE; i++) {
+            printk("%02X,", shdisp_kerl_ctx.boot_ctx.lcddr_phy_gmm.adv_gmm[i]);
+        }
+#endif /* CONFIG_SHDISP_PANEL_HAYABUSA */
+        printk("\n");
+        printk("[SHDISP] boot_ctx.lcddr_phy_gmm.chksum        = 0x%04X.\n", shdisp_kerl_ctx.boot_ctx.lcddr_phy_gmm.chksum);
 
         printk("[SHDISP] boot_ctx.lut_status                    = 0x%04X.\n", shdisp_kerl_ctx.boot_ctx.lut_status);
         printk("[SHDISP] boot_ctx.argc_lut.red                  = ");
@@ -6096,6 +7490,30 @@ static void shdisp_dbg_info_output(int mode)
         printk("[SHDISP] kerl_ctx.tri_led.ontime                = %d.\n", shdisp_kerl_ctx.tri_led.ontime);
         printk("[SHDISP] kerl_ctx.tri_led.interval              = %d.\n", shdisp_kerl_ctx.tri_led.interval);
         printk("[SHDISP] kerl_ctx.tri_led.count                 = %d.\n", shdisp_kerl_ctx.tri_led.count);
+#ifdef SHDISP_SYSFS_LED
+        printk("[SHDISP] kerl_ctx.sysfs_led1.red                = %d.\n", (int)shdisp_kerl_ctx.sysfs_led1.red);
+        printk("[SHDISP] kerl_ctx.sysfs_led1.green              = %d.\n", (int)shdisp_kerl_ctx.sysfs_led1.green);
+        printk("[SHDISP] kerl_ctx.sysfs_led1.blue               = %d.\n", (int)shdisp_kerl_ctx.sysfs_led1.blue);
+        printk("[SHDISP] kerl_ctx.sysfs_led1.ext_mode           = %d.\n", shdisp_kerl_ctx.sysfs_led1.ext_mode);
+        printk("[SHDISP] kerl_ctx.sysfs_led1.led_mode           = %d.\n", shdisp_kerl_ctx.sysfs_led1.led_mode);
+        printk("[SHDISP] kerl_ctx.sysfs_led1.ontime             = %d.\n", shdisp_kerl_ctx.sysfs_led1.ontime);
+        printk("[SHDISP] kerl_ctx.sysfs_led1.interval           = %d.\n", shdisp_kerl_ctx.sysfs_led1.interval);
+        printk("[SHDISP] kerl_ctx.sysfs_led1.count              = %d.\n", shdisp_kerl_ctx.sysfs_led1.count);
+#ifdef SHDISP_COLOR_LED_TWIN
+        printk("[SHDISP] kerl_ctx.sysfs_led2.red                = %d.\n", (int)shdisp_kerl_ctx.sysfs_led2.red);
+        printk("[SHDISP] kerl_ctx.sysfs_led2.green              = %d.\n", (int)shdisp_kerl_ctx.sysfs_led2.green);
+        printk("[SHDISP] kerl_ctx.sysfs_led2.blue               = %d.\n", (int)shdisp_kerl_ctx.sysfs_led2.blue);
+        printk("[SHDISP] kerl_ctx.sysfs_led2.ext_mode           = %d.\n", shdisp_kerl_ctx.sysfs_led2.ext_mode);
+        printk("[SHDISP] kerl_ctx.sysfs_led2.led_mode           = %d.\n", shdisp_kerl_ctx.sysfs_led2.led_mode);
+        printk("[SHDISP] kerl_ctx.sysfs_led2.ontime             = %d.\n", shdisp_kerl_ctx.sysfs_led2.ontime);
+        printk("[SHDISP] kerl_ctx.sysfs_led2.interval           = %d.\n", shdisp_kerl_ctx.sysfs_led2.interval);
+        printk("[SHDISP] kerl_ctx.sysfs_led2.count              = %d.\n", shdisp_kerl_ctx.sysfs_led2.count);
+#endif /* SHDISP_COLOR_LED_TWIN */
+#endif /* SHDISP_SYSFS_LED */
+#ifdef SHDISP_LED_INT
+        printk("[SHDISP] kerl_ctx.led_auto_low_enable           = %d.\n", shdisp_kerl_ctx.led_auto_low_enable);
+#endif /* SHDISP_LED_INT */
+        printk("[SHDISP] kerl_ctx.led_set_color_reject          = %d.\n", shdisp_kerl_ctx.led_set_color_reject);
         printk("\n");
 
         for (i = 0; i < NUM_SHDISP_IRQ_TYPE ; i++) {
@@ -6444,7 +7862,7 @@ static void shdisp_dbg_que(int kind)
             }
 
             if (shdisp_wq_gpio_task) {
-                qdata = kmalloc( sizeof(shdisp_queue_data), GFP_KERNEL );
+                qdata = kmalloc(sizeof(shdisp_queue_data), GFP_KERNEL);
                 if (qdata != NULL) {
                     qdata->irq_GFAC = nBDIC_QueFac;
                     list_add_tail(&qdata->list, &shdisp_queue_data.list);
@@ -6496,7 +7914,7 @@ static void shdisp_debug_subscribe(void)
 static void callback_ps(void)
 {
     printk("[SHDISP] callback_ps Start\n");
-    msleep(1000);
+    shdisp_SYS_API_msleep(1000);
     printk("[SHDISP] callback_ps Finish\n");
 }
 #endif /* CONFIG_ANDROID_ENGINEERING */
@@ -6600,7 +8018,7 @@ static int shdisp_input_subsystem_init(void)
     input_set_abs_params(shdisp_input_dev, ABS_MISC, 0, 9, 0, 0);
 
     ret = input_register_device(shdisp_input_dev);
-    if (ret < 0){
+    if (ret < 0) {
         SHDISP_ERR("can not register ls input device\n");
         input_free_device(shdisp_input_dev);
     }
@@ -6636,7 +8054,6 @@ static int __init shdisp_init(void)
     struct shdisp_bdic_state_str    state_str;
     int shdisp_subscribe_type;
     int i;
-    unsigned long int notify_value = 0, notify_brightness = 0;
     struct shdisp_main_bkl_ctl bkl_ctl;
     struct shdisp_tri_led tri_led;
     struct shdisp_panel_context shdisp_panel_ctx;
@@ -6645,6 +8062,10 @@ static int __init shdisp_init(void)
     struct proc_dir_entry *entry;
 #endif /* CONFIG_ANDROID_ENGINEERING */
 
+    memset(&tri_led, 0x00, sizeof(tri_led));
+    memset(&bkl_ctl, 0x00, sizeof(bkl_ctl));
+    memset(&shdisp_panel_ctx, 0x00, sizeof(shdisp_panel_ctx));
+
 #ifdef SHDISP_NOT_SUPPORT_NO_OS
     SHDISP_TRACE("in NOT SUPPORT NO_OS\n")
 #else   /* SHDISP_NOT_SUPPORT_NO_OS */
@@ -6652,6 +8073,8 @@ static int __init shdisp_init(void)
 #endif  /* SHDISP_NOT_SUPPORT_NO_OS */
 
     shdisp_kerl_register_driver();
+
+    shdisp_dbg_API_init();
 
     shdisp_init_context();
 
@@ -6707,8 +8130,8 @@ static int __init shdisp_init(void)
     shdisp_panel_ctx.vcom_low       = shdisp_kerl_ctx.boot_ctx.vcom_low;
     shdisp_panel_ctx.vcom_nvram     = shdisp_kerl_ctx.boot_ctx.vcom_nvram;
 
-    memcpy(&(shdisp_panel_ctx.lcddr_phy_gamma), &(shdisp_kerl_ctx.boot_ctx.lcddr_phy_gamma),
-            sizeof(struct shdisp_lcddr_phy_gamma_reg));
+    memcpy(&(shdisp_panel_ctx.lcddr_phy_gmm), &(shdisp_kerl_ctx.boot_ctx.lcddr_phy_gmm),
+            sizeof(struct shdisp_lcddr_phy_gmm_reg));
 
     ret = shdisp_panel_API_init_io(&shdisp_panel_ctx);
 
@@ -6735,7 +8158,7 @@ static int __init shdisp_init(void)
     sema_init(&shdisp_sem, 1);
 
     sema_init(&shdisp_sem_callback, 1);
-    sema_init(&shdisp_sem_irq_fac, 1 );
+    sema_init(&shdisp_sem_irq_fac, 1);
     sema_init(&shdisp_sem_timer, 1);
     sema_init(&shdisp_sem_req_recovery_lcd, 1);
     sema_init(&shdisp_sem_req_recovery_psals, 1);
@@ -6746,7 +8169,6 @@ static int __init shdisp_init(void)
     spin_lock_init(&shdisp_swic_spinlock);
 #endif  /* SHDISP_TRI_LED2 */
 
-    shdisp_dbg_API_init();
     shdisp_SYS_API_set_irq_init();
 
     shdisp_wake_lock_init();
@@ -6807,6 +8229,12 @@ static int __init shdisp_init(void)
     }
 #endif  /* SHDISP_TRI_LED2 */
 
+#ifdef SHDISP_FPS_LED_PANEL_SUPPORT
+    shdisp_fps_led_ctx.panel_on = shdisp_kerl_ctx.main_disp_status == SHDISP_MAIN_DISP_ON;
+    shdisp_fps_led_ctx.workq = create_singlethread_workqueue("shdisp_fps_led_workq");
+    INIT_DELAYED_WORK(&shdisp_fps_led_ctx.work, shdisp_fps_led_work);
+#endif /* SHDISP_FPS_LED_PANEL_SUPPORT */
+
     for (i = 0; i < NUM_SHDISP_IRQ_TYPE ; i++) {
         shdisp_subscribe_type = SHDISP_SUBSCRIBE_TYPE_INT;
         shdisp_subscribe_type_table[i] = shdisp_subscribe_type;
@@ -6846,7 +8274,7 @@ static int __init shdisp_init(void)
     shdisp_bdic_API_TRI_LED_set_request(&tri_led);
 
     if (shdisp_kerl_ctx.boot_ctx.bdic_is_exist == SHDISP_BDIC_IS_EXIST) {
-        ret = shdisp_SYS_API_request_irq( shdisp_gpio_int_isr );
+        ret = shdisp_SYS_API_request_irq(shdisp_gpio_int_isr);
     }
     if (ret) {
         goto shdisp_err_top;
@@ -6858,15 +8286,7 @@ static int __init shdisp_init(void)
     shterm_k_set_info(SHTERM_INFO_LCDPOW, shdisp_kerl_ctx.main_disp_status);
 #endif  /* CONFIG_SHTERM */
 
-    if (shdisp_kerl_ctx.main_bkl.mode != SHDISP_MAIN_BKL_MODE_OFF) {
-        notify_value = 1;
-        shdisp_bdic_API_LCD_BKL_get_param( &notify_brightness );
-    }
-
-#ifdef CONFIG_SHTERM
-    shterm_k_set_info(SHTERM_INFO_BACKLIGHT, notify_value);
-    shterm_k_set_info(SHTERM_INFO_BACKLIGHT_LEV, notify_brightness);
-#endif  /* CONFIG_SHTERM */
+    shdisp_bdic_bkl_notify(SHTERM_INFO_BACKLIGHT | SHTERM_INFO_BACKLIGHT_LEV);
 
 #ifdef SHDISP_ALS_INT
     shdisp_input_subsystem_init();
@@ -6938,6 +8358,15 @@ static void shdisp_exit(void)
 {
     shdisp_fb_close();
 
+#ifdef SHDISP_FPS_LED_PANEL_SUPPORT
+    shdisp_fps_led_stop();
+    if (shdisp_fps_led_ctx.workq) {
+        flush_workqueue(shdisp_fps_led_ctx.workq);
+        destroy_workqueue(shdisp_fps_led_ctx.workq);
+        shdisp_fps_led_ctx.workq = NULL;
+    }
+#endif /* CONFIG_SHDISP_PANEL_HAYABUSA */
+
 #ifdef SHDISP_ALS_INT
     wake_unlock(&shdisp_timeout_wake_lock);
     wake_lock_destroy(&shdisp_timeout_wake_lock);
@@ -6958,6 +8387,7 @@ static void shdisp_exit(void)
         shdisp_wq_gpio_task = NULL;
     }
 
+    shdisp_bdic_API_TRI_LED_exit();
     shdisp_panel_API_exit_io();
     shdisp_SYS_API_sensor_i2c_exit();
     shdisp_SYS_API_bdic_i2c_exit();
@@ -6978,7 +8408,7 @@ static int shdisp_kerl_probe(struct platform_device *pdev)
 #ifdef CONFIG_OF
     int rc = SHDISP_RESULT_SUCCESS;
 
-    SHDISP_TRACE("in pdev = 0x%p", pdev );
+    SHDISP_TRACE("in pdev = 0x%p", pdev);
 
     if (pdev) {
         if (&(pdev->dev) != NULL) {
@@ -6988,13 +8418,35 @@ static int shdisp_kerl_probe(struct platform_device *pdev)
             } else {
                 SHDISP_DEBUG("testmode gpio succusess!");
             }
+#ifdef SHDISP_SYSFS_LED
+            if (led_classdev_register(&pdev->dev, &red1_led)) {
+                SHDISP_ERR("led_classdev_register(red1) failed");
+            }
+            if (led_classdev_register(&pdev->dev, &green1_led)) {
+                SHDISP_ERR("led_classdev_register(green1) failed");
+            }
+            if (led_classdev_register(&pdev->dev, &blue1_led)) {
+                SHDISP_ERR("led_classdev_register(blue1) failed");
+            }
+#ifdef SHDISP_COLOR_LED_TWIN
+            if (led_classdev_register(&pdev->dev, &red2_led)) {
+                SHDISP_ERR("led_classdev_register(red2) failed");
+            }
+            if (led_classdev_register(&pdev->dev, &green2_led)) {
+                SHDISP_ERR("led_classdev_register(green2) failed");
+            }
+            if (led_classdev_register(&pdev->dev, &blue2_led)) {
+                SHDISP_ERR("led_classdev_register(blue2) failed");
+            }
+#endif /* SHDISP_COLOR_LED_TWIN */
+#endif /* SHDISP_SYSFS_LED */
         } else {
             SHDISP_ERR("pdev->dev is NULL");
         }
     } else {
         SHDISP_ERR("pdev is NULL");
     }
-    SHDISP_TRACE("out testmode_gpio = %d", testmode_gpio );
+    SHDISP_TRACE("out testmode_gpio = %d", testmode_gpio);
 
     return rc;
 #else   /* CONFIG_OF */

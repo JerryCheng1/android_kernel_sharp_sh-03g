@@ -19,7 +19,7 @@
 /*| @ INCLUDE FILE :                                                            |*/
 /*+-----------------------------------------------------------------------------+*/
 
-/* NONE.. */
+#include <sharp/shterm_k.h>
 
 /*+-----------------------------------------------------------------------------+*/
 /*| @ VALUE DEFINE DECLARE :                                                    |*/
@@ -162,10 +162,29 @@ shbatt_result_t shbatt_api_get_smem_info(
 shbatt_result_t shbatt_api_get_battery_log_info(
 	shbatt_batt_log_info_t*		bli_p );
 
-shbatt_result_t shbatt_api_kernel_battery_log_info_event(
-	 int event_num, int info );
+shbatt_result_t shbatt_api_battlog_event(
+	shbattlog_event_num			evt);
+
+shbatt_result_t shbatt_api_battlog_charge_status(
+	int			status);
+
+shbatt_result_t shbatt_api_battlog_charge_error(
+	int			charge_error_event);
+
+shbatt_result_t shbatt_api_battlog_jeita_status(
+	int			jeita_cur_status);
+
+shbatt_result_t shbatt_api_battlog_capacity(
+	int			cur_capacity);
+
+shbatt_result_t shbatt_api_battlog_usb_type(
+	int			usb_type);
+
+bool is_shbatt_prs_launched( void );
 
 shbatt_result_t shbatt_api_notify_charge_full( void );
+
+void sh_dump_regs(void);
 
 /*+-----------------------------------------------------------------------------+*/
 /*| @ PRIVATE FUNCTION PROTO TYPE DECLARE :                                     |*/

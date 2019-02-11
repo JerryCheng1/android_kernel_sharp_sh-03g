@@ -26,13 +26,25 @@
 #include <linux/mutex.h>
 #include <linux/slab.h>
 #include <sharp/shsmartamp_ssm4329.h>
+#ifdef SHSMARTAMP_FBUILD
+#include <sharp/shsmartamp_ssm4329_fw_fbuild.h>
+#else
 #include <sharp/shsmartamp_ssm4329_fw.h>
+#endif
 #include <linux/of_gpio.h>
 #include <linux/qpnp/pin.h>
+#ifdef SHSMARTAMP_ENG
+#include <linux/syscalls.h>
+#include <linux/debugfs.h>
+#endif
 
 #define SHAUDIO_GPIO_CLK              qpnp_pin_map("pm8994-gpio", 17)
 
 static struct i2c_client *shsmartamp_client;
+#ifdef SHSMARTAMP_ENG
+static struct dentry *shsmartamp_dbgfile;
+uint8_t firmware_array[FIRMWARE_ARRAY_MAX] = {0};
+#endif
 
 static DEFINE_MUTEX(smartamp_lock);
 static int shsmartamp_opened;
@@ -175,6 +187,159 @@ static int shsmartamp_i2c_read(const uint8_t *data, int *output)
 	return (ret > 0)? 0 : ret;
 }
 
+#ifdef SHSMARTAMP_ENG
+static int shsmartamp_get_package_size(const uint8_t *data)
+{
+	unsigned short addr = ((data[0] << 8) & 0xff00) + (data[1] & 0xff);
+
+	pr_debug("%s(): addr = 0x%04x\n", __func__, addr);
+
+	if ((SSM4329_PROGRAM_START <= addr) && (addr <= SSM4329_PROGRAM_END)) {
+		return SSM4329_PROGRAM;
+	}
+
+	return SSM4329_DATA;
+}
+
+static uint8_t shsmartamp_atoi(const uint8_t data)
+{
+	int ret = 0;
+
+	if(data >= '0' && data <= '9') {
+		ret = data - '0';
+	} else {
+		ret = data - 'A' + 10;
+	}
+
+	return ret;
+}
+
+static int shsmartamp_fw_decode(const char *buf)
+{
+	int buf_stamp = 2;
+	int array_stamp = 1;
+
+	firmware_array[0] = shsmartamp_atoi(buf[2]) * 16 + shsmartamp_atoi(buf[3]);
+	firmware_array[1] = shsmartamp_atoi(buf[4]) * 16 + shsmartamp_atoi(buf[5]);
+
+	do {
+		buf_stamp += 5;
+		array_stamp++;
+		firmware_array[array_stamp] = shsmartamp_atoi(buf[buf_stamp + 2]) * 16 + shsmartamp_atoi(buf[buf_stamp + 3]);
+	} while (buf[buf_stamp + 4] == ',');
+
+	return array_stamp + 1;
+}
+
+static char * fget_line(char * buf, int max_num, int fd,off_t *fd_seek)
+{
+	int cur_seek = *fd_seek;
+	char c_buf[1];
+	int i = 0;
+
+	for(i = 0; i < max_num; i++) {
+		buf[i] = '\0';
+	}
+
+	sys_lseek(fd, (off_t)cur_seek, 0);
+
+	for(i = 0; i < max_num; i++) {
+		if ((unsigned)sys_read(fd, (char *)c_buf, 1) != 1) {
+			pr_err("%s(): Can not read %d \n",
+				__func__, i);
+			return NULL;
+		} else {
+			buf[i] = c_buf[0];
+			cur_seek++;
+			sys_lseek(fd, (off_t)cur_seek, 0);
+		}
+
+		if(buf[i] == '\n') {
+			break;
+		}
+	}
+	*fd_seek = cur_seek;
+	return buf;
+}
+
+static int shsmartamp_fw_load(void)
+{
+    int fw_fd, oldfs;
+	off_t fd_seek = 0;
+	char *buf;
+	int array_sz = 0, package_sz = 0, ret = 0;
+
+	pr_debug("%s(): Entry\n", __func__);
+
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+
+	fw_fd = sys_open((const char __force *) SSM4329_FIRMWARE_PATH, O_RDONLY, 0);
+	if (fw_fd < 0) {
+		pr_err("%s(): firmware %s open failed %d\n", __func__, SSM4329_FIRMWARE_PATH, fw_fd);
+		ret = fw_fd;
+		goto sys_open_err;
+	}
+
+	buf = (char *)kmalloc(FIRMWARE_BUF_MAX, GFP_KERNEL);
+	if (buf == NULL) {
+		pr_err("%s(): alloc firmware buf failed\n", __func__);
+		ret = -1;
+		goto kmalloc_err;
+	}
+
+	sys_lseek(fw_fd, (off_t)0, 0);
+
+	while (NULL != (fget_line(buf, FIRMWARE_BUF_MAX, fw_fd, &fd_seek))) {
+		array_sz = shsmartamp_fw_decode(buf);
+		package_sz = shsmartamp_get_package_size(firmware_array);
+		ret = shsmartamp_i2c_write(firmware_array, array_sz, package_sz);
+		if (ret != 0) {
+			pr_err("%s(): Failed to writing data for address 0x%02x%02x", __func__,
+				firmware_array[0], firmware_array[1]);
+			goto i2c_write_err;
+		}
+	}
+
+i2c_write_err:
+	kfree(buf);
+kmalloc_err:
+	sys_close(fw_fd);
+sys_open_err:
+	set_fs(oldfs);
+	pr_debug("%s(): Leave\n", __func__);
+
+	return ret;
+}
+
+static int shsmartamp_fw_update(void)
+{
+	int ret;
+
+	pr_debug("%s(): Entry\n", __func__);
+	gpio_direction_output(shsmartamp_en, 0);
+	msleep(100);
+
+	qpnp_pin_config(SHAUDIO_GPIO_CLK, &shsmartamp_pin_cfg_on);
+	gpio_direction_output(shsmartamp_en, 1);
+
+	ret = shsmartamp_fw_load();
+	if (ret) {
+		pr_err("%s(): Failed for loading new firmware %d", __func__, ret);
+		gpio_direction_output(shsmartamp_en, 0);
+		return ret;
+	}
+
+	ret = shsmartamp_i2c_write(ssm4329_sw_control[SSM4329_SW_OFF],
+		SSM4329_SW_CONTROL_Y, SSM4329_DATA);
+
+	qpnp_pin_config(SHAUDIO_GPIO_CLK, &shsmartamp_pin_cfg_off);
+	pr_debug("%s(): Leave\n", __func__);
+
+	return ret;
+}
+#endif
+
 static int shsmartamp_fw_init(void)
 {
 	int ret;
@@ -297,7 +462,7 @@ void shsmartamp_control(int on)
 		qpnp_pin_config(SHAUDIO_GPIO_CLK, &shsmartamp_pin_cfg_on);
 		shsmartamp_i2c_write(ssm4329_sw_control[SSM4329_SW_ON],
 			SSM4329_SW_CONTROL_Y, SSM4329_DATA);
-		
+
 		for(i = 0; i < 30; i++){
 			usleep(1 * 1000);
 			ret = shsmartamp_i2c_read(ssm4329_pll_lock, &output);
@@ -328,6 +493,56 @@ void shsmartamp_control(int on)
 
 	return ;
 }
+
+#ifdef SHSMARTAMP_ENG
+static int shsmartamp_debug_open(struct inode *inode, struct file *file)
+{
+	file->private_data = inode->i_private;
+	return 0;
+}
+
+static ssize_t shsmartamp_reg_read_file(struct file *file, char __user *user_buf,
+										size_t count, loff_t *pos)
+{
+	shsmartamp_fw_check();
+	return 0;
+}
+
+static ssize_t shsmartamp_reg_write_file(struct file *file,
+						const char __user *user_buf, size_t count, loff_t *ppos)
+{
+	shsmartamp_fw_update();
+	return 0;
+}
+
+static const struct file_operations shsmartamp_dbg_ops = {
+	.open = shsmartamp_debug_open,
+	.read = shsmartamp_reg_read_file,
+	.write = shsmartamp_reg_write_file,
+};
+
+static void shsmartamp_init_debugfs(void)
+{
+	shsmartamp_dbgfile = debugfs_create_file("shsmartamp", S_IFREG | S_IRUGO | S_IWUSR | S_IWGRP,
+		NULL, NULL, &shsmartamp_dbg_ops);
+	if (shsmartamp_dbgfile == NULL || IS_ERR(shsmartamp_dbgfile)) {
+		pr_err("%s debugfs_create_file failed: ret=%ld\n", __func__, PTR_ERR(shsmartamp_dbgfile));
+	}
+}
+
+static void shsmartamp_cleanup_debugfs(void)
+{
+	debugfs_remove(shsmartamp_dbgfile);
+}
+#else
+static void shsmartamp_init_debugfs(void)
+{
+}
+
+static void shsmartamp_cleanup_debugfs(void)
+{
+}
+#endif
 
 static int shsmartamp_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
@@ -366,6 +581,8 @@ static int shsmartamp_probe(struct i2c_client *client, const struct i2c_device_i
 		pr_err("%s(): firmware init successful\n", __func__);
 	}
 
+	shsmartamp_init_debugfs();
+
 	return 0;
 
 err_free_gpio:
@@ -377,6 +594,7 @@ err_free_gpio:
 static int shsmartamp_remove(struct i2c_client *client)
 {
 	shsmartamp_client = i2c_get_clientdata(client);
+	shsmartamp_cleanup_debugfs();
 	return 0;
 }
 

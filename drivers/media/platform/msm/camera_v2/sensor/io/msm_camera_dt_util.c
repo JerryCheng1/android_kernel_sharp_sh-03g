@@ -19,8 +19,23 @@
 #define CAM_SENSOR_PINCTRL_STATE_DEFAULT "cam_default"
 /*#define CONFIG_MSM_CAMERA_DT_DEBUG*/
 
+#define VALIDATE_VOLTAGE(min, max, config_val) ((config_val) && \
+	(config_val >= min) && (config_val <= max))
+
 #undef CDBG
+/* SHLOCAL_CAMERA_DRIVERS-> */
+#if 0
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
+#else
+//#define CONFIG_MSMB_CAMERA_DEBUG
+#undef CDBG
+#ifdef CONFIG_MSMB_CAMERA_DEBUG
+#define CDBG(fmt, args...) pr_err(fmt, ##args)
+#else
+#define CDBG(fmt, args...) do { } while (0)
+#endif
+#endif
+/* SHLOCAL_CAMERA_DRIVERS<- */
 
 int msm_camera_fill_vreg_params(struct camera_vreg_t *cam_vreg,
 	int num_vreg, struct msm_sensor_power_setting *power_setting,
@@ -53,6 +68,14 @@ int msm_camera_fill_vreg_params(struct camera_vreg_t *cam_vreg,
 					pr_err("%s:%d i %d j %d cam_vdig\n",
 						__func__, __LINE__, i, j);
 					power_setting[i].seq_val = j;
+					if (VALIDATE_VOLTAGE(
+						cam_vreg[j].min_voltage,
+						cam_vreg[j].max_voltage,
+						power_setting[i].config_val)) {
+						cam_vreg[j].min_voltage =
+						cam_vreg[j].max_voltage =
+						power_setting[i].config_val;
+					}
 					break;
 				}
 			}
@@ -64,6 +87,14 @@ int msm_camera_fill_vreg_params(struct camera_vreg_t *cam_vreg,
 					pr_err("%s:%d i %d j %d cam_vio\n",
 						__func__, __LINE__, i, j);
 					power_setting[i].seq_val = j;
+					if (VALIDATE_VOLTAGE(
+						cam_vreg[j].min_voltage,
+						cam_vreg[j].max_voltage,
+						power_setting[i].config_val)) {
+						cam_vreg[j].min_voltage =
+						cam_vreg[j].max_voltage =
+						power_setting[i].config_val;
+					}
 					break;
 				}
 			}
@@ -75,6 +106,14 @@ int msm_camera_fill_vreg_params(struct camera_vreg_t *cam_vreg,
 					pr_err("%s:%d i %d j %d cam_vana\n",
 						__func__, __LINE__, i, j);
 					power_setting[i].seq_val = j;
+					if (VALIDATE_VOLTAGE(
+						cam_vreg[j].min_voltage,
+						cam_vreg[j].max_voltage,
+						power_setting[i].config_val)) {
+						cam_vreg[j].min_voltage =
+						cam_vreg[j].max_voltage =
+						power_setting[i].config_val;
+					}
 					break;
 				}
 			}
@@ -86,6 +125,14 @@ int msm_camera_fill_vreg_params(struct camera_vreg_t *cam_vreg,
 					pr_err("%s:%d i %d j %d cam_vaf\n",
 						__func__, __LINE__, i, j);
 					power_setting[i].seq_val = j;
+					if (VALIDATE_VOLTAGE(
+						cam_vreg[j].min_voltage,
+						cam_vreg[j].max_voltage,
+						power_setting[i].config_val)) {
+						cam_vreg[j].min_voltage =
+						cam_vreg[j].max_voltage =
+						power_setting[i].config_val;
+					}
 					break;
 				}
 			}
@@ -98,6 +145,14 @@ int msm_camera_fill_vreg_params(struct camera_vreg_t *cam_vreg,
 					pr_err("%s:%d i %d j %d cam_vcustom1\n",
 						__func__, __LINE__, i, j);
 					power_setting[i].seq_val = j;
+					if (VALIDATE_VOLTAGE(
+						cam_vreg[j].min_voltage,
+						cam_vreg[j].max_voltage,
+						power_setting[i].config_val)) {
+						cam_vreg[j].min_voltage =
+						cam_vreg[j].max_voltage =
+						power_setting[i].config_val;
+					}
 					break;
 				}
 			}
@@ -110,6 +165,14 @@ int msm_camera_fill_vreg_params(struct camera_vreg_t *cam_vreg,
 					pr_err("%s:%d i %d j %d cam_vcustom2\n",
 						__func__, __LINE__, i, j);
 					power_setting[i].seq_val = j;
+					if (VALIDATE_VOLTAGE(
+						cam_vreg[j].min_voltage,
+						cam_vreg[j].max_voltage,
+						power_setting[i].config_val)) {
+						cam_vreg[j].min_voltage =
+						cam_vreg[j].max_voltage =
+						power_setting[i].config_val;
+					}
 					break;
 				}
 			}
@@ -1273,6 +1336,8 @@ int msm_camera_power_up(struct msm_camera_power_ctrl_t *ctrl,
 		CDBG("%s type %d\n", __func__, power_setting->seq_type);
 		switch (power_setting->seq_type) {
 		case SENSOR_CLK:
+/* SHLOCAL_CAMERA_DRIVERS-> */
+#if 0
 			if (power_setting->seq_val >= ctrl->clk_info_size) {
 				pr_err("%s clk index %d >= max %d\n", __func__,
 					power_setting->seq_val,
@@ -1293,6 +1358,40 @@ int msm_camera_power_up(struct msm_camera_power_ctrl_t *ctrl,
 					__func__);
 				goto power_up_failed;
 			}
+#else
+			if (power_setting->seq_val != 0) {
+				if (power_setting->config_val)
+					ctrl->clk_info[2].
+						clk_rate = power_setting->config_val;
+
+				rc = msm_cam_clk_enable(ctrl->dev,
+					&ctrl->clk_info[2],
+					(struct clk **)&power_setting->data[0],
+					2,
+					1);
+				if (rc < 0) {
+					pr_err("%s: clk enable failed\n",
+						__func__);
+					goto power_up_failed;
+				}
+			} else {
+				if (power_setting->config_val)
+					ctrl->clk_info[0].
+						clk_rate = power_setting->config_val;
+
+				rc = msm_cam_clk_enable(ctrl->dev,
+					&ctrl->clk_info[0],
+					(struct clk **)&power_setting->data[0],
+					2,
+					1);
+				if (rc < 0) {
+					pr_err("%s: clk enable failed\n",
+						__func__);
+					goto power_up_failed;
+				}
+			}
+#endif
+/* SHLOCAL_CAMERA_DRIVERS<- */
 			break;
 		case SENSOR_GPIO:
 			if (no_gpio) {
@@ -1373,11 +1472,29 @@ power_up_failed:
 		switch (power_setting->seq_type) {
 
 		case SENSOR_CLK:
+/* SHLOCAL_CAMERA_DRIVERS-> */
+#if 0
 			msm_cam_clk_enable(ctrl->dev,
 				&ctrl->clk_info[0],
 				(struct clk **)&power_setting->data[0],
 				ctrl->clk_info_size,
 				0);
+#else
+			if (power_setting->seq_val != 0) {
+				msm_cam_clk_enable(ctrl->dev,
+					&ctrl->clk_info[2],
+					(struct clk **)&power_setting->data[0],
+					2,
+					0);
+			} else {
+				msm_cam_clk_enable(ctrl->dev,
+					&ctrl->clk_info[0],
+					(struct clk **)&power_setting->data[0],
+					2,
+					0);
+			}
+#endif
+/* SHLOCAL_CAMERA_DRIVERS<- */
 			break;
 		case SENSOR_GPIO:
 			if (!ctrl->gpio_conf->gpio_num_info)
@@ -1483,11 +1600,31 @@ int msm_camera_power_down(struct msm_camera_power_ctrl_t *ctrl,
 						pd->seq_type,
 						pd->seq_val);
 			if (ps)
+/* SHLOCAL_CAMERA_DRIVERS-> */
+#if 0
 				msm_cam_clk_enable(ctrl->dev,
 					&ctrl->clk_info[0],
 					(struct clk **)&ps->data[0],
 					ctrl->clk_info_size,
 					0);
+#else
+			{
+				if (pd->seq_val != 0) {
+					msm_cam_clk_enable(ctrl->dev,
+						&ctrl->clk_info[2],
+						(struct clk **)&ps->data[0],
+						2,
+						0);
+				} else {
+					msm_cam_clk_enable(ctrl->dev,
+						&ctrl->clk_info[0],
+						(struct clk **)&ps->data[0],
+						2,
+						0);
+				}
+			}
+#endif
+/* SHLOCAL_CAMERA_DRIVERS<- */
 			else
 				pr_err("%s error in power up/down seq data\n",
 								__func__);

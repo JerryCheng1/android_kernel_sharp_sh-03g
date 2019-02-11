@@ -29,6 +29,14 @@
 #include <linux/seq_file.h>
 #include <linux/ratelimit.h>
 
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+#include <linux/module.h>
+static int sh_debug_mask = 0;
+module_param_named(
+	sh_debug_mask, sh_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP
+);
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
+
 unsigned long irq_err_count;
 
 int arch_show_interrupts(struct seq_file *p, int prec)
@@ -124,8 +132,15 @@ void migrate_irqs(void)
 		raw_spin_unlock(&desc->lock);
 
 		if (affinity_broken)
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+			if (sh_debug_mask) {
+				pr_warn_ratelimited("IRQ%u no longer affine to CPU%u\n",
+						    i, smp_processor_id());
+			}
+#else  /* CONFIG_SHSYS_CUST_DEBUG */
 			pr_warn_ratelimited("IRQ%u no longer affine to CPU%u\n",
 					    i, smp_processor_id());
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 	}
 
 	local_irq_restore(flags);

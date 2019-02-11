@@ -444,6 +444,7 @@ static bool shgrip_dev_connect = false;
 
 static struct mutex shgrip_io_lock;
 static struct wake_lock shgrip_wake_lock;
+static struct wake_lock shgrip_io_wake_lock;
 
 static struct pm_qos_request shgrip_qos_cpu_dma_latency;
 
@@ -4239,6 +4240,7 @@ static int shgrip_ioctl_grip_sensor_on(void)
 	struct shgrip_drv *ctrl;
 	
 	mutex_lock(&shgrip_io_lock);
+	wake_lock(&shgrip_io_wake_lock);
 	
 	SHGRIP_DBG("start\n");
 	
@@ -4246,6 +4248,7 @@ static int shgrip_ioctl_grip_sensor_on(void)
 	
 	ret = shgrip_seq_grip_sensor_on(ctrl);
 	
+	wake_unlock(&shgrip_io_wake_lock);
 	mutex_unlock(&shgrip_io_lock);
 	
 	return ret;
@@ -4260,13 +4263,15 @@ static int shgrip_ioctl_grip_sensor_off(void)
 	struct shgrip_drv *ctrl;
 	
 	mutex_lock(&shgrip_io_lock);
-	
+	wake_lock(&shgrip_io_wake_lock);
+
 	SHGRIP_DBG("start\n");
 	
 	ctrl = &grip_ctrl;
 	
 	ret = shgrip_seq_grip_sensor_off(ctrl);
 	
+	wake_unlock(&shgrip_io_wake_lock);
 	mutex_unlock(&shgrip_io_lock);
 	
 	return ret;
@@ -4282,6 +4287,7 @@ static int shgrip_ioctl_set_sensor_adjust(void __user *argp)
 	struct shgrip_sens_setting_params data;
 	
 	mutex_lock(&shgrip_io_lock);
+	wake_lock(&shgrip_io_wake_lock);
 	
 	SHGRIP_DBG("start\n");
 	
@@ -4292,12 +4298,14 @@ static int shgrip_ioctl_set_sensor_adjust(void __user *argp)
 	
 	if (ret) {
 		SHGRIP_ERR("copy_from_user failed. ret:%d\n", ret);
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return GRIP_RESULT_FAILURE;
 	}
 	
 	ret = shgrip_seq_set_sensor_adjust(ctrl, &data);
 	
+	wake_unlock(&shgrip_io_wake_lock);
 	mutex_unlock(&shgrip_io_lock);
 	
 	return ret;
@@ -4334,6 +4342,7 @@ static int shgrip_ioctl_get_state(void __user *argp)
 	struct shgrip_drv *ctrl;
 	
 	mutex_lock(&shgrip_io_lock);
+	wake_lock(&shgrip_io_wake_lock);
 	
 	SHGRIP_DBG("start\n");
 	
@@ -4342,6 +4351,7 @@ static int shgrip_ioctl_get_state(void __user *argp)
 	ret = shgrip_seq_get_state(ctrl);
 	if (ret) {
 		SHGRIP_ERR("shgrip_seq_get_state failed\n");
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return ret;
 	}
@@ -4350,10 +4360,12 @@ static int shgrip_ioctl_get_state(void __user *argp)
 							sizeof(struct shgrip_sensor_state));
 	if (ret) {
 		SHGRIP_ERR("copy_to_user failed. ret:%d\n", ret);
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return GRIP_RESULT_FAILURE;
 	}
 	
+	wake_unlock(&shgrip_io_wake_lock);
 	mutex_unlock(&shgrip_io_lock);
 	
 	return GRIP_RESULT_SUCCESS;
@@ -4398,7 +4410,8 @@ static int shgrip_ioctl_download_fw(void __user *argp)
 	unsigned char *fw_data;
 	
 	mutex_lock(&shgrip_io_lock);
-	
+	wake_lock(&shgrip_io_wake_lock);
+
 	SHGRIP_DBG("start\n");
 	
 	ctrl = &grip_ctrl;
@@ -4407,12 +4420,14 @@ static int shgrip_ioctl_download_fw(void __user *argp)
 							sizeof(struct shgrip_fw_data));
 	if (ret) {
 		SHGRIP_ERR("copy_from_user failed\n");
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return GRIP_RESULT_FAILURE;
 	}
 	
 	if(fw_info.size < 0 || fw_info.size > SHGRIP_FW_SIZE){
 		SHGRIP_ERR("fw_info.size err\n");
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return GRIP_RESULT_FAILURE;
 	}
@@ -4420,6 +4435,7 @@ static int shgrip_ioctl_download_fw(void __user *argp)
 	fw_data = kmalloc(fw_info.size, GFP_KERNEL);
 	if (!fw_data) {
 		SHGRIP_ERR("kmalloc failed\n");
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return GRIP_RESULT_FAILURE;
 	}
@@ -4427,6 +4443,7 @@ static int shgrip_ioctl_download_fw(void __user *argp)
 	if(!fw_info.data){
 		SHGRIP_ERR("fw_info.data is NULL\n");
 		kfree(fw_data);
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return GRIP_RESULT_FAILURE;
 	}
@@ -4447,6 +4464,7 @@ static int shgrip_ioctl_download_fw(void __user *argp)
 	
 dl_fw_func_done:
 	kfree(fw_data);
+	wake_unlock(&shgrip_io_wake_lock);
 	mutex_unlock(&shgrip_io_lock);
 	return ret;
 }
@@ -4461,6 +4479,7 @@ static int shgrip_ioctl_diag_set_sensor_adjust(void __user *argp)
 	struct shgrip_diag_sens_setting_params params;
 	
 	mutex_lock(&shgrip_io_lock);
+	wake_lock(&shgrip_io_wake_lock);
 	
 	SHGRIP_DBG("start\n");
 	
@@ -4470,12 +4489,14 @@ static int shgrip_ioctl_diag_set_sensor_adjust(void __user *argp)
 							sizeof(struct shgrip_diag_sens_setting_params));
 	if (ret) {
 		SHGRIP_ERR("copy_from_user failed. ret:%d\n", ret);
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return GRIP_RESULT_FAILURE;
 	}
 	
 	ret = shgrip_seq_diag_set_sensor_adjust(ctrl, &params);
 	
+	wake_unlock(&shgrip_io_wake_lock);
 	mutex_unlock(&shgrip_io_lock);
 	
 	return ret;
@@ -4491,6 +4512,7 @@ static int shgrip_ioctl_diag_get_sensor_adjust(void __user *argp)
 	struct shgrip_diag_sens_setting_params params;
 	
 	mutex_lock(&shgrip_io_lock);
+	wake_lock(&shgrip_io_wake_lock);
 	
 	SHGRIP_DBG("start\n");
 	
@@ -4500,6 +4522,7 @@ static int shgrip_ioctl_diag_get_sensor_adjust(void __user *argp)
 							sizeof(struct shgrip_diag_sens_setting_params));
 	if (ret) {
 		SHGRIP_ERR("copy_from_user failed. ret:%d\n", ret);
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return GRIP_RESULT_FAILURE;
 	}
@@ -4509,6 +4532,7 @@ static int shgrip_ioctl_diag_get_sensor_adjust(void __user *argp)
 	ret = shgrip_seq_diag_get_sensor_adjust(ctrl, &params);
 	if (ret) {
 		SHGRIP_ERR("shgrip_seq_diag_get_sensor_adjust failed\n");
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return ret;
 	}
@@ -4517,10 +4541,12 @@ static int shgrip_ioctl_diag_get_sensor_adjust(void __user *argp)
 							sizeof(struct shgrip_diag_sens_setting_params));
 	if (ret) {
 		SHGRIP_ERR("copy_to_user failed. ret:%d\n", ret);
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return GRIP_RESULT_FAILURE;
 	}
 	
+	wake_unlock(&shgrip_io_wake_lock);
 	mutex_unlock(&shgrip_io_lock);
 	
 	return GRIP_RESULT_SUCCESS;
@@ -4536,6 +4562,7 @@ static int shgrip_ioctl_diag_get_sensor_level(void __user *argp)
 	struct shgrip_get_level level;
 	
 	mutex_lock(&shgrip_io_lock);
+	wake_lock(&shgrip_io_wake_lock);
 	
 	SHGRIP_DBG("start\n");
 	
@@ -4546,6 +4573,7 @@ static int shgrip_ioctl_diag_get_sensor_level(void __user *argp)
 	ret = shgrip_seq_diag_get_sensor_level(ctrl, &level);
 	if (ret) {
 		SHGRIP_ERR("shgrip_seq_diag_get_sensor_level failed\n");
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return ret;
 	}
@@ -4553,10 +4581,12 @@ static int shgrip_ioctl_diag_get_sensor_level(void __user *argp)
 	ret = copy_to_user(argp, &level, sizeof(struct shgrip_get_level));
 	if (ret) {
 		SHGRIP_ERR("copy_to_user failed. ret:%d\n", ret);
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return GRIP_RESULT_FAILURE;
 	}
 	
+	wake_unlock(&shgrip_io_wake_lock);
 	mutex_unlock(&shgrip_io_lock);
 	
 	return GRIP_RESULT_SUCCESS;
@@ -4596,6 +4626,7 @@ static int shgrip_ioctl_diag_download_fw(void __user *argp)
 	int fw_block;
 	
 	mutex_lock(&shgrip_io_lock);
+	wake_lock(&shgrip_io_wake_lock);
 	
 	SHGRIP_DBG("start\n");
 	
@@ -4604,6 +4635,7 @@ static int shgrip_ioctl_diag_download_fw(void __user *argp)
 	ret = copy_from_user(&fw_block, argp, sizeof(int));
 	if (ret) {
 		SHGRIP_ERR("copy_from_user failed. ret:%d\n", ret);
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return GRIP_RESULT_FAILURE;
 	}
@@ -4612,6 +4644,7 @@ static int shgrip_ioctl_diag_download_fw(void __user *argp)
 	
 	ret = shgrip_seq_download_fw(ctrl, fw_block);
 	
+	wake_unlock(&shgrip_io_wake_lock);
 	mutex_unlock(&shgrip_io_lock);
 	
 	return ret;
@@ -4675,6 +4708,7 @@ static int shgrip_ioctl_get_chprd2_value(void __user *argp)
 	struct shgrip_chprd2 val;
 	
 	mutex_lock(&shgrip_io_lock);
+	wake_lock(&shgrip_io_wake_lock);
 	
 	SHGRIP_DBG("start\n");
 	
@@ -4685,16 +4719,19 @@ static int shgrip_ioctl_get_chprd2_value(void __user *argp)
 	ret = shgrip_seq_get_chprd2_value(ctrl, &val);
 	if (ret) {
 		SHGRIP_ERR("shgrip_seq_get_chprd2_value failed\n");
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return ret;
 	}
 	ret = copy_to_user(argp, &val, sizeof(struct shgrip_chprd2));
 	if (ret) {
 		SHGRIP_ERR("copy_to_user failed. ret:%d\n", ret);
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return GRIP_RESULT_FAILURE;
 	}
 	
+	wake_unlock(&shgrip_io_wake_lock);
 	mutex_unlock(&shgrip_io_lock);
 	
 	return GRIP_RESULT_SUCCESS;
@@ -4710,6 +4747,7 @@ static int shgrip_ioctl_debug_rw_command(void __user *argp)
 	struct shgrip_dbg_command cmd;
 	
 	mutex_lock(&shgrip_io_lock);
+	wake_lock(&shgrip_io_wake_lock);
 	
 	SHGRIP_DBG("start\n");
 	
@@ -4720,6 +4758,7 @@ static int shgrip_ioctl_debug_rw_command(void __user *argp)
 	ret = copy_from_user(&cmd, argp, sizeof(struct shgrip_dbg_command));
 	if (ret) {
 		SHGRIP_ERR("copy_from_user failed. ret:%d\n", ret);
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return GRIP_RESULT_FAILURE;
 	}
@@ -4727,6 +4766,7 @@ static int shgrip_ioctl_debug_rw_command(void __user *argp)
 	ret = shgrip_seq_debug_rw_command(ctrl, &cmd);
 	if (ret) {
 		SHGRIP_ERR("shgrip_seq_debug_rw_command failed\n");
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return ret;
 	}
@@ -4734,10 +4774,12 @@ static int shgrip_ioctl_debug_rw_command(void __user *argp)
 	ret = copy_to_user(argp, &cmd, sizeof(struct shgrip_dbg_command));
 	if (ret) {
 		SHGRIP_ERR("copy_to_user failed. ret:%d\n", ret);
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return GRIP_RESULT_FAILURE;
 	}
 	
+	wake_unlock(&shgrip_io_wake_lock);
 	mutex_unlock(&shgrip_io_lock);
 	
 	return GRIP_RESULT_SUCCESS;
@@ -5012,7 +5054,8 @@ static int shgrip_open(struct inode *inode, struct file *file)
 	}
 	
 	mutex_lock(&shgrip_io_lock);
-	
+	wake_lock(&shgrip_io_wake_lock);
+
 	SHGRIP_DBG("start\n");
 	
 	ctrl = &grip_ctrl;
@@ -5024,6 +5067,7 @@ static int shgrip_open(struct inode *inode, struct file *file)
 			SHGRIP_ERR("shgrip_seq_reset_start_app failed ret:%d\n", ret);
 			shgrip_seq_grip_power_off(ctrl);
 			ctrl->state = STATE_POWER_OFF;
+			wake_unlock(&shgrip_io_wake_lock);
 			mutex_unlock(&shgrip_io_lock);
 			return -1;
 		}
@@ -5036,6 +5080,7 @@ static int shgrip_open(struct inode *inode, struct file *file)
 		break;
 	}
 	
+	wake_unlock(&shgrip_io_wake_lock);
 	mutex_unlock(&shgrip_io_lock);
 	
 	return 0;
@@ -5055,6 +5100,7 @@ static int shgrip_close(struct inode *inode, struct file *file)
 	}
 	
 	mutex_lock(&shgrip_io_lock);
+	wake_lock(&shgrip_io_wake_lock);
 	
 	SHGRIP_DBG("start\n");
 	
@@ -5080,6 +5126,8 @@ static int shgrip_close(struct inode *inode, struct file *file)
 	case STATE_FW_DL:
 	default:
 		SHGRIP_ERR("state is Err state:%d\n", ctrl->state);
+		wake_unlock(&shgrip_wake_lock);
+		wake_unlock(&shgrip_io_wake_lock);
 		mutex_unlock(&shgrip_io_lock);
 		return 0;
 	}
@@ -5091,9 +5139,10 @@ static int shgrip_close(struct inode *inode, struct file *file)
 	msm_tps_set_grip_state(SHGRIP_OFF);
 #endif /* SHGRIP_FACTORY_MODE_ENABLE */
 	
-	mutex_unlock(&shgrip_io_lock);
-	
 	wake_unlock(&shgrip_wake_lock);
+	wake_unlock(&shgrip_io_wake_lock);
+	
+	mutex_unlock(&shgrip_io_lock);
 	
 	return 0;
 }
@@ -5841,6 +5890,7 @@ static int shgrip_drv_init(struct shgrip_drv *ctrl)
     shgrip_qos_cpu_dma_latency.cpus_affine.bits[0] = 0x0f;  /* little cluster */
 	pm_qos_add_request(&shgrip_qos_cpu_dma_latency, PM_QOS_CPU_DMA_LATENCY, PM_QOS_DEFAULT_VALUE);
 	wake_lock_init(&shgrip_wake_lock, WAKE_LOCK_SUSPEND, "shgrip_wake_lock");
+	wake_lock_init(&shgrip_io_wake_lock, WAKE_LOCK_SUSPEND, "shgrip_io_wake_lock");
 	
 	return 0;
 }
@@ -5956,6 +6006,7 @@ static void __exit shgrip_exit(void)
 	pm_qos_remove_request(&shgrip_qos_cpu_dma_latency);
 	
 	wake_unlock(&shgrip_wake_lock);
+	wake_lock_destroy(&shgrip_io_wake_lock);
 	wake_lock_destroy(&shgrip_wake_lock);
 	
 	device_destroy(shgrip_class, MKDEV(shgrip_major,0));

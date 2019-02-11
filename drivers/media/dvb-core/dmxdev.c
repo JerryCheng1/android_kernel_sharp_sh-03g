@@ -2326,10 +2326,17 @@ static int dvb_dmxdev_sec_fullness_callback(
 				struct dmx_section_filter *filter,
 				int required_space, int wait)
 {
-	struct dmxdev_filter *dmxdevfilter = filter->priv;
+	struct dmxdev_filter *dmxdevfilter;
 	struct dvb_ringbuffer *src;
 	struct dmxdev_events_queue *events;
 	int ret;
+
+	if( !filter ){
+		pr_err("%s: NULL demux filter!\n", __func__);
+		return -ENODEV;
+	}
+
+	dmxdevfilter = filter->priv;
 
 	if (!dmxdevfilter) {
 		pr_err("%s: NULL demux filter object!\n", __func__);
@@ -2337,10 +2344,23 @@ static int dvb_dmxdev_sec_fullness_callback(
 	}
 
 	src = &dmxdevfilter->buffer;
+	if( !src ){
+		pr_err("%s: NULL demuxfilter->buffer!\n", __func__);
+		return -ENODEV;
+	}
 	events = &dmxdevfilter->events;
+	if( !events ){
+		pr_err("%s: NULL demuxfilter->events!\n", __func__);
+		return -ENODEV;
+	}
 
 	do {
 		ret = 0;
+
+		if( !dmxdevfilter->dev ){
+			pr_err("%s: NULL demuxfilter->dev!\n", __func__);
+			return -ENODEV;
+		}
 
 		if (dmxdevfilter->dev->dvr_in_exit)
 			return -ENODEV;
@@ -2691,7 +2711,7 @@ static int dvb_dmxdev_ts_callback(const u8 *buffer1, size_t buffer1_len,
 	ssize_t free;
 
 	if (!dmxdevfilter) {
-		pr_err("%s: null filter (feed->is_filterng=%d) status=%d\n",
+		pr_err("%s: null filter (feed->is_filtering=%d) status=%d\n",
 			__func__, feed->is_filtering, success);
 		return -EINVAL;
 	}
@@ -2888,7 +2908,7 @@ static int dvb_dmxdev_ts_event_cb(struct dmx_ts_feed *feed,
 	ssize_t free;
 
 	if (!dmxdevfilter) {
-		pr_err("%s: null filter (feed->is_filterng=%d) event type=%d (length=%d) will be discarded\n",
+		pr_err("%s: null filter (feed->is_filtering=%d) event type=%d (length=%d) will be discarded\n",
 			__func__, feed->is_filtering,
 			dmx_data_ready->status,
 			dmx_data_ready->data_length);

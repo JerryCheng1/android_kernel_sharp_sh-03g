@@ -517,7 +517,9 @@ EXPORT_SYMBOL(mmc_blk_init_bkops_statistics);
  */
 void mmc_start_delayed_bkops(struct mmc_card *card)
 {
-	if (!card || !card->ext_csd.bkops_en || mmc_card_doing_bkops(card))
+	if (!card ||
+		!(mmc_card_get_bkops_en_manual(card)) ||
+		mmc_card_doing_bkops(card))
 		return;
 
 	if (card->bkops_info.sectors_changed <
@@ -554,7 +556,7 @@ void mmc_start_bkops(struct mmc_card *card, bool from_exception)
 	int err;
 
 	BUG_ON(!card);
-	if (!card->ext_csd.bkops_en)
+	if (!(mmc_card_get_bkops_en_manual(card)))
 		return;
 
 	if ((card->bkops_info.cancel_delayed_work) && !from_exception) {
@@ -1134,9 +1136,9 @@ struct mmc_async_req *mmc_start_req(struct mmc_host *host,
 	}
 
 #ifdef CONFIG_MMC_SD_ECO_MODE_CUST_SH
-    if (sh_mmc_sd_set_eco_mode(host))
-        pr_info("%s: %s switch eco / normal mode.\n",
-                mmc_hostname(host), __func__);
+	if (sh_mmc_sd_set_eco_mode(host))
+		pr_info("%s: %s switch eco / normal mode.\n",
+			mmc_hostname(host), __func__);
 #endif /* CONFIG_MMC_SD_ECO_MODE_CUST_SH */
 
 	if (!err && areq) {
@@ -3213,12 +3215,8 @@ out:
 	return;
 }
 
-#ifdef CONFIG_MMC_BUG_FIX_CUST_SH
 static bool mmc_is_vaild_state_for_clk_scaling(struct mmc_host *host,
-	enum mmc_load state)
-#else /* CONFIG_MMC_BUG_FIX_CUST_SH */
-static bool mmc_is_vaild_state_for_clk_scaling(struct mmc_host *host)
-#endif /* CONFIG_MMC_BUG_FIX_CUST_SH */
+				enum mmc_load state)
 {
 	struct mmc_card *card = host->card;
 	u32 status;
@@ -3228,15 +3226,14 @@ static bool mmc_is_vaild_state_for_clk_scaling(struct mmc_host *host)
 	 * If the current partition type is RPMB, clock switching may not
 	 * work properly as sending tuning command (CMD21) is illegal in
 	 * this mode.
+	 * In case invalid_state is set, we forbid clock scaling, unless,
+	 * its down-scale and "scale_down_in_low_wr_load" is set.
 	 */
 	if (!card || (mmc_card_mmc(card) &&
-			card->part_curr == EXT_CSD_PART_CONFIG_ACC_RPMB)
-#ifdef CONFIG_MMC_BUG_FIX_CUST_SH
-			|| (state != MMC_LOAD_LOW &&
-			host->clk_scaling.invalid_state))
-#else /* CONFIG_MMC_BUG_FIX_CUST_SH */
-			|| host->clk_scaling.invalid_state)
-#endif /* CONFIG_MMC_BUG_FIX_CUST_SH */
+		card->part_curr == EXT_CSD_PART_CONFIG_ACC_RPMB) ||
+		(host->clk_scaling.invalid_state &&
+		!(state == MMC_LOAD_LOW &&
+		host->clk_scaling.scale_down_in_low_wr_load)))
 		goto out;
 
 	if (mmc_send_status(card, &status)) {
@@ -3267,11 +3264,7 @@ static int mmc_clk_update_freq(struct mmc_host *host,
 	}
 
 	if (freq != host->clk_scaling.curr_freq) {
-#ifdef CONFIG_MMC_BUG_FIX_CUST_SH
 		if (!mmc_is_vaild_state_for_clk_scaling(host, state)) {
-#else /* CONFIG_MMC_BUG_FIX_CUST_SH */
-		if (!mmc_is_vaild_state_for_clk_scaling(host)) {
-#endif /* CONFIG_MMC_BUG_FIX_CUST_SH */
 			err = -EAGAIN;
 			goto error;
 		}
@@ -3403,6 +3396,8 @@ out:
 void mmc_disable_clk_scaling(struct mmc_host *host)
 {
 	cancel_delayed_work_sync(&host->clk_scaling.work);
+	if (host->ops->notify_load)
+		host->ops->notify_load(host, MMC_LOAD_LOW);
 	host->clk_scaling.enable = false;
 }
 EXPORT_SYMBOL_GPL(mmc_disable_clk_scaling);
@@ -3434,8 +3429,8 @@ void mmc_init_clk_scaling(struct mmc_host *host)
 	INIT_DELAYED_WORK(&host->clk_scaling.work, mmc_clk_scale_work);
 	host->clk_scaling.curr_freq = mmc_get_max_frequency(host);
 	if (host->ops->notify_load)
-		host->ops->notify_load(host, MMC_LOAD_HIGH);
-	host->clk_scaling.state = MMC_LOAD_HIGH;
+		host->ops->notify_load(host, MMC_LOAD_INIT);
+	host->clk_scaling.state = MMC_LOAD_INIT;
 	mmc_reset_clk_scale_stats(host);
 	host->clk_scaling.enable = true;
 	host->clk_scaling.initialized = true;
@@ -3452,6 +3447,8 @@ EXPORT_SYMBOL_GPL(mmc_init_clk_scaling);
 void mmc_exit_clk_scaling(struct mmc_host *host)
 {
 	cancel_delayed_work_sync(&host->clk_scaling.work);
+	if (host->ops->notify_load)
+		host->ops->notify_load(host, MMC_LOAD_LOW);
 	memset(&host->clk_scaling, 0, sizeof(host->clk_scaling));
 }
 EXPORT_SYMBOL_GPL(mmc_exit_clk_scaling);
@@ -3804,9 +3801,11 @@ int mmc_flush_cache(struct mmc_card *card)
 			pr_err("%s: cache flush timeout\n",
 					mmc_hostname(card->host));
 			rc = mmc_interrupt_hpi(card);
-			if (rc)
+			if (rc) {
 				pr_err("%s: mmc_interrupt_hpi() failed (%d)\n",
 						mmc_hostname(host), rc);
+				err = -ENODEV;
+			}
 		} else if (err) {
 			pr_err("%s: cache flush error %d\n",
 					mmc_hostname(card->host), err);
@@ -3816,60 +3815,6 @@ int mmc_flush_cache(struct mmc_card *card)
 	return err;
 }
 EXPORT_SYMBOL(mmc_flush_cache);
-
-/*
- * Turn the cache ON/OFF.
- * Turning the cache OFF shall trigger flushing of the data
- * to the non-volatile storage.
- * This function should be called with host claimed
- */
-int mmc_cache_ctrl(struct mmc_host *host, u8 enable)
-{
-	struct mmc_card *card = host->card;
-	unsigned int timeout;
-	int err = 0, rc;
-
-	BUG_ON(!card);
-	timeout = card->ext_csd.generic_cmd6_time;
-
-	if (!(host->caps2 & MMC_CAP2_CACHE_CTRL) ||
-			mmc_card_is_removable(host) ||
-			(card->quirks & MMC_QUIRK_CACHE_DISABLE))
-		return err;
-
-	if (card && mmc_card_mmc(card) &&
-			(card->ext_csd.cache_size > 0)) {
-		enable = !!enable;
-
-		if (card->ext_csd.cache_ctrl ^ enable) {
-			if (!enable)
-				timeout = MMC_FLUSH_REQ_TIMEOUT_MS;
-
-			err = mmc_switch_ignore_timeout(card,
-					EXT_CSD_CMD_SET_NORMAL,
-					EXT_CSD_CACHE_CTRL, enable, timeout);
-
-			if (err == -ETIMEDOUT && !enable) {
-				pr_err("%s:cache disable operation timeout\n",
-						mmc_hostname(card->host));
-				rc = mmc_interrupt_hpi(card);
-				if (rc)
-					pr_err("%s: mmc_interrupt_hpi() failed (%d)\n",
-							mmc_hostname(host), rc);
-			} else if (err) {
-				pr_err("%s: cache %s error %d\n",
-						mmc_hostname(card->host),
-						enable ? "on" : "off",
-						err);
-			} else {
-				card->ext_csd.cache_ctrl = enable;
-			}
-		}
-	}
-
-	return err;
-}
-EXPORT_SYMBOL(mmc_cache_ctrl);
 
 #ifdef CONFIG_PM
 #ifdef CONFIG_PM_EMMC_CUST_SH

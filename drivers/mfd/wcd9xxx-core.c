@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -903,6 +903,7 @@ static struct dentry *debugfs_wcd9xxx_dent;
 static struct dentry *debugfs_peek;
 static struct dentry *debugfs_poke;
 static struct dentry *debugfs_power_state;
+static struct dentry *debugfs_reg_dump;
 
 static unsigned char read_data;
 
@@ -936,14 +937,54 @@ static int get_parameters(char *buf, long int *param1, int num_of_par)
 	return 0;
 }
 
+static ssize_t wcd9xxx_slimslave_reg_show(char __user *ubuf, size_t count,
+					  loff_t *ppos)
+{
+	int i, reg_val, len;
+	ssize_t total = 0;
+	char tmp_buf[20]; /* each line is 12 bytes but 20 for margin of error */
+
+	for (i = (int) *ppos / 12; i <= SLIM_MAX_REG_ADDR; i++) {
+		reg_val = wcd9xxx_interface_reg_read(debugCodec, i);
+		len = snprintf(tmp_buf, 25, "0x%.3x: 0x%.2x\n", i, reg_val);
+
+		if ((total + len) >= count - 1)
+			break;
+		if (copy_to_user((ubuf + total), tmp_buf, len)) {
+			pr_err("%s: fail to copy reg dump\n", __func__);
+			total = -EFAULT;
+			goto copy_err;
+		}
+		*ppos += len;
+		total += len;
+	}
+
+copy_err:
+	return total;
+}
+
 static ssize_t codec_debug_read(struct file *file, char __user *ubuf,
 				size_t count, loff_t *ppos)
 {
 	char lbuf[8];
+	char *access_str = file->private_data;
+	ssize_t ret_cnt;
 
-	snprintf(lbuf, sizeof(lbuf), "0x%x\n", read_data);
-	return simple_read_from_buffer(ubuf, count, ppos, lbuf,
-		strnlen(lbuf, 7));
+	if (*ppos < 0 || !count)
+		return -EINVAL;
+
+	if (!strcmp(access_str, "slimslave_peek")) {
+		snprintf(lbuf, sizeof(lbuf), "0x%x\n", read_data);
+		ret_cnt = simple_read_from_buffer(ubuf, count, ppos, lbuf,
+					       strnlen(lbuf, 7));
+	} else if (!strcmp(access_str, "slimslave_reg_dump")) {
+		ret_cnt = wcd9xxx_slimslave_reg_show(ubuf, count, ppos);
+	} else {
+		pr_err("%s: %s not permitted to read\n", __func__, access_str);
+		ret_cnt = -EPERM;
+	}
+
+	return ret_cnt;
 }
 
 /*
@@ -1758,6 +1799,49 @@ undefined_rate:
 	return dmic_sample_rate;
 }
 
+/*
+ * wcd9xxx_validate_spkdrv_ocp_curr_limit:
+ *	Validate the spkdrv_ocp_curr_limit.
+ *	If spkdrv_ocp_curr_limit is found to be invalid,
+ *	assign the spkdrv_ocp_curr_limit as undefined, so individual codec
+ *	drivers can use thier own defaults
+ * @dev: the device for which the spkdrv_ocp_curr_limit is to be configured
+ * @spkdrv_ocp_curr_limit: The input spkdrv_ocp_curr_limit to be configured
+ */
+static u32 wcd9xxx_validate_spkdrv_ocp_curr_limit(struct device *dev,
+		u32 spkdrv_ocp_curr_limit)
+{
+	switch (spkdrv_ocp_curr_limit) {
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_0P0_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_0P375_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_0P750_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_1P125_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_1P500_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_1P875_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_2P250_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_2P625_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_3P000_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_3P375_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_3P750_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_4P125_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_4P500_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_4P875_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_5P250_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_5P625_A:
+		break;
+	default:
+		/* Any other spkdrv_ocp_curr_limit values are invalid */
+		dev_info(dev, "%s: Invalid spkdrv_ocp_curr_limit = %u\n",
+				__func__, spkdrv_ocp_curr_limit);
+		spkdrv_ocp_curr_limit = WCD9XXX_SPKDRV_OCP_CURR_LIMIT_UNDEFINED;
+	}
+
+	dev_dbg(dev, "%s: spkdrv_ocp_curr_limit = %u\n", __func__,
+			spkdrv_ocp_curr_limit);
+
+	return spkdrv_ocp_curr_limit;
+}
+
 static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 {
 	struct wcd9xxx_pdata *pdata;
@@ -1765,6 +1849,7 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 	u32 mclk_rate = 0;
 	u32 dmic_sample_rate = 0;
 	u32 mad_dmic_sample_rate = 0;
+	u32 spkdrv_ocp_curr_limit = 0;
 	const char *static_prop_name = "qcom,cdc-static-supplies";
 	const char *ond_prop_name = "qcom,cdc-on-demand-supplies";
 	const char *cp_supplies_name = "qcom,cdc-cp-supplies";
@@ -1898,6 +1983,22 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 		else
 			pdata->cdc_variant = WCD9XXX;
 	}
+
+
+	ret = of_property_read_u32(dev->of_node,
+				"qcom,cdc-spkdrv-ocp-curr-limit-mA",
+				&spkdrv_ocp_curr_limit);
+	if (ret) {
+		dev_dbg(dev, "Looking up %s property in node %s failed, err = %d",
+			"qcom,cdc-spkdrv-ocp-curr-limit-mA",
+			dev->of_node->full_name, ret);
+		spkdrv_ocp_curr_limit = WCD9XXX_SPKDRV_OCP_CURR_LIMIT_UNDEFINED;
+	}
+	pdata->ocp.spkdrv_ocp_curr_limit =
+		wcd9xxx_validate_spkdrv_ocp_curr_limit(dev,
+							spkdrv_ocp_curr_limit);
+
+
 
 	return pdata;
 err:
@@ -2070,6 +2171,10 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 		debugfs_power_state = debugfs_create_file("power_state",
 		S_IFREG | S_IRUGO, debugfs_wcd9xxx_dent,
 		(void *) "power_state", &codec_debug_ops);
+
+		debugfs_reg_dump = debugfs_create_file("slimslave_reg_dump",
+		S_IFREG | S_IRUGO, debugfs_wcd9xxx_dent,
+		(void *) "slimslave_reg_dump", &codec_debug_ops);
 	}
 #endif
 

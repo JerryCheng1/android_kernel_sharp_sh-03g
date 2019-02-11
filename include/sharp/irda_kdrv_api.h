@@ -55,7 +55,7 @@ inline static char *get_tty_devname() {
 
 	fd = open(SHIRDA_NODE_PATH, O_RDONLY);
 	if (fd < 0) {
-		ALOGE("NODE = %s open error", SHIRDA_NODE_PATH);
+		ALOGE("NODE = %s open error (%d)", SHIRDA_NODE_PATH, errno);
 		return NULL;
 	}
 	n = read(fd, node, 63);
@@ -77,13 +77,13 @@ inline static char *get_tty_devname() {
 	sprintf(devname_path, SHIRDA_TTYDEV_PATH, node);
 
 	if ((dir = opendir(devname_path)) == NULL) {
-		ALOGE("DIR %s open error", devname_path);
+		ALOGE("DIR %s open error (%d)", devname_path, errno);
 		return NULL;
 	}
 	do {
 		if ((ent = readdir(dir)) == NULL) {
+			ALOGE("DIR read error (%d)", errno);
 			closedir(dir);
-			ALOGE("DIR read error");
 			return NULL;
 		}
 	} while (strstr(ent->d_name, "tty") == NULL);
@@ -107,8 +107,8 @@ inline static int get_shirda_ldisc_id(const char *ldisc_name)
 
 	fd = fopen(SHIRDA_PROC_TTY_LDISCS_PATH, "r");
 	if (fd == NULL) {
-		ALOGE("tty ldisc info file %s open error",
-						SHIRDA_PROC_TTY_LDISCS_PATH);
+		ALOGE("tty ldisc info file %s open error (%d)",
+					SHIRDA_PROC_TTY_LDISCS_PATH, errno);
 		return -1;
 	}
 
@@ -116,19 +116,69 @@ inline static int get_shirda_ldisc_id(const char *ldisc_name)
 		num_param = sscanf(sbuf, "%s%d", name, &id);
 		if (num_param != 2) {
 			ALOGE("ldisc info param error (%d)", num_param);
+			fclose(fd);
 			return -1;
 		}
 
 		if (strcmp(name, ldisc_name) == 0) {
+			fclose(fd);
 			return id;
 		}
 	}
 
+	ALOGE("fgets() return value is NULL (%d)", errno);
+	fclose(fd);
 	return -1;
 }
 
 #define	N_SHIRDA	(get_shirda_ldisc_id(SHIRDA_LDISC_DRIVER_NAME))
 #define	N_SHIRB		(get_shirda_ldisc_id(SHIRB_LDISC_NAME))
+
+#define	SHIRDA_KDRV_MODULE	"shirda_msm_kdrv"
+#define	SHIRDA_LDISC_MODULE	"shirda_ldisc"
+#define	SHIRB_LDISC_MODULE	"shirb_ldisc"
+
+#define	SHIRDA_KDRV_VER_PATH	"/sys/module/"SHIRDA_KDRV_MODULE"/version"
+#define	SHIRDA_LDISC_VER_PATH	"/sys/module/"SHIRDA_LDISC_MODULE"/version"
+#define	SHIRB_LDISC_VER_PATH	"/sys/module/"SHIRB_LDISC_MODULE"/version"
+
+#define	SHIRDA_VERSION_PATH	SHIRDA_PARA_PATH"ver"
+
+inline static char *get_shirda_version(const char *ver_file)
+{
+	int	fd;
+	static char	version[64];
+	int	i, n;
+
+	fd = open(ver_file, O_RDONLY);
+	if (fd < 0) {
+		ALOGE("%s open error", ver_file);
+		version[0] = 0x00;
+		return version;
+	}
+	n = read(fd, version, 63);
+	close(fd);
+
+	for (i = 0; i < n; i++) {
+		if (iscntrl((int)version[i]) != 0) {
+			n = i;
+			ALOGE("%dth charactor = 0x%02x", i, version[i]);
+			break;
+		}
+	}
+	if (n < 1) {
+		ALOGE("Charactor deleate error");
+		n = 0;
+	}
+	version[n] = (char)0x00;
+
+	return version;
+}
+
+#define	SHIRDA_VERSION		(get_shirda_version(SHIRDA_VERSION_PATH))
+#define	SHIRDA_KDRV_VERSION	(get_shirda_version(SHIRDA_KDRV_VER_PATH))
+#define	SHIRDA_LDISC_VERSION	(get_shirda_version(SHIRDA_LDISC_VER_PATH))
+#define	SHIRB_LDISC_VERSION	(get_shirda_version(SHIRB_LDISC_VER_PATH))
 
 #endif
 

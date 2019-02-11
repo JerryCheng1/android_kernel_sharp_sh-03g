@@ -1,6 +1,6 @@
 /* drivers/sharp/shsys/sh_regaxs.c
  *
- * Copyright (C) 2012 Sharp Corporation
+ * Copyright (C) 2015 Sharp Corporation
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and

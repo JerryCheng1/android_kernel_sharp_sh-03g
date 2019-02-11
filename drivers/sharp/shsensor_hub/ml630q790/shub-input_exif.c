@@ -51,8 +51,8 @@ module_param(shub_exif_log, int, 0600);
 #define HC_FLG_LOGGING_PEDO                 (0x0001u)
 #define HC_FLG_LOGGING_TOTAL_STATUS         (0x0002u)
 
-#define ACC_MAX 8192
-#define ACC_MIN -8192
+#define ACC_MAX    ACC_CMN_MAX  /* SHMDS_HUB_0604_01 mod */
+#define ACC_MIN    ACC_CMN_MIN  /* SHMDS_HUB_0604_01 mod */
 #define INPUT_UIT8_MAX 255
 #define INPUT_UIT8_MIN 0
 #define INPUT_UIT16_MAX 65535
@@ -83,6 +83,16 @@ module_param(shub_exif_log, int, 0600);
 #define APP_VEICHLE_DETECTION3      (0x10)
 #define APP_PEDOMETER2              (0x11)			// SHMDS_HUB_1201_01 add
 #define APP_PEDOMETER2_2            (0x12)			// SHMDS_HUB_1201_02 add
+#define APP_PICKUP_ENABLE           (0x13)			// SHMDS_HUB_1701_01 add
+//#define APP_PICKUP_PARAM1           (0x14)			/* SHMDS_HUB_1701_01 add */ /* SHMDS_HUB_1701_06 del */
+//#define APP_PICKUP_PARAM2           (0x15)			/* SHMDS_HUB_1701_01 add */ /* SHMDS_HUB_1701_06 del */
+#define APP_PAUSE_PARAM             (0x16)			// SHMDS_HUB_0204_14 add
+#define APP_PAUSE_STATUS_PARAM      (0x17)			// SHMDS_HUB_0204_14 add
+#define APP_LPM_PARAM               (0x18)          // SHMDS_HUB_0204_14 add
+#define APP_LPM_DEV_PARAM           (0x19)          // SHMDS_HUB_0204_14 add
+#define APP_RIDE_PEDO_PARAM         (0x20)          // SHMDS_HUB_0204_15 add
+#define APP_RIDE_PEDO2_PARAM        (0x21)          // SHMDS_HUB_0204_15 add
+#define APP_LPM_DEV_PARAM2          (0x22)          // SHMDS_HUB_0204_15 add
 /* SHMDS_HUB_0204_03 add E */
 #define APP_PEDOMETER_N             (0x81)			// SHMDS_HUB_0204_02 add
 /* SHMDS_HUB_0202_01 add S */
@@ -91,9 +101,11 @@ module_param(shub_exif_log, int, 0600);
 #define SHUB_DETECT_ECONOMIZE       1
 #define SHUB_INTERVAL_MOT_DET_MS    5000
 /* SHMDS_HUB_0202_01 add E */
+#define SHUB_EXIF_DETECT_PICKUP     0x0100 /* SHMDS_HUB_1701_01 add */
 /* SHMDS_HUB_0207_01 add S */
 #define TYPE_VIB                    (0x01)
 #define TYPE_TPS                    (0x02)
+#define TYPE_SPE                    (0x04)      /* SHMDS_HUB_0207_02 add */
 #define TYPE_STOPPING_NOW           (0x10)
 #define TYPE_STOP_NOW               (0x20)
 #define TYPE_RESTART_NOW            (0x40)
@@ -115,6 +127,7 @@ static DEFINE_MUTEX(shub_exif_lock);
 static DEFINE_MUTEX(shub_mutex_if);  // SHMDS_HUB_0207_01 add
 static DEFINE_MUTEX(shub_mutex_req); // SHMDS_HUB_0207_01 add
 static DEFINE_MUTEX(shub_mutex_vibe); // SHMDS_HUB_0208_01 add
+static DEFINE_MUTEX(shub_mutex_speaker);    /* SHMDS_HUB_0208_2 add */
 
 enum{
     SHUB_COND_STOP = 0,
@@ -186,6 +199,8 @@ static int shub_already_md_flg = 0;
 static void shub_disable_internal_mot_det(void);        // SHMDS_HUB_0206_05 add
 /* SHMDS_HUB_0202_01 add E */
 
+static int32_t shub_exif_md_mode_flg = 0;       /* SHMDS_HUB_0211_01 add */
+
 // SHMDS_HUB_0208_01 add S
 static int shub_not_notify_vibe_flg = 0;
 static uint64_t shub_vibe_endtime_ns = 0;
@@ -197,7 +212,10 @@ static uint64_t shub_get_time_ns(void)
     return timespec_to_ns(&ts);
 }
 
-static int shub_vibe_notify_check(int kind)
+/* SHMDS_HUB_0213_01 mod S */
+//static int shub_vibe_notify_check(int kind)
+int shub_vibe_notify_check(int kind)
+/* SHMDS_HUB_0213_01 mod E */
 {
     int check_ret = 0;
     mutex_lock(&shub_mutex_vibe);
@@ -220,6 +238,32 @@ static int shub_vibe_notify_check(int kind)
 }
 // SHMDS_HUB_0208_01 add E
 
+/* SHMDS_HUB_0208_02 add S */
+static int shub_not_notify_speaker_flg = 0;
+static uint64_t shub_speaker_endtime_ns = 0;
+static int shub_speaker_notify_check(int kind)
+{
+    int check_ret = 0;
+    mutex_lock(&shub_mutex_speaker);
+    if(shub_not_notify_speaker_flg) {
+        DBG_EXIF_DATA( "det_kind(%d) : not notify return.(speaker) already_md_flg=%d\n", kind, shub_get_already_md_flg());
+        check_ret = 1;
+    }
+    else if(shub_speaker_endtime_ns != 0) {
+        uint64_t sub_time = shub_get_time_ns() - shub_speaker_endtime_ns;
+        if(sub_time < 1000000000) {
+            DBG_EXIF_DATA( "det_kind(%d) : not notify return.(speaker under 1s) already_md_flg=%d sub_time=%lld\n", kind, shub_get_already_md_flg(), sub_time);
+            check_ret = 1;
+        }
+        else {
+            shub_speaker_endtime_ns = 0;
+        }
+    }
+    mutex_unlock(&shub_mutex_speaker);
+    return check_ret;
+}
+/* SHMDS_HUB_0208_02 add E */
+
 /* SHMDS_HUB_0304_01 add S */
 void shub_exif_input_val_init(void)
 {
@@ -233,10 +277,15 @@ void shub_exif_input_val_init(void)
         return;
     }
     
-/* SHMDS_HUB_0308_01 mod S */
-    shub_input_set_value(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, 0);
+/* SHMDS_HUB_0308_01 mod S */ /* SHMDS_HUB_0603_03 mod S */
+    SHUB_INPUT_VAL_CLEAR(shub_idev[SHUB_EXIF_NOTIFY], ABS_X, 1);
+    SHUB_INPUT_VAL_CLEAR(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, 1);
+    SHUB_INPUT_VAL_CLEAR(shub_idev[SHUB_EXIF_NOTIFY], ABS_RX, 1);
+    SHUB_INPUT_VAL_CLEAR(shub_idev[SHUB_EXIF_NOTIFY], ABS_RY, 1);
+    SHUB_INPUT_VAL_CLEAR(shub_idev[SHUB_EXIF_NOTIFY], ABS_RZ, 1);
+//  shub_input_set_value(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, 0);
 //  shub_idev[SHUB_EXIF_NOTIFY]->absinfo[ABS_Y].value = 0;
-/* SHMDS_HUB_0308_01 mod E */
+/* SHMDS_HUB_0308_01 mod E */ /* SHMDS_HUB_0603_03 mod E */
     return;
 }
 /* SHMDS_HUB_0304_01 add E */
@@ -760,10 +809,13 @@ static long shub_exif_ioctl(struct file *filp, unsigned int cmd, unsigned long a
 // SHMDS_HUB_1101_01 add S
 static long shub_exif_ioctl_wrapper(struct file *filp, unsigned int cmd, unsigned long arg)
 {
+    SHUB_DBG_TIME_INIT     /* SHMDS_HUB_1801_01 add */
     long ret = 0;
 
     shub_qos_start();
+    SHUB_DBG_TIME_START    /* SHMDS_HUB_1801_01 add */
     ret = shub_exif_ioctl(filp, cmd , arg);
+    SHUB_DBG_TIME_END(cmd) /* SHMDS_HUB_1801_01 add */
     shub_qos_end();
 
     return ret;
@@ -775,7 +827,8 @@ static void shub_set_abs_params(int dev_kind)
     switch(dev_kind){
     case SHUB_EXIF_NOTIFY:
         input_set_abs_params(shub_idev[dev_kind], ABS_X,  INPUT_UIT8_MIN, INPUT_UIT8_MAX, 0, 0);
-        input_set_abs_params(shub_idev[dev_kind], ABS_Y,  INPUT_UIT8_MIN, INPUT_UIT8_MAX, 0, 0);
+//      input_set_abs_params(shub_idev[dev_kind], ABS_Y,  INPUT_UIT8_MIN, INPUT_UIT8_MAX, 0, 0);   /* SHMDS_HUB_1701_01 mod */
+        input_set_abs_params(shub_idev[dev_kind], ABS_Y,  INPUT_UIT16_MIN, INPUT_UIT16_MAX, 0, 0); /* SHMDS_HUB_1701_01 mod */
         input_set_abs_params(shub_idev[dev_kind], ABS_RX, 0, 0xFFFFFFFF, 0, 0);
         input_set_abs_params(shub_idev[dev_kind], ABS_RY, 0, 0xFFFFFFFF, 0, 0);
         input_set_abs_params(shub_idev[dev_kind], ABS_RZ, 0, 0xFFFFFFFF, 0, 0);
@@ -812,6 +865,7 @@ static void shub_input_report_exif_stat_det(int32_t *data)
     send_data |= (data[9] << 8) & 0xFF00;
     send_data |= (data[10] << 16) & 0xFF0000;
     send_data |= (data[11] << 24) & 0xFF000000;
+    SHUB_INPUT_VAL_CLEAR(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, shub_exif_notify_info); /* SHMDS_HUB_0603_01 add */ /* SHMDS_HUB_0603_02 add */ /* SHMDS_HUB_0603_03 mod */
     input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_X, shub_exif_notify_cont);
     input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, shub_exif_notify_info);
     input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_RX, send_data);
@@ -826,6 +880,7 @@ static void shub_input_report_exif_stat_det(int32_t *data)
 static void shub_input_report_exif_step_det(int32_t data)
 {
     DBG_EXIF_DATA("step_det : notify=0x%x step=%d(%d)\n", shub_exif_notify_info, data, shub_exif_notify_cont);
+    SHUB_INPUT_VAL_CLEAR(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, shub_exif_notify_info); /* SHMDS_HUB_0603_01 add */ /* SHMDS_HUB_0603_02 add */ /* SHMDS_HUB_0603_03 mod */
     input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_X, shub_exif_notify_cont);
     input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, shub_exif_notify_info);
     input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_RX, 0);
@@ -840,6 +895,7 @@ static void shub_input_report_exif_step_det(int32_t data)
 static void shub_input_report_exif_stop_tm(int32_t data)
 {
     DBG_EXIF_DATA("stop_tm : notify=0x%x time=%d(%d)\n", shub_exif_notify_info, data, shub_exif_notify_cont);
+    SHUB_INPUT_VAL_CLEAR(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, shub_exif_notify_info); /* SHMDS_HUB_0603_01 add */ /* SHMDS_HUB_0603_02 add */ /* SHMDS_HUB_0603_03 mod */
     input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_X, shub_exif_notify_cont);
     input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, shub_exif_notify_info);
     input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_RX, 0);
@@ -854,13 +910,14 @@ static void shub_input_report_exif_stop_tm(int32_t data)
 void shub_input_report_exif_grav_det(bool send)
 {
 // SHMDS_HUB_0208_01 add S
-    if(shub_vibe_notify_check(1)) {
+    if(shub_vibe_notify_check(1) || shub_speaker_notify_check(1)) { /* SHMDS_HUB_0208_02 speaker check add */
         return ;
     }
 // SHMDS_HUB_0208_01 add E
     shub_exif_notify_info |= 0x08;
     DBG_EXIF_DATA("grav_det : notify=0x%x send=%d(%d)\n", shub_exif_notify_info, send, shub_exif_notify_cont);
     if(send) {
+        SHUB_INPUT_VAL_CLEAR(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, shub_exif_notify_info); /* SHMDS_HUB_0603_01 add */ /* SHMDS_HUB_0603_02 add */ /* SHMDS_HUB_0603_03 mod */
         input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_X, shub_exif_notify_cont);
         input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, shub_exif_notify_info);
         input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_RX, 0);
@@ -891,6 +948,7 @@ void shub_input_report_exif_ride_pause_det(bool send, int32_t info)
     }
     DBG_EXIF_DATA("ride_pause_det : notify=0x%x info=%d send=%d(%d)\n", shub_exif_notify_info, info, send, shub_exif_notify_cont);
     if(send) {
+        SHUB_INPUT_VAL_CLEAR(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, shub_exif_notify_info); /* SHMDS_HUB_0603_01 add */ /* SHMDS_HUB_0603_02 add */ /* SHMDS_HUB_0603_03 mod */
         input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_X, shub_exif_notify_cont);
         input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, shub_exif_notify_info);
         input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_RX, 0);
@@ -904,8 +962,27 @@ void shub_input_report_exif_ride_pause_det(bool send, int32_t info)
 }
 /* SHMDS_HUB_0209_02 add E */
 
+/* SHMDS_HUB_1701_01 add S */
+void shub_input_report_exif_pickup_det(void)
+{
+    shub_exif_notify_info |= SHUB_EXIF_DETECT_PICKUP;
+    DBG_EXIF_DATA("pickup : notify=0x%x send=1(%d)\n", shub_exif_notify_info, shub_exif_notify_cont);
+    SHUB_INPUT_VAL_CLEAR(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, shub_exif_notify_info); /* SHMDS_HUB_0603_01 add */ /* SHMDS_HUB_0603_02 add */ /* SHMDS_HUB_0603_03 mod */
+    input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_X, shub_exif_notify_cont);
+    input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, shub_exif_notify_info);
+    input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_RX, 0);
+    input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_RY, 0);
+    input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_RZ, 0);
+    shub_input_sync_init(shub_idev[SHUB_EXIF_NOTIFY]); /* SHMDS_HUB_0602_01 mod */
+    input_event(shub_idev[SHUB_EXIF_NOTIFY], EV_SYN, SYN_REPORT, 1);
+    shub_exif_notify_info = 0;
+    shub_change_notify_val(&shub_exif_notify_cont);
+}
+/* SHMDS_HUB_1701_01 add E */
+
 void shub_input_report_exif_mot_det(unsigned char det_info)
 {
+	int32_t motionData[] = {0,0,0};	/* SHMDS_HUB_0210_02 add */
     DBG_EXIF_DATA("mot_det : notify=0x%x det=%d(%d)\n", shub_exif_notify_info, det_info, shub_exif_notify_cont);
     if(det_info & 0x01) {
         shub_exif_notify_info |= 0x20;
@@ -930,20 +1007,28 @@ void shub_input_report_exif_mot_det(unsigned char det_info)
 /* SHMDS_HUB_0202_01 add E */
         else {
             shub_exif_notify_info |= 0x10;
+            shub_get_data_motion( motionData );	/* SHMDS_HUB_0210_02 add */
         }
+// SHMDS_HUB_0208_01 SHMDS_HUB_0208_03 mod S
+        if(shub_vibe_notify_check(0) || shub_speaker_notify_check(0)) { /* SHMDS_HUB_0208_02 speaker check add */
+            shub_exif_notify_info &= ~0x10;
+            if(shub_exif_notify_info == 0){
+                return ;
+            } else {
+                memset( motionData, 0, sizeof(motionData) );
+            }
+        }
+// SHMDS_HUB_0208_01 SHMDS_HUB_0208_03 mod E
     }
-// SHMDS_HUB_0208_01 add S
-    if(shub_vibe_notify_check(0)) {
-        shub_exif_notify_info &= ~0x30;
-        return ;
-    }
-// SHMDS_HUB_0208_01 add E
     if(shub_exif_notify_info != 0) {
+        SHUB_INPUT_VAL_CLEAR(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, shub_exif_notify_info); /* SHMDS_HUB_0603_01 add */ /* SHMDS_HUB_0603_02 add */ /* SHMDS_HUB_0603_03 mod */
         input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_X, shub_exif_notify_cont);
         input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_Y, shub_exif_notify_info);
-        input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_RX, 0);
-        input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_RY, 0);
-        input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_RZ, 0);
+/* SHMDS_HUB_0210_02 mod S */
+        input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_RX, motionData[0]);
+        input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_RY, motionData[1]);
+        input_report_abs(shub_idev[SHUB_EXIF_NOTIFY], ABS_RZ, motionData[2]);
+/* SHMDS_HUB_0210_02 mod E */
         shub_input_sync_init(shub_idev[SHUB_EXIF_NOTIFY]); /* SHMDS_HUB_0602_01 mod */
         input_event(shub_idev[SHUB_EXIF_NOTIFY], EV_SYN, SYN_REPORT, 1);
         shub_exif_notify_info = 0;
@@ -959,8 +1044,15 @@ void shub_input_report_exif_shex_acc(int32_t *data)
     }
 /* SHMDS_HUB_0801_01 mod E */
 
+/* SHMDS_HUB_0604_01 add S */
+    data[INDEX_X] = shub_adjust_value(ACC_MIN, ACC_MAX,data[INDEX_X]);
+    data[INDEX_Y] = shub_adjust_value(ACC_MIN, ACC_MAX,data[INDEX_Y]);
+    data[INDEX_Z] = shub_adjust_value(ACC_MIN, ACC_MAX,data[INDEX_Z]);
+/* SHMDS_HUB_0604_01 add E */
+
     if(shub_exif_shex_acc_enable == 1){
         DBG_EXIF_DATA("shex_acc : x=%d y=%d z=%d\n", data[INDEX_X],  data[INDEX_Y],  data[INDEX_Z]);
+        SHUB_INPUT_VAL_CLEAR(shub_idev[SHUB_EXIF_ACC_SHEX], ABS_X, data[INDEX_X]); /* SHMDS_HUB_0603_01 add */ /* SHMDS_HUB_0603_02 add */
         input_report_abs(shub_idev[SHUB_EXIF_ACC_SHEX], ABS_X, data[INDEX_X]);
         input_report_abs(shub_idev[SHUB_EXIF_ACC_SHEX], ABS_Y, data[INDEX_Y]);
         input_report_abs(shub_idev[SHUB_EXIF_ACC_SHEX], ABS_Z, data[INDEX_Z]);
@@ -1020,29 +1112,6 @@ int shub_set_default_parameter(void)
     int32_t ret = 0;
     IoCtlParam param;
     
-/* SHMDS_HUB_0204_02 mod S */
-    memset(&param, 0, sizeof(IoCtlParam));
-    param.m_iType = APP_PEDOMETER;
-    ret = shub_get_param(param.m_iType, param.m_iParam);
-    if(ret != 0) {
-        printk( "[shub]%s get PEDOMETER error. ret=%d\n", __func__, ret);
-        return ret;
-    }
-    param.m_iParam[1] = 74;     // SHMDS_HUB_0204_05 mod ( 75->74 )
-    param.m_iParam[2] = 60;     // SHMDS_HUB_0204_05 mod ( 65->60 )
-    param.m_iParam[4] = 10;     // SHMDS_HUB_0204_03 add
-    param.m_iParam[8] = 5;      // SHMDS_HUB_0204_03 add
-    param.m_iParam[9] = 5;      // SHMDS_HUB_0204_03 add
-    param.m_iParam[10] = 30;    // SHMDS_HUB_0204_03 add
-    param.m_iParam[11] = 200;   // SHMDS_HUB_0204_03 add
-    param.m_iParam[12] = 0;     // SHMDS_HUB_0204_05 add
-    ret = shub_set_param(param.m_iType, param.m_iParam);
-    if(ret != 0) {
-        printk( "[shub]%s set PEDOMETER error. ret=%d\n", __func__, ret);
-        return ret;
-    }
-/* SHMDS_HUB_0204_02 mod E */
-
 /* SHMDS_HUB_0204_02 add S */
     memset(&param, 0, sizeof(IoCtlParam));
     param.m_iType = APP_PEDOMETER_N;
@@ -1059,35 +1128,13 @@ int shub_set_default_parameter(void)
     param.m_iParam[10] = 30;    // SHMDS_HUB_0204_03 add
     param.m_iParam[11] = 200;   // SHMDS_HUB_0204_03 add
     param.m_iParam[12] = 0;     // SHMDS_HUB_0204_05 add
+    param.m_iParam[13] = 0;     // SHMDS_HUB_0204_16 mod (  1->2->0 )
     ret = shub_set_param(param.m_iType, param.m_iParam);
     if(ret != 0) {
         printk( "[shub]%s set PEDOMETER_N error. ret=%d\n", __func__, ret);
         return ret;
     }
 /* SHMDS_HUB_0204_02 add E */
-
-    memset(&param, 0, sizeof(IoCtlParam));
-    param.m_iType = APP_VEICHLE_DETECTION;
-    ret = shub_get_param(param.m_iType, param.m_iParam);
-    if(ret != 0) {
-        printk( "[shub]%s get VEICHLE_DETECTION error. ret=%d\n", __func__, ret);
-        return ret;
-    }
-/* SHMDS_HUB_0204_02 mod S */
-    param.m_iParam[2] = 20;
-    param.m_iParam[4] = 6;  // SHMDS_HUB_0204_04 SHMDS_HUB_0204_06 mod ( 4->8->6 )
-    param.m_iParam[5] = 10; // SHMDS_HUB_0204_04 SHMDS_HUB_0204_08 mod ( 10->12->10 )
-    param.m_iParam[7] = 50;
-    param.m_iParam[8] = 90; // SHMDS_HUB_0204_11 add
-    param.m_iParam[9] = 6;  // SHMDS_HUB_0204_08 mod ( 8->6 )
-    param.m_iParam[10] = 0; // SHMDS_HUB_0204_04 mod ( 1->0 )
-    param.m_iParam[11] = 2;
-/* SHMDS_HUB_0204_02 mod E */
-    ret = shub_set_param(param.m_iType, param.m_iParam);
-    if(ret != 0) {
-        printk( "[shub]%s set VEICHLE_DETECTION error. ret=%d\n", __func__, ret);
-        return ret;
-    }
 
     memset(&param, 0, sizeof(IoCtlParam));
     param.m_iType = APP_GDETECTION;
@@ -1121,14 +1168,179 @@ int shub_set_default_parameter(void)
     param.m_iParam[2] = 16;
     param.m_iParam[3] = 16;
     param.m_iParam[4] = 16;
-    param.m_iParam[5] = 38; // SHMDS_HUB_0204_03 SHMDS_HUB_0204_09 mod (  96->150->38 )
-    param.m_iParam[6] = 38; // SHMDS_HUB_0204_03 SHMDS_HUB_0204_09 mod (  96->150->38 )
-    param.m_iParam[7] = 63; // SHMDS_HUB_0204_03 SHMDS_HUB_0204_09 mod ( 150->250->63 )
+/* SHMDS_HUB_0211_01 del S */
+//    param.m_iParam[5] = 38; // SHMDS_HUB_0204_03 SHMDS_HUB_0204_09 mod (  96->150->38 )
+//    param.m_iParam[6] = 38; // SHMDS_HUB_0204_03 SHMDS_HUB_0204_09 mod (  96->150->38 )
+//    param.m_iParam[7] = 63; // SHMDS_HUB_0204_03 SHMDS_HUB_0204_09 mod ( 150->250->63 )
+/* SHMDS_HUB_0211_01 del E */
 /* SHMDS_HUB_0204_01 SHMDS_HUB_0204_02 mod E */
     param.m_iParam[9] |= 0x80;  // SHMDS_HUB_0206_01 add
     ret = shub_set_param(param.m_iType, param.m_iParam);
     if(ret != 0) {
         printk( "[shub]%s set APP_MOTDTECTION error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+
+/* SHMDS_HUB_1201_02 add S */
+    memset(&param, 0, sizeof(IoCtlParam));
+    param.m_iType = APP_PEDOMETER2_2;
+    ret = shub_get_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s get APP_PEDOMETER2_2 error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+    param.m_iParam[1] = 20;     // SHMDS_HUB_0204_07 mod (  30->20 )
+    param.m_iParam[3] = 1;
+    param.m_iParam[5] = 20;     // SHMDS_HUB_0204_07 mod (  30->20 )
+    ret = shub_set_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s set APP_PEDOMETER2_2 error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+/* SHMDS_HUB_1201_02 add E */
+
+/* SHMDS_HUB_1701_02 add S */
+    memset(&param, 0, sizeof(IoCtlParam));
+    param.m_iType = APP_PICKUP_ENABLE;
+    param.m_iParam[0] = 0;
+    param.m_iParam[1] = SHUB_PICKUP_ENABLE_PARAM; /* SHMDS_HUB_1701_03 mod */
+    ret = shub_set_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s set APP_PICKUP_ENABLE error. ret=%d\n", __func__, ret);
+        ret = 0;    /* SHMDS_HUB_1701_04 add */
+//      return ret; /* SHMDS_HUB_1701_04 del */
+    }
+/* SHMDS_HUB_1701_02 add E */
+
+/* SHMDS_HUB_0204_14 add S */
+    memset(&param, 0, sizeof(IoCtlParam));
+    param.m_iType = APP_LPM_PARAM;
+    ret = shub_get_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s get APP_LPM_PARAM error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+    param.m_iParam[0]  = 1;          // SHMDS_HUB_0204_17 mod (  0->1 )
+    param.m_iParam[3]  = 0;          // SHMDS_HUB_0204_16 mod (  10->0 )
+    param.m_iParam[4]  = 0x1B;       // SHMDS_HUB_0204_20 mod (  0x1F->0x1B )
+    param.m_iParam[5]  = 32;
+    param.m_iParam[6]  = 10;         // SHMDS_HUB_0204_16 mod (  1->10 )
+    param.m_iParam[7]  = 0x07;
+    param.m_iParam[8]  = 32;
+    param.m_iParam[9]  = 32;
+    param.m_iParam[10] = 32;
+    ret = shub_set_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s set APP_LPM_PARAM error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+
+    memset(&param, 0, sizeof(IoCtlParam));
+    param.m_iType = APP_LPM_DEV_PARAM;
+    ret = shub_get_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s get APP_LPM_DEVPARAM error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+    param.m_iParam[0]  = 1;
+    param.m_iParam[2]  = 1;
+    param.m_iParam[3]  = 1;          // SHMDS_HUB_0204_15 add
+    ret = shub_set_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s set APP_LPM_DEVPARAM error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+/* SHMDS_HUB_0204_14 add E */
+
+#if 0
+/* SHMDS_HUB_0204_15 add S */
+    memset(&param, 0, sizeof(IoCtlParam));
+    param.m_iType = APP_RIDE_PEDO2_PARAM;
+    ret = shub_get_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s get APP_RIDE_PEDO2_PARAM error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+    ret = shub_set_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s set APP_RIDE_PEDO2_PARAM error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+#endif                              // SHMDS_HUB_0204_16 add
+    memset(&param, 0, sizeof(IoCtlParam));
+    param.m_iType = APP_LPM_DEV_PARAM2;
+    ret = shub_get_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s get APP_LPM_DEV_PARAM2 error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+    param.m_iParam[2]  = 3600;      // SHMDS_HUB_0204_16 SHMDS_HUB_0204_18 mod
+    param.m_iParam[3]  = 10;        // SHMDS_HUB_0204_16 SHMDS_HUB_0204_18 mod
+    ret = shub_set_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s set APP_LPM_DEV_PARAM2 error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+/* SHMDS_HUB_0204_15 add E */
+// #endif                           // SHMDS_HUB_0204_16 del
+
+/* SHMDS_HUB_0204_19 add S */
+    ret = shub_set_default_ped_parameter();
+/* SHMDS_HUB_0204_19 add E */
+
+    return ret;
+}
+
+/* SHMDS_HUB_0204_19 add S */
+int shub_set_default_ped_parameter(void)
+{
+    int32_t ret = 0;
+    IoCtlParam param;
+    
+/* SHMDS_HUB_0204_02 mod S */
+    memset(&param, 0, sizeof(IoCtlParam));
+    param.m_iType = APP_PEDOMETER;
+    ret = shub_get_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s get PEDOMETER error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+    param.m_iParam[1] = 74;     // SHMDS_HUB_0204_05 mod ( 75->74 )
+    param.m_iParam[2] = 60;     // SHMDS_HUB_0204_05 mod ( 65->60 )
+    param.m_iParam[4] = 10;     // SHMDS_HUB_0204_03 add
+    param.m_iParam[8] = 5;      // SHMDS_HUB_0204_03 add
+    param.m_iParam[9] = 5;      // SHMDS_HUB_0204_03 add
+    param.m_iParam[10] = 30;    // SHMDS_HUB_0204_03 add
+    param.m_iParam[11] = 200;   // SHMDS_HUB_0204_03 add
+    param.m_iParam[12] = 0;     // SHMDS_HUB_0204_05 add
+    param.m_iParam[13] = 2;     // SHMDS_HUB_0204_16 mod (  1->2 )
+    ret = shub_set_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s set PEDOMETER error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+/* SHMDS_HUB_0204_02 mod E */
+
+    memset(&param, 0, sizeof(IoCtlParam));
+    param.m_iType = APP_VEICHLE_DETECTION;
+    ret = shub_get_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s get VEICHLE_DETECTION error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+/* SHMDS_HUB_0204_02 mod S */
+    param.m_iParam[2] = 20;
+    param.m_iParam[4] = 6;  // SHMDS_HUB_0204_04 SHMDS_HUB_0204_06 mod ( 4->8->6 )
+    param.m_iParam[5] = 10; // SHMDS_HUB_0204_04 SHMDS_HUB_0204_08 mod ( 10->12->10 )
+    param.m_iParam[7] = 50;
+    param.m_iParam[8] = 90; // SHMDS_HUB_0204_11 add
+    param.m_iParam[9] = 6;  // SHMDS_HUB_0204_08 mod ( 8->6 )
+    param.m_iParam[10] = 0; // SHMDS_HUB_0204_04 mod ( 1->0 )
+    param.m_iParam[11] = 2;
+/* SHMDS_HUB_0204_02 mod E */
+    ret = shub_set_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s set VEICHLE_DETECTION error. ret=%d\n", __func__, ret);
         return ret;
     }
 
@@ -1159,12 +1371,14 @@ int shub_set_default_parameter(void)
     param.m_iParam[1] = 0x384;  // SHMDS_HUB_0204_12 mod ( 12c->384 )
     param.m_iParam[2] = 0x384;  // SHMDS_HUB_0204_12 mod ( 12c->384 )
 /* SHMDS_HUB_0204_10 add S */
-    param.m_iParam[3] = 0x07;
-    param.m_iParam[4] = 6;      // SHMDS_HUB_0204_13 mod ( 10->6 )
-    param.m_iParam[5] = 20;     // SHMDS_HUB_0204_13 mod ( 30->20 )
-    param.m_iParam[6] = 0x07;
-    param.m_iParam[7] = 6;      // SHMDS_HUB_0204_13 mod ( 3->6 )
-    param.m_iParam[8] = 40;
+/* SHMDS_HUB_0204_14 del S */
+//  param.m_iParam[3] = 0x07;
+//  param.m_iParam[4] = 6;      // SHMDS_HUB_0204_13 mod ( 10->6 )
+//  param.m_iParam[5] = 20;     // SHMDS_HUB_0204_13 mod ( 30->20 )
+//  param.m_iParam[6] = 0x07;
+//  param.m_iParam[7] = 6;      // SHMDS_HUB_0204_13 mod ( 3->6 )
+//  param.m_iParam[8] = 40;
+/* SHMDS_HUB_0204_14 del E */
 /* SHMDS_HUB_0204_10 add E */
     ret = shub_set_param(param.m_iType, param.m_iParam);
     if(ret != 0) {
@@ -1193,24 +1407,6 @@ int shub_set_default_parameter(void)
     }
 /* SHMDS_HUB_1201_01 add E */
 
-/* SHMDS_HUB_1201_02 add S */
-    memset(&param, 0, sizeof(IoCtlParam));
-    param.m_iType = APP_PEDOMETER2_2;
-    ret = shub_get_param(param.m_iType, param.m_iParam);
-    if(ret != 0) {
-        printk( "[shub]%s get APP_PEDOMETER2_2 error. ret=%d\n", __func__, ret);
-        return ret;
-    }
-    param.m_iParam[1] = 20;     // SHMDS_HUB_0204_07 mod (  30->20 )
-    param.m_iParam[3] = 1;
-    param.m_iParam[5] = 20;     // SHMDS_HUB_0204_07 mod (  30->20 )
-    ret = shub_set_param(param.m_iType, param.m_iParam);
-    if(ret != 0) {
-        printk( "[shub]%s set APP_PEDOMETER2_2 error. ret=%d\n", __func__, ret);
-        return ret;
-    }
-/* SHMDS_HUB_1201_02 add E */
-
 /* SHMDS_HUB_0204_06 add S */
     memset(&param, 0, sizeof(IoCtlParam));
     param.m_iType = APP_VEICHLE_DETECTION3;
@@ -1227,8 +1423,119 @@ int shub_set_default_parameter(void)
     }
 /* SHMDS_HUB_0204_06 add E */
 
+/* SHMDS_HUB_0204_14 add S */
+    /* SHMDS_HUB_0204_19 del S */
+    //memset(&param, 0, sizeof(IoCtlParam));
+    //param.m_iType = APP_PAUSE_PARAM;
+    //ret = shub_get_param(param.m_iType, param.m_iParam);
+    //if(ret != 0) {
+    //    printk( "[shub]%s get APP_PAUSE_PARAM error. ret=%d\n", __func__, ret);
+    //    return ret;
+    //}
+    //param.m_iParam[0] = 0x07;
+    //param.m_iParam[1] = 0x07;
+    //param.m_iParam[2] = 0;
+    //ret = shub_set_param(param.m_iType, param.m_iParam);
+    //if(ret != 0) {
+    //    printk( "[shub]%s set APP_PAUSE_PARAM error. ret=%d\n", __func__, ret);
+    //    return ret;
+    //}
+    /* SHMDS_HUB_0204_19 del E */
+
+    memset(&param, 0, sizeof(IoCtlParam));
+    param.m_iType = APP_PAUSE_STATUS_PARAM;
+    /* SHMDS_HUB_0212_01 del S */
+    //ret = shub_get_param(param.m_iType, param.m_iParam);
+    //if(ret != 0) {
+    //    printk( "[shub]%s get APP_PAUSE_STATUS_PARAM error. ret=%d\n", __func__, ret);
+    //    return ret;
+    //}
+    /* SHMDS_HUB_0212_01 del E */
+    param.m_iParam[0]  = 0x07;
+    param.m_iParam[1]  = 0;
+    param.m_iParam[2]  = 6;
+    param.m_iParam[3]  = 20;
+    param.m_iParam[4]  = 200;
+    param.m_iParam[5]  = 100;
+    param.m_iParam[6]  = 10;
+    param.m_iParam[7]  = 1;
+    param.m_iParam[8]  = 1;
+    param.m_iParam[9]  = 0;
+    param.m_iParam[10] = 6;
+    param.m_iParam[11] = 40;
+    param.m_iParam[12] = 0;
+    ret = shub_set_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s set APP_PAUSE_STATUS_PARAM error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+/* SHMDS_HUB_0204_14 add E */
+
+#if 0
+/* SHMDS_HUB_0204_15 add S */
+    memset(&param, 0, sizeof(IoCtlParam));
+    param.m_iType = APP_RIDE_PEDO_PARAM;
+    ret = shub_get_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s get APP_RIDE_PEDO_PARAM error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+    ret = shub_set_param(param.m_iType, param.m_iParam);
+    if(ret != 0) {
+        printk( "[shub]%s set APP_RIDE_PEDO_PARAM error. ret=%d\n", __func__, ret);
+        return ret;
+    }
+/* SHMDS_HUB_0204_15 add E */
+#endif
+
     return ret;
 }
+/* SHMDS_HUB_0204_19 add E */
+
+
+/* SHMDS_HUB_0211_01 add S */
+void shub_set_param_exif_md_mode(int32_t *param)
+{
+    if(param == NULL) {
+        return ;
+    }
+    switch(shub_exif_md_mode_flg) {
+    case 0:     // MODE_NORMAL
+        param[5] = 38;
+        param[6] = 38;
+        param[7] = 63;
+        break;
+    case 1:     // MODE_1
+        param[5] = 6;
+        param[6] = 6;
+        param[7] = 6;
+        break;
+    case 2:     // MODE_2
+        param[5] = 4;
+        param[6] = 4;
+        param[7] = 4;
+        break;
+    case 3:     // MODE_3
+        param[5] = 2;
+        param[6] = 2;
+        param[7] = 2;
+        break;
+    default:
+        break;
+    }
+    DBG_EXIF_DATA( "%s mode=%d\n", __func__, shub_exif_md_mode_flg);
+}
+
+void shub_set_exif_md_mode_flg(int32_t mode)
+{
+    shub_exif_md_mode_flg = mode;
+}
+
+int32_t shub_get_exif_md_mode_flg(void)
+{
+    return shub_exif_md_mode_flg;
+}
+/* SHMDS_HUB_0211_01 add E */
 
 /* SHMDS_HUB_0202_01 add S */
 void shub_set_already_md_flg(int data)
@@ -1278,6 +1585,12 @@ void shub_suspend_exif(void)
     shub_not_notify_vibe_flg = 0;
     mutex_unlock(&shub_mutex_vibe);
 // SHMDS_HUB_0208_01 add E
+/* SHMDS_HUB_0208_02 add S */
+    mutex_lock(&shub_mutex_speaker);
+    shub_speaker_endtime_ns = 0;
+    shub_not_notify_speaker_flg = 0;
+    mutex_unlock(&shub_mutex_speaker);
+/* SHMDS_HUB_0208_02 add E */
 }
 
 void shub_resume_exif(void)
@@ -1417,6 +1730,14 @@ int shub_api_stop_pedometer_func(int type)
         mutex_unlock(&shub_mutex_vibe);
     }
 // SHMDS_HUB_0208_01 add E
+/* SHMDS_HUB_0208_02 add S */
+    else if(type == SHUB_STOP_PED_TYPE_SPE) {
+        mutex_lock(&shub_mutex_speaker);
+        shub_speaker_endtime_ns = 0;
+        shub_not_notify_speaker_flg = 1;
+        mutex_unlock(&shub_mutex_speaker);
+    }
+/* SHMDS_HUB_0208_02 add E */
     mutex_lock(&shub_mutex_if);
     if(shub_check_ped_type == 0) {
         if(shub_enable_ped_exif_flg == 0) {
@@ -1434,6 +1755,12 @@ int shub_api_stop_pedometer_func(int type)
         hrtimer_cancel(&poll_restart_ped_timer);
         shub_check_ped_type |= TYPE_TPS;
         break;
+/* SHMDS_HUB_0207_02 add S */
+    case SHUB_STOP_PED_TYPE_SPE:
+        hrtimer_cancel(&poll_restart_ped_timer);
+        shub_check_ped_type |= TYPE_SPE;
+        break;
+/* SHMDS_HUB_0207_02 add E */
     default:
         ret = -1;
         break;
@@ -1461,6 +1788,16 @@ int shub_api_restart_pedometer_func(int type)
         mutex_unlock(&shub_mutex_vibe);
     }
 // SHMDS_HUB_0208_01 add E
+/* SHMDS_HUB_0208_02 add S */
+    else if(type == SHUB_STOP_PED_TYPE_SPE) {
+        mutex_lock(&shub_mutex_speaker);
+        if(shub_not_notify_speaker_flg) {
+            shub_speaker_endtime_ns = shub_get_time_ns();
+            shub_not_notify_speaker_flg = 0;
+        }
+        mutex_unlock(&shub_mutex_speaker);
+    }
+/* SHMDS_HUB_0208_02 add E */
     mutex_lock(&shub_mutex_if);
     switch(type) {
     case SHUB_STOP_PED_TYPE_VIB:
@@ -1469,7 +1806,7 @@ int shub_api_restart_pedometer_func(int type)
         }
         else {
             shub_check_ped_type &= ~TYPE_VIB;
-            if(shub_check_ped_type & TYPE_TPS) {
+            if(shub_check_ped_type & (TYPE_TPS | TYPE_SPE)) {   /* SHMDS_HUB_0207_02 TYPE_SPE add */
                 timer_call = 0;
             }
         }
@@ -1480,11 +1817,24 @@ int shub_api_restart_pedometer_func(int type)
         }
         else {
             shub_check_ped_type &= ~TYPE_TPS;
-            if(shub_check_ped_type & TYPE_VIB) {
+            if(shub_check_ped_type & (TYPE_VIB | TYPE_SPE)) {   /* SHMDS_HUB_0207_02 TYPE_SPE add */
                 timer_call = 0;
             }
         }
         break;
+/* SHMDS_HUB_0207_02 add S */
+    case SHUB_STOP_PED_TYPE_SPE:
+        if(!(shub_check_ped_type & TYPE_SPE)) {
+            timer_call = 0;
+        }
+        else {
+            shub_check_ped_type &= ~TYPE_SPE;
+            if(shub_check_ped_type & (TYPE_VIB | TYPE_TPS)) {
+                timer_call = 0;
+            }
+        }
+        break;
+/* SHMDS_HUB_0207_02 add E */
     default:
         ret = -1;
         break;

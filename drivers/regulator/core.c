@@ -41,7 +41,7 @@
 
 #ifdef CONFIG_SHSYS_CUST_DEBUG
 #include <linux/regulator/rpm-smd-regulator.h>
-#endif /* CONFIG_SHSYS_CUST_DEBUG */ 
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 
 #define rdev_crit(rdev, fmt, ...)					\
 	pr_crit("%s: " fmt, rdev_get_name(rdev), ##__VA_ARGS__)
@@ -57,14 +57,14 @@
 #ifdef CONFIG_SHSYS_CUST_DEBUG
 enum {
 	SH_VREG_DEBUG_VDD_DIG_SET_VOLTAGE    = 1U << 0,
-	SH_VREG_DEBUG_VDD_DIG_ADOPTED_CONSUMER = 1U << 1, 
+	SH_VREG_DEBUG_VDD_DIG_ADOPTED_CONSUMER = 1U << 1,
 };
-   
+
 static int sh_debug_mask = 0;
 module_param_named(
 	sh_debug_mask, sh_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP
 );
-#endif /* CONFIG_SHSYS_CUST_DEBUG */  
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 
 static DEFINE_MUTEX(regulator_list_mutex);
 static LIST_HEAD(regulator_list);
@@ -225,7 +225,7 @@ static int sh_regulator_is_vdd_dig(struct regulator_dev *rdev)
 {
 	return ((rdev) && (sh_rpm_regulator_is_vdd_dig(rdev->reg_data)));
 }
-#endif /* CONFIG_SHSYS_CUST_DEBUG */  
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 
 /* Make sure we select a voltage that suits the needs of all
  * regulator consumers
@@ -244,7 +244,7 @@ static int regulator_check_consumers(struct regulator_dev *rdev,
 	if (sh_debug_mask & SH_VREG_DEBUG_VDD_DIG_ADOPTED_CONSUMER) {
 		is_vdd_dig = sh_regulator_is_vdd_dig(rdev);
 	}
-#endif /* CONFIG_SHSYS_CUST_DEBUG */  
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 
 	list_for_each_entry(regulator, &rdev->consumer_list, list) {
 		/*
@@ -265,10 +265,10 @@ static int regulator_check_consumers(struct regulator_dev *rdev,
 	if (is_vdd_dig) {
 		/* save adopted min_uV consumer */
 		if ((*min_uV < regulator->min_uV) || (!regulator_save && *min_uV == regulator->min_uV)) {
-			regulator_save = regulator; 
+			regulator_save = regulator;
 		}
 	}
-#endif /* CONFIG_SHSYS_CUST_DEBUG */  
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 
 		if (*max_uV > regulator->max_uV)
 			*max_uV = regulator->max_uV;
@@ -291,7 +291,7 @@ static int regulator_check_consumers(struct regulator_dev *rdev,
 			, ((regulator_save && regulator_save->supply_name) ? regulator_save->supply_name : "NULL")
 		);
 	}
-#endif /* CONFIG_SHSYS_CUST_DEBUG */  
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 
 	return 0;
 }
@@ -1494,7 +1494,7 @@ struct regulator *regulator_get_exclusive(struct device *dev, const char *id)
 }
 EXPORT_SYMBOL_GPL(regulator_get_exclusive);
 
-/* Locks held by regulator_put() */
+/* regulator_list_mutex lock held by regulator_put() */
 static void _regulator_put(struct regulator *regulator)
 {
 	struct regulator_dev *rdev;
@@ -1509,12 +1509,14 @@ static void _regulator_put(struct regulator *regulator)
 	/* remove any sysfs entries */
 	if (regulator->dev)
 		sysfs_remove_link(&rdev->dev.kobj, regulator->supply_name);
+	mutex_lock(&rdev->mutex);
 	kfree(regulator->supply_name);
 	list_del(&regulator->list);
 	kfree(regulator);
 
 	rdev->open_count--;
 	rdev->exclusive = 0;
+	mutex_unlock(&rdev->mutex);
 
 	module_put(rdev->owner);
 }
@@ -1678,10 +1680,12 @@ static int _regulator_do_enable(struct regulator_dev *rdev)
 	trace_regulator_enable(rdev_get_name(rdev));
 
 	if (rdev->ena_pin) {
-		ret = regulator_ena_gpio_ctrl(rdev, true);
-		if (ret < 0)
-			return ret;
-		rdev->ena_gpio_state = 1;
+		if (!rdev->ena_gpio_state) {
+			ret = regulator_ena_gpio_ctrl(rdev, true);
+			if (ret < 0)
+				return ret;
+			rdev->ena_gpio_state = 1;
+		}
 	} else if (rdev->desc->ops->enable) {
 		ret = rdev->desc->ops->enable(rdev);
 		if (ret < 0)
@@ -1789,10 +1793,12 @@ static int _regulator_do_disable(struct regulator_dev *rdev)
 	trace_regulator_disable(rdev_get_name(rdev));
 
 	if (rdev->ena_pin) {
-		ret = regulator_ena_gpio_ctrl(rdev, false);
-		if (ret < 0)
-			return ret;
-		rdev->ena_gpio_state = 0;
+		if (rdev->ena_gpio_state) {
+			ret = regulator_ena_gpio_ctrl(rdev, false);
+			if (ret < 0)
+				return ret;
+			rdev->ena_gpio_state = 0;
+		}
 
 	} else if (rdev->desc->ops->disable) {
 		ret = rdev->desc->ops->disable(rdev);
@@ -2737,14 +2743,14 @@ int regulator_sync_voltage(struct regulator *regulator)
 #ifdef CONFIG_SHSYS_CUST_DEBUG
 	if (sh_debug_mask & SH_VREG_DEBUG_VDD_DIG_SET_VOLTAGE) {
 		if (sh_regulator_is_vdd_dig(rdev)) {
-			pr_info("%s: (regulator = %s)(min = %d)(consumer = %s)requested\n", __func__ 
+			pr_info("%s: (regulator = %s)(min = %d)(consumer = %s)requested\n", __func__
 				, (rdev->desc->name ? rdev->desc->name : "NULL")
 				, min_uV
 				, (regulator->supply_name ? regulator->supply_name : "NULL")
 			);
 		}
 	}
-#endif /* CONFIG_SHSYS_CUST_DEBUG */  
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 
 
 	ret = regulator_check_consumers(rdev, &min_uV, &max_uV);
@@ -4137,12 +4143,6 @@ regulator_register(const struct regulator_desc *regulator_desc,
 				 config->ena_gpio, ret);
 			goto wash;
 		}
-
-		if (config->ena_gpio_flags & GPIOF_OUT_INIT_HIGH)
-			rdev->ena_gpio_state = 1;
-
-		if (config->ena_gpio_invert)
-			rdev->ena_gpio_state = !rdev->ena_gpio_state;
 	}
 
 	/* set regulator constraints */
@@ -4310,9 +4310,11 @@ int regulator_suspend_finish(void)
 	list_for_each_entry(rdev, &regulator_list, list) {
 		mutex_lock(&rdev->mutex);
 		if (rdev->use_count > 0  || rdev->constraints->always_on) {
-			error = _regulator_do_enable(rdev);
-			if (error)
-				ret = error;
+			if (!_regulator_is_enabled(rdev)) {
+				error = _regulator_do_enable(rdev);
+				if (error)
+					ret = error;
+			}
 		} else {
 			if (!has_full_constraints)
 				goto unlock;

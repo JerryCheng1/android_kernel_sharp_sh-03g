@@ -11,6 +11,7 @@ config ARM64
 	select ARM_ARCH_TIMER
 	select ARM_GIC
 	select BUILDTIME_EXTABLE_SORT
+	select AUDIT_ARCH_COMPAT_GENERIC
 	select CLONE_BACKWARDS
 	select COMMON_CLK if !ARCH_MSM
 	select CPU_PM if (SUSPEND || CPU_IDLE)
@@ -31,6 +32,8 @@ config ARM64
 	select HARDIRQS_SW_RESEND
 	select HAVE_ARCH_JUMP_LABEL
 	select HAVE_ARCH_KGDB
+	select HAVE_ARCH_SECCOMP_FILTER
+	select HAVE_ARCH_AUDITSYSCALL
 	select HAVE_ARCH_TRACEHOOK
 	select HAVE_C_RECORDMCOUNT
 	select HAVE_CC_STACKPROTECTOR
@@ -243,12 +246,6 @@ config ARCH_XGENE
 	help
 	  This enables support for AppliedMicro X-Gene SOC Family
 
-config ARCH_ABDUL
-	depends on ARCH_MSM8994
-	bool "SHARP ABDUL"
-	help
-	  Support for Sharp ABDUL
-
 config ARCH_LYNX_DL70
 	depends on ARCH_MSM8994
 	bool "SHARP DL70"
@@ -261,17 +258,47 @@ config ARCH_DECKARD_AL20
 	help
 	  Support for Sharp al20
 
-config ARCH_PA29
-	depends on ARCH_MSM8994
-	bool "SHARP PA29"
+config ARCH_LYNX_DL80
+	depends on ARCH_MSM8992
+	bool "SHARP DL80"
 	help
-	  Support for Sharp pa29
+	  Support for Sharp dl80
 
-config ARCH_LYNX_GP11D
-	depends on ARCH_MSM8994
-	bool "SHARP GP11D"
+config ARCH_PA30
+	depends on ARCH_MSM8992
+	bool "SHARP PA30"
 	help
-	  Support for Sharp gp11d
+	  Support for Sharp pa30
+
+config ARCH_PA31
+	depends on ARCH_MSM8992
+	bool "SHARP PA31"
+	help
+	  Support for Sharp pa31
+
+config ARCH_DECKARD_AL25
+	depends on ARCH_MSM8992
+	bool "SHARP AL25"
+	help
+	  Support for Sharp al25
+
+config ARCH_LYNX_DL83
+	depends on ARCH_MSM8992
+	bool "SHARP DL83"
+	help
+	  Support for Sharp dl83
+
+config ARCH_LYNX_DL85
+	depends on ARCH_MSM8992
+	bool "SHARP DL85"
+	help
+	  Support for Sharp dl85
+
+config ARCH_MM7
+	depends on ARCH_MSM8992
+	bool "SHARP MM7"
+	help
+	  Support for Sharp mm7
 
 endmenu
 
@@ -332,6 +359,27 @@ config CPU_BIG_ENDIAN
        bool "Build big-endian kernel"
        help
          Say Y if you plan on running a kernel in big-endian mode.
+
+config ARM64_ERRATUM_845719
+	bool "Cortex-A53: 845719: a load might read incorrect data"
+	depends on COMPAT
+	default y
+	help
+	  This option adds an alternative code sequence to work around ARM
+	  erratum 845719 on Cortex-A53 parts up to r0p4.
+
+	  When running a compat (AArch32) userspace on an affected Cortex-A53
+	  part, a load at EL0 from a virtual address that matches the bottom 32
+	  bits of the virtual address used by a recent load at (AArch64) EL1
+	  might return incorrect data.
+
+	  The workaround is to write the contextidr_el1 register on exception
+	  return to a 32-bit task.
+	  Please note that this does not necessarily enable the workaround,
+	  as it depends on the alternative framework, which will only patch
+	  the kernel if an affected CPU is detected.
+
+	  If unsure, say Y.
 
 config ARM64_A57_ERRATA_832075
 	bool "ARMv8 A57 Errata 832075"
@@ -535,6 +583,20 @@ config FORCE_MAX_ZONEORDER
 	default "14" if (ARM64_64K_PAGES && TRANSPARENT_HUGEPAGE)
 	default "11"
 
+config SECCOMP
+	bool "Enable seccomp to safely compute untrusted bytecode"
+	---help---
+	  This kernel feature is useful for number crunching applications
+	  that may need to compute untrusted bytecode during their
+	  execution. By using pipes or other transports made available to
+	  the process as file descriptors supporting the read/write
+	  syscalls, it's possible to isolate those applications in
+	  their own address space using seccomp. Once seccomp is
+	  enabled via prctl(PR_SET_SECCOMP), it cannot be disabled
+	  and the task is only allowed to execute a few safe syscalls
+	  defined by each seccomp mode.
+
+
 endmenu
 
 menu "Boot options"
@@ -682,12 +744,17 @@ config SHSYS_CUST_DEBUG
 	default y
 	bool "SHARP SYSTEM CUSTOMIZE DEBUG"
 
-config SH_SLEEP_LOG
-	bool "SHARP CUSTOMIZE SLEEP LOG"
+config SHSYS_SHUTDOWN_TIME_CUST
+	depends on SHSYS_CUST
 	default y
+	bool "SHARP SYSTEM SHUTDOWN TIME CUSTOMIZE"
 
 config SH_SHUTDOWN_FAILSAFE
 	bool "SHARP CUSTOMIZE Shutdown fail safe"
 	default y
 	help
 	 for shutdown fail safe
+
+config SH_SLEEP_LOG
+	bool "SHARP CUSTOMIZE SLEEP LOG"
+	default y

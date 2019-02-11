@@ -35,7 +35,7 @@
 
 #include <asm/fb.h>
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00055 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00043 */
 #include "msm/mdss/mdss_shdisp.h"
 #endif /* CONFIG_SHDISP */
 
@@ -1195,11 +1195,12 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			return -ENODEV;
 		console_lock();
 		info->flags |= FBINFO_MISC_USEREVENT;
-#ifdef CONFIG_SHDISP /* CUST_ID_00055 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00043 */
 		SHDISP_VIDEO_PERFORMANCE("RESUME MSMFB BLANK-START 0010 START\n");
+		pr_info("MSMFB FBIOBLANK(%ld) called.\n", arg);
 #endif /* CONFIG_SHDISP */
 		ret = fb_blank(info, arg);
-#ifdef CONFIG_SHDISP /* CUST_ID_00055 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00043 */
 		SHDISP_VIDEO_PERFORMANCE("RESUME MSMFB BLANK-START 0010 END\n");
 #endif /* CONFIG_SHDISP */
 		info->flags &= ~FBINFO_MISC_USEREVENT;

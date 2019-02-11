@@ -23,10 +23,10 @@
 #include "mdss_panel.h"
 #include "mdss_debug.h"
 #include "mdss_mdp_trace.h"
-#ifdef CONFIG_SHDISP /* CUST_ID_00028 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00031 */
 #include "mdss_dsi.h"
 #endif /* CONFIG_SHDISP */
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 #include <linux/pm_qos.h>
 #include "mdss_shdisp.h"
 #endif /* CONFIG_SHDISP */
@@ -40,7 +40,7 @@
 #define MDP_INTR_MASK_INTF_VSYNC(intf_num) \
 	(1 << (2 * (intf_num - MDSS_MDP_INTF0) + MDSS_MDP_IRQ_INTF_VSYNC))
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 #define DSI_CLK_DELAY      2
 #define REPEAT_CNT         2
 #define WAIT_CNT           1
@@ -254,7 +254,7 @@ struct mdss_mdp_hr_video_ctx {
 	struct list_head vsync_handlers;
 	struct mdss_intf_recovery intf_recovery;
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	struct mdss_mdp_ctl *ctl;
 	atomic_t vsync_handler_cnt;
 	enum mdss_mdp_hr_video_tg_state tg_state;
@@ -323,7 +323,7 @@ struct mdss_mdp_hr_video_ctx {
 #endif /* CONFIG_SHDISP */
 };
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 extern int mdss_dsi_state_reset(struct mdss_panel_data *pdata);
 extern void mdss_dsi_video_comp(struct mdss_mdp_ctl *ctl);
 
@@ -653,7 +653,7 @@ static int mdss_mdp_hr_video_add_vsync_handler(struct mdss_mdp_ctl *ctl,
 	struct mdss_mdp_hr_video_ctx *ctx;
 	unsigned long flags;
 	int ret = 0;
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	bool switch_hrt = false;
 #else  /* CONFIG_SHDISP */
 	bool irq_en = false;
@@ -677,7 +677,7 @@ static int mdss_mdp_hr_video_add_vsync_handler(struct mdss_mdp_ctl *ctl,
 	if (!handle->enabled) {
 		handle->enabled = true;
 		list_add(&handle->list, &ctx->vsync_handlers);
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 		atomic_inc(&ctx->vsync_handler_cnt);
 		switch_hrt = true;
 #else  /* CONFIG_SHDISP */
@@ -685,7 +685,7 @@ static int mdss_mdp_hr_video_add_vsync_handler(struct mdss_mdp_ctl *ctl,
 #endif /* CONFIG_SHDISP */
 	}
 	spin_unlock_irqrestore(&ctx->vsync_lock, flags);
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	if (switch_hrt) {
 		hr_video_clk_ctrl(ctx, 1);
 	}
@@ -702,7 +702,7 @@ static int mdss_mdp_hr_video_remove_vsync_handler(struct mdss_mdp_ctl *ctl,
 {
 	struct mdss_mdp_hr_video_ctx *ctx;
 	unsigned long flags;
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	bool switch_hrt = false;
 #else  /* CONFIG_SHDISP */
 	bool irq_dis = false;
@@ -720,7 +720,7 @@ static int mdss_mdp_hr_video_remove_vsync_handler(struct mdss_mdp_ctl *ctl,
 	if (handle->enabled) {
 		handle->enabled = false;
 		list_del_init(&handle->list);
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 		atomic_dec(&ctx->vsync_handler_cnt);
 		switch_hrt = true;
 #else  /* CONFIG_SHDISP */
@@ -728,7 +728,7 @@ static int mdss_mdp_hr_video_remove_vsync_handler(struct mdss_mdp_ctl *ctl,
 #endif /* CONFIG_SHDISP */
 	}
 	spin_unlock_irqrestore(&ctx->vsync_lock, flags);
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	if (switch_hrt) {
 		hr_video_clk_ctrl(ctx, 0);
 	}
@@ -776,7 +776,7 @@ static int mdss_mdp_hr_video_intfs_stop(struct mdss_mdp_ctl *ctl,
 		return -EINVAL;
 	}
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	if (ctx->timegen_en) {
 		struct state_table tbl = {0};
 		tbl.next_state = POWER_OFF;
@@ -823,7 +823,7 @@ static int mdss_mdp_hr_video_intfs_stop(struct mdss_mdp_ctl *ctl,
 	list_for_each_entry_safe(handle, tmp, &ctx->vsync_handlers, list)
 		mdss_mdp_hr_video_remove_vsync_handler(ctl, handle);
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	hr_video_clk_thread_deinit(ctx);
 	pm_qos_remove_request(&ctx->qos_req);
 #endif /* CONFIG_SHDISP */
@@ -861,11 +861,11 @@ static void mdss_mdp_hr_video_vsync_intr_done(void *arg)
 {
 	struct mdss_mdp_ctl *ctl = arg;
 	struct mdss_mdp_hr_video_ctx *ctx = ctl->priv_data;
-#ifndef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifndef CONFIG_SHDISP /* CUST_ID_00070 */
 	struct mdss_mdp_vsync_handler *tmp;
 #endif /* CONFIG_SHDISP */
 	ktime_t vsync_time;
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	bool need_comp = false;
 	bool need_int = false;
 	bool skip_update = false;
@@ -878,7 +878,7 @@ static void mdss_mdp_hr_video_vsync_intr_done(void *arg)
 		return;
 	}
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	pr_debug("ENTER %d\n", mdp_hr_video_read(ctx, MDSS_MDP_REG_INTF_LINE_COUNT));
 
 	tg_en = mdp_hr_video_read(ctx, MDSS_MDP_REG_INTF_TIMING_ENGINE_EN);
@@ -912,7 +912,7 @@ static void mdss_mdp_hr_video_vsync_intr_done(void *arg)
 		 ctl->num, ctl->vsync_cnt, (int)ktime_to_ms(vsync_time));
 
 	ctx->polling_en = false;
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	if (1) {
 		u32 flush_reg = mdss_mdp_ctl_read(ctl, MDSS_MDP_REG_CTL_FLUSH);
 		if (((flush_reg & BIT(17)) == 0) ||
@@ -1074,7 +1074,7 @@ static int mdss_mdp_hr_video_wait4comp(struct mdss_mdp_ctl *ctl, void *arg)
 
 	if (ctx->wait_pending) {
 		ctx->wait_pending = 0;
-#ifndef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifndef CONFIG_SHDISP /* CUST_ID_00070 */
 		hr_video_vsync_irq_disable(ctl);
 #endif /* CONFIG_SHDISP */
 	}
@@ -1087,13 +1087,13 @@ static void hr_recover_underrun_work(struct work_struct *work)
 	struct mdss_mdp_ctl *ctl =
 		container_of(work, typeof(*ctl), recover_work);
 
-	if (!ctl || !ctl->add_vsync_handler) {
+	if (!ctl || !ctl->ops.add_vsync_handler) {
 		pr_err("ctl or vsync handler is NULL\n");
 		return;
 	}
 
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
-	ctl->add_vsync_handler(ctl, &ctl->recover_underrun_handler);
+	ctl->ops.add_vsync_handler(ctl, &ctl->recover_underrun_handler);
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
 }
 
@@ -1229,7 +1229,7 @@ static int mdss_mdp_hr_video_dfps_wait4vsync(struct mdss_mdp_ctl *ctl)
 		return -ENODEV;
 	}
 
-#ifndef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifndef CONFIG_SHDISP /* CUST_ID_00070 */
 	hr_video_vsync_irq_enable(ctl, true);
 #endif /* CONFIG_SHDISP */
 	INIT_COMPLETION(ctx->vsync_comp);
@@ -1238,7 +1238,7 @@ static int mdss_mdp_hr_video_dfps_wait4vsync(struct mdss_mdp_ctl *ctl)
 	WARN(rc <= 0, "timeout (%d) vsync interrupt on ctl=%d\n",
 		rc, ctl->num);
 
-#ifndef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifndef CONFIG_SHDISP /* CUST_ID_00070 */
 	hr_video_vsync_irq_disable(ctl);
 #endif /* CONFIG_SHDISP */
 	if (rc <= 0)
@@ -1335,7 +1335,7 @@ static int mdss_mdp_hr_video_config_fps(struct mdss_mdp_ctl *ctl,
 		return -EINVAL;
 	}
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	if (0 <= new_fps && new_fps <= 6) {
 		if (new_fps == ctx->mfr) {
 			rc = -EINVAL;
@@ -1475,13 +1475,13 @@ static int mdss_mdp_hr_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 		pr_err("invalid ctx\n");
 		return -ENODEV;
 	}
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	atomic_set(&ctx->overlay_hint, 2);
 #endif /* CONFIG_SHDISP */
 
 	if (!ctx->wait_pending) {
 		ctx->wait_pending++;
-#ifndef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifndef CONFIG_SHDISP /* CUST_ID_00070 */
 		hr_video_vsync_irq_enable(ctl, true);
 #endif /* CONFIG_SHDISP */
 		INIT_COMPLETION(ctx->vsync_comp);
@@ -1491,7 +1491,7 @@ static int mdss_mdp_hr_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 
 	MDSS_XLOG(ctl->num, ctl->underrun_cnt);
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	if (ctx->suspend) {
 		return 0;
 	}
@@ -1533,7 +1533,7 @@ static int mdss_mdp_hr_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 
 		mdss_bus_bandwidth_ctrl(true);
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 		if (ctx->video_state == POWER_OFF) {
 			ctx->swt_hint = ktime_get();
 			hr_video_start_periodic_timer(ctx, ctx->swt_time_of_vsync);
@@ -1554,7 +1554,7 @@ static int mdss_mdp_hr_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 		ctx->timegen_en = true;
 		rc = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_PANEL_ON, NULL);
 		WARN(rc, "intf %d panel on error (%d)\n", ctl->intf_num, rc);
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	} else {
 		hr_video_clk_onoff(ctx, CO_ALL_ON_SYNC);
 		commit_state(ctx, NULL);
@@ -1722,7 +1722,7 @@ static int mdss_mdp_hr_video_intfs_setup(struct mdss_mdp_ctl *ctl,
 	mutex_init(&ctx->vsync_mtx);
 	atomic_set(&ctx->vsync_ref, 0);
 	INIT_WORK(&ctl->recover_work, hr_recover_underrun_work);
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	atomic_set(&ctx->vsync_handler_cnt, 0);
 	spin_lock_init(&ctx->hrtimer_lock);
 	init_completion(&ctx->commit_comp);
@@ -1801,7 +1801,7 @@ static int mdss_mdp_hr_video_intfs_setup(struct mdss_mdp_ctl *ctl,
 
 	mdp_hr_video_write(ctx, MDSS_MDP_REG_INTF_PANEL_FORMAT, ctl->dst_format);
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 	{
 		u32 tg_en = mdp_hr_video_read(ctx, MDSS_MDP_REG_INTF_TIMING_ENGINE_EN);
 		pr_debug("TG_EN=%d\n", tg_en);
@@ -1827,13 +1827,13 @@ int mdss_mdp_hr_video_start(struct mdss_mdp_ctl *ctl)
 		return ret;
 	}
 
-	ctl->stop_fnc = mdss_mdp_hr_video_stop;
-	ctl->display_fnc = mdss_mdp_hr_video_display;
-	ctl->wait_fnc = mdss_mdp_hr_video_wait4comp;
-	ctl->read_line_cnt_fnc = mdss_mdp_hr_video_line_count;
-	ctl->add_vsync_handler = mdss_mdp_hr_video_add_vsync_handler;
-	ctl->remove_vsync_handler = mdss_mdp_hr_video_remove_vsync_handler;
-	ctl->config_fps_fnc = mdss_mdp_hr_video_config_fps;
+	ctl->ops.stop_fnc = mdss_mdp_hr_video_stop;
+	ctl->ops.display_fnc = mdss_mdp_hr_video_display;
+	ctl->ops.wait_fnc = mdss_mdp_hr_video_wait4comp;
+	ctl->ops.read_line_cnt_fnc = mdss_mdp_hr_video_line_count;
+	ctl->ops.add_vsync_handler = mdss_mdp_hr_video_add_vsync_handler;
+	ctl->ops.remove_vsync_handler = mdss_mdp_hr_video_remove_vsync_handler;
+	ctl->ops.config_fps_fnc = mdss_mdp_hr_video_config_fps;
 
 	return 0;
 }
@@ -1846,7 +1846,7 @@ void *mdss_mdp_hr_get_intf_base_addr(struct mdss_data_type *mdata,
 	return (void *)(ctx->base);
 }
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00028 */ /* CUST_ID_00041 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00031 */ /* CUST_ID_00032 */
 void mdss_mdp_hr_video_transfer_ctrl(struct msm_fb_data_type *mfd, int onoff, int commit)
 {
 	struct mdss_overlay_private *mdp5_data = NULL;
@@ -1991,7 +1991,7 @@ int mdss_mdp_hr_video_clkchg_mdp_update(struct mdss_mdp_ctl *ctl)
 }
 #endif /* CONFIG_SHDISP */
 
-#ifdef CONFIG_SHDISP /* CUST_ID_00027 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00070 */
 static void mdss_mdp_hr_polarity_update(struct mdss_mdp_hr_video_ctx *ctx, bool start_tg, int tick)
 {
 	if (ctx->tg_state != HW_TG_OFF) {

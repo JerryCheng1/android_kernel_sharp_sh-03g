@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,6 +24,9 @@
 #include "mdss_mdp_rotator.h"
 #include "mdss_fb.h"
 #include "mdss_debug.h"
+#ifdef CONFIG_SHDISP /* CUST_ID_00050 */
+#include "mdss_shdisp.h"
+#endif /* CONFIG_SHDISP */
 
 #define MAX_ROTATOR_PIPE_COUNT 2
 #define PIPE_ACQUIRE_TIMEOUT_IN_MS 400
@@ -193,7 +196,8 @@ static struct mdss_mdp_rot_pipe *mdss_mdp_rot_mgr_acquire_pipe(
 		pr_debug("find a free pipe %p\n", rot_pipe->pipe);
 	} else {
 		rot_pipe = busy_rot_pipe;
-		pr_debug("find a busy pipe %p\n", rot_pipe->pipe);
+		if (rot_pipe)
+			pr_debug("find a busy pipe %p\n", rot_pipe->pipe);
 	}
 
 	if (rot_pipe)
@@ -210,6 +214,12 @@ static struct mdss_mdp_rot_pipe *mdss_mdp_rot_mgr_acquire_pipe(
 			rot_pipe->wait_count--;
 			mutex_unlock(&rot_mgr->pipe_lock);
 			rot_pipe = NULL;
+		} else {
+			mutex_lock(&rot_mgr->pipe_lock);
+			rot_pipe->active_session = rot;
+			rot_pipe->context_switched =
+				(rot_pipe->previous_session != rot);
+			mutex_unlock(&rot_mgr->pipe_lock);
 		}
 	}
 
@@ -247,7 +257,8 @@ static int mdss_mdp_rot_mgr_remove_free_pipe(void)
 		if (!rot_mgr->rot_pipes[i].pipe)
 			continue;
 
-		if (!rot_mgr->rot_pipes[i].active_session)
+		if (!rot_mgr->rot_pipes[i].active_session &&
+			!rot_mgr->rot_pipes[i].wait_count)
 			break;
 	}
 
@@ -470,8 +481,18 @@ static int mdss_mdp_rotator_busy_wait(struct mdss_mdp_rotator_session *rot,
 	struct mdss_mdp_pipe *pipe)
 {
 	if (rot->busy) {
+		int rc;
 		struct mdss_mdp_ctl *ctl = pipe->mixer_left->ctl;
-		mdss_mdp_display_wait4comp(ctl);
+
+		rc = mdss_mdp_display_wait4comp(ctl);
+		if (rc) {
+			pr_err("wait4comp failed for ctl%d, pipe%d, rc=%d. Reseting ctl path.\n",
+				ctl->num, pipe->num, rc);
+			WARN(mdss_mdp_ctl_reset(ctl),
+				"ctl%d reset failed\n", ctl->num);
+			WARN(mdss_mdp_pipe_fetch_halt(pipe),
+				"pipe%d halt failed\n", pipe->num);
+		}
 		rot->busy = false;
 		if (ctl->shared_lock)
 			mutex_unlock(ctl->shared_lock);
@@ -530,7 +551,7 @@ static int __mdss_mdp_rotator_to_pipe(struct mdss_mdp_rotator_session *rot,
 	rot->params_changed = 0;
 
 	smp_count = mdss_mdp_smp_calc_num_blocks(pipe);
-	if (smp_count > rot_pipe->current_smp_size)
+	if (smp_count != rot_pipe->current_smp_size)
 		mdss_mdp_smp_release(pipe);
 
 	ret = mdss_mdp_smp_reserve(pipe);
@@ -609,7 +630,6 @@ static void mdss_mdp_rotator_commit_wq_handler(struct work_struct *work)
 		pr_err("rotator queue failed\n");
 
 	if (rot->rot_sync_pt_data) {
-		atomic_inc(&rot->rot_sync_pt_data->commit_cnt);
 		mdss_fb_signal_timeline(rot->rot_sync_pt_data);
 	} else {
 		pr_err("rot_sync_pt_data is NULL\n");
@@ -623,6 +643,7 @@ static struct msm_sync_pt_data *mdss_mdp_rotator_sync_pt_create(
 {
 	struct msm_sync_pt_data *sync_pt_data;
 	char timeline_name[16];
+	int id = rot->session_id & ~MDSS_MDP_ROT_SESSION_MASK;
 
 	rot->rot_sync_pt_data = kzalloc(
 		sizeof(struct msm_sync_pt_data), GFP_KERNEL);
@@ -632,7 +653,7 @@ static struct msm_sync_pt_data *mdss_mdp_rotator_sync_pt_create(
 	sync_pt_data->fence_name = "rot-fence";
 	sync_pt_data->threshold = 1;
 	snprintf(timeline_name, sizeof(timeline_name),
-					"mdss_rot_%d", rot->session_id);
+					"mdss_rot_%d", id);
 	sync_pt_data->timeline = sw_sync_timeline_create(timeline_name);
 	if (sync_pt_data->timeline == NULL) {
 		kfree(rot->rot_sync_pt_data);
@@ -654,8 +675,12 @@ static int mdss_mdp_rotator_queue_helper(struct mdss_mdp_rotator_session *rot)
 
 	pr_debug("rotator session=%x start\n", rot->session_id);
 
-	if (rot->use_sync_pt)
-		mdss_fb_wait_for_fence(rot->rot_sync_pt_data);
+	if (rot->use_sync_pt && rot->rot_sync_pt_data->temp_fen_cnt) {
+		mdss_fb_wait_for_fences(rot->rot_sync_pt_data,
+				rot->rot_sync_pt_data->temp_fen,
+				rot->rot_sync_pt_data->temp_fen_cnt);
+		rot->rot_sync_pt_data->temp_fen_cnt = 0;
+	}
 
 	rot_pipe = mdss_mdp_rot_mgr_acquire_pipe(rot);
 	if (!rot_pipe) {
@@ -681,10 +706,15 @@ static int mdss_mdp_rotator_queue(struct mdss_mdp_rotator_session *rot)
 {
 	int ret = 0;
 
-	if (rot->use_sync_pt)
+	if (rot->use_sync_pt) {
+		mdss_fb_copy_fence(rot->rot_sync_pt_data,
+				rot->rot_sync_pt_data->temp_fen,
+				&rot->rot_sync_pt_data->temp_fen_cnt);
+		atomic_inc(&rot->rot_sync_pt_data->commit_cnt);
 		queue_work(rot_mgr->rot_work_queue, &rot->commit_work);
-	else
+	} else {
 		ret = mdss_mdp_rotator_queue_helper(rot);
+	}
 
 	pr_debug("rotator session=%x queue done\n", rot->session_id);
 
@@ -804,10 +834,11 @@ static int mdss_mdp_rotator_config(struct msm_fb_data_type *mfd,
 	if (rot->flags & MDP_ROT_90)
 		swap(rot->dst.w, rot->dst.h);
 
+	rot->req_data = *req;
+
 	req->src.format = mdss_mdp_get_rotator_dst_format(req->src.format,
 		req->flags & MDP_ROT_90, req->flags & MDP_BWC_EN);
 
-	rot->req_data = *req;
 	rot->params_changed++;
 
 	return 0;
@@ -889,8 +920,17 @@ static int mdss_mdp_rotator_config_ex(struct msm_fb_data_type *mfd,
 	}
 
 	/* if session hasn't changed, skip reconfiguration */
-	if (!memcmp(req, &rot->req_data, sizeof(*req)))
+	if (!memcmp(req, &rot->req_data, sizeof(*req))) {
+		/*
+		 * as per the IOCTL spec, every successful rotator setup
+		 * needs to return corresponding destination format.
+		 */
+		req->src.format = mdss_mdp_get_rotator_dst_format(
+			req->src.format, req->flags & MDP_ROT_90,
+			req->flags & MDP_BWC_EN);
+
 		return 0;
+	}
 
 	flush_work(&rot->commit_work);
 
@@ -1026,7 +1066,13 @@ int mdss_mdp_rotator_play(struct msm_fb_data_type *mfd,
 		goto dst_buf_fail;
 	}
 
+#ifdef CONFIG_SHDISP /* CUST_ID_00050 */
+	mdss_shdisp_lock_recovery();
+#endif /* CONFIG_SHDISP */
 	ret = mdss_mdp_rotator_queue(rot);
+#ifdef CONFIG_SHDISP /*CUST_ID_00050 */
+	mdss_shdisp_unlock_recovery();
+#endif /* CONFIG_SHDISP */
 
 	if (ret)
 		pr_err("rotator queue error session id=%x\n", req->id);

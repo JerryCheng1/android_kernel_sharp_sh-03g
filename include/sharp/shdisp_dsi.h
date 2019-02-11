@@ -45,6 +45,15 @@ struct shdisp_dsi_cmd_desc {
     short dlen;
     char *payload;
     int  wait;
+    unsigned char mode;
+};
+
+struct shdisp_dsi_cmd_req {
+    char dtype;
+    unsigned char addr;
+    unsigned char size;
+    unsigned char mode;
+    unsigned char *data;
 };
 
 #endif /* SHDISP_PANEL_API_H */

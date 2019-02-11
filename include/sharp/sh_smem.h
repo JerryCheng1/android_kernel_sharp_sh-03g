@@ -1,6 +1,6 @@
 /* include/sharp/sh_smem.h
  *
- * Copyright (C) 2011 Sharp Corporation
+ * Copyright (C) 2015 Sharp Corporation
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -40,11 +40,18 @@ typedef struct
     unsigned char       shdiag_FirstBoot;            /* shdiag FirstBoot information */
     unsigned char       shdiag_AdjChashe[16];        /* shdiag Adj chashe information */
     unsigned short      shdiag_TpsBaseLineTbl[1000]; /* Touch adjustment */
+#if defined(FEATURE_SH_MODEL_DL70) || defined(FEATURE_SH_MODEL_AL20) || defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20)
     unsigned char       sh_100hflg;                  /* 100 hours test flag */
+#endif /* defined(FEATURE_SH_MODEL_DL70) || defined(FEATURE_SH_MODEL_AL20) || defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20) */
     unsigned short      shdiag_proxadj[2];           /* Proximity sensor adjust */
     unsigned char       shdiag_fullchgflg;           /* Full charge FLG(F Only) */
+#if defined(FEATURE_SH_MODEL_DL70) || defined(FEATURE_SH_MODEL_AL20) || defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20)
     char                shdiag_debugflg;             /* Debug FLG */
     char                shdiag_factoryflg;           /* Factory FLG */
+#else /* defined(FEATURE_SH_MODEL_DL70) || defined(FEATURE_SH_MODEL_AL20) || defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20) */
+    unsigned char       shdiag_debugflg;             /* Debug FLG */
+    unsigned char       shdiag_factoryflg;           /* Factory FLG */
+#endif /* defined(FEATURE_SH_MODEL_DL70) || defined(FEATURE_SH_MODEL_AL20) || defined(CONFIG_ARCH_LYNX_DL70) || defined(CONFIG_ARCH_DECKARD_AL20) */
     uint64_t            shsys_timestamp[32];         /* System Timestamp */
     uint32_t            sh_hw_revision;              /* hardware revision number */
     unsigned char       sh_hw_handset;               /* Handset FLG */
@@ -74,6 +81,23 @@ typedef struct
     unsigned char       conf_mvno[2];                /* MVcode */
     unsigned char       shdiag_vib_param[9];         /* LINEAR VIBRATOR */
     unsigned short      sh_boot_hookmode;            /* kmsg hook mode */
+#if !defined(FEATURE_SH_MODEL_DL70) && !defined(FEATURE_SH_MODEL_AL20) && !defined(CONFIG_ARCH_LYNX_DL70) && !defined(CONFIG_ARCH_DECKARD_AL20)
+    unsigned short      sh_proxgrip_lth[4];          /* Grip Sensor LOW threshold */
+    unsigned short      sh_proxgrip_hth[4];          /* Grip Sensor HIGH threshold */
+    unsigned short      sh_proxgrip_pomax[4];        /* Grip Sensor Count Value Open MAX*/
+    unsigned short      sh_proxgrip_poave[4];        /* Grip Sensor Count Value Open AVE*/
+    unsigned short      sh_proxgrip_pomin[4];        /* Grip Sensor Count Value Open MIN*/
+    unsigned short      sh_proxgrip_ptmax[4];        /* Grip Sensor Count Value Touch MAX*/
+    unsigned short      sh_proxgrip_ptave[4];        /* Grip Sensor Count Value Touch AVE*/
+    unsigned short      sh_proxgrip_ptmin[4];        /* Grip Sensor Count Value Touch MIN*/
+    unsigned short      sh_proxgrip_a[4];            /* Grip Sensor Alpha */
+    unsigned short      sh_proxgrip_b[4];            /* Grip Sensor Beta */
+    unsigned short      sh_proxgrip_c[4];            /* Grip Sensor Gamma */
+    unsigned char       sh_proxgrip_secid[10];       /* Grip Sensor Security ID */
+    unsigned short      sh_proxgrip_p3max[2];        /* Grip Sensor Count Value 3mm MAX*/
+    unsigned short      sh_proxgrip_p3ave[2];        /* Grip Sensor Count Value 3mm AVE*/
+    unsigned short      sh_proxgrip_p3min[2];        /* Grip Sensor Count Value 3mm MIN*/
+#endif /* !defined(FEATURE_SH_MODEL_DL70) && !defined(FEATURE_SH_MODEL_AL20) && !defined(CONFIG_ARCH_LYNX_DL70) && !defined(CONFIG_ARCH_DECKARD_AL20) */
 } sharp_smem_common_type;
 
 #define SH_SMEM_COMMON_SIZE 256000
@@ -92,13 +116,6 @@ FUNCTION sh_smem_get_sleep_power_collapse_disabled_address
 
 =============================================================================*/
 unsigned long *sh_smem_get_sleep_power_collapse_disabled_address( void );
-
-/*=============================================================================
-
-FUNCTION sh_smem_get_100hflg
-
-=============================================================================*/
-unsigned char sh_smem_get_100hflg( void );
 
 /*=============================================================================
 

@@ -68,12 +68,12 @@
 
 #define SHDISP_ANDY_VCOM_REG_NUM                (6)
 
-#define SHDISP_ANDY_GAMMA_SETTING_SIZE          (60)
-#define SHDISP_ANDY_GAMMA_LEVEL_MIN             (1)
-#define SHDISP_ANDY_GAMMA_LEVEL_MAX             (30)
-#define SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET       (30)
-#define SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL    (2)
-#define SHDISP_ANDY_GAMMA_GROUP_BELONG_ADDR     (4)
+#define SHDISP_ANDY_GMM_SETTING_SIZE            (60)
+#define SHDISP_ANDY_GMM_LEVEL_MIN               (1)
+#define SHDISP_ANDY_GMM_LEVEL_MAX               (30)
+#define SHDISP_ANDY_GMM_NEGATIVE_OFFSET         (30)
+#define SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL      (2)
+#define SHDISP_ANDY_GMM_GROUP_BELONG_ADDR       (4)
 #define SHDISP_ANDY_VGH                         (2)
 #define SHDISP_ANDY_VGL                         (3)
 #define SHDISP_ANDY_VDD_Reg                     (4)
@@ -123,12 +123,13 @@ static int shdisp_andy_API_diag_set_flicker_param(struct shdisp_diag_flicker_par
 static int shdisp_andy_API_diag_get_flicker_param(struct shdisp_diag_flicker_param *vcom);
 static int shdisp_andy_API_diag_get_flicker_low_param(struct shdisp_diag_flicker_param *vcom);
 static int shdisp_andy_API_check_recovery(void);
-static int shdisp_andy_API_diag_set_gammatable_and_voltage(struct shdisp_diag_gamma_info *gamma_info);
-static int shdisp_andy_API_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_info *gamma_info);
-static int shdisp_andy_API_diag_set_gamma(struct shdisp_diag_gamma *gamma);
+static int shdisp_andy_API_diag_set_gmmtable_and_voltage(struct shdisp_diag_gamma_info *gmm_info);
+static int shdisp_andy_API_diag_get_gmmtable_and_voltage(struct shdisp_diag_gamma_info *gmm_info);
+static int shdisp_andy_API_diag_set_gmm(struct shdisp_diag_gamma *gmm);
 static int shdisp_andy_API_shutdown(void);
 static void shdisp_andy_API_dump(int type);
 static int shdisp_andy_API_set_irq(int enable);
+static int shdisp_andy_API_set_freq_param(struct shdisp_freq_params *freq);
 static void shdisp_andy_hw_reset(bool);
 static int shdisp_andy_mipi_cmd_lcd_on(void);
 static int shdisp_andy_mipi_cmd_lcd_off(void);
@@ -147,10 +148,10 @@ static int shdisp_andy_power_mode_chk(unsigned char addr);
 static int shdisp_andy_sleepout_wait_proc(void);
 
 #ifndef SHDISP_NOT_SUPPORT_NO_OS
-static int shdisp_andy_init_phy_gamma(struct shdisp_lcddr_phy_gamma_reg *phy_gamma);
+static int shdisp_andy_init_phy_gmm(struct shdisp_lcddr_phy_gmm_reg *phy_gmm);
 #endif /* SHDISP_NOT_SUPPORT_NO_OS */
 extern void mdss_shdisp_video_transfer_ctrl(int onoff, int commit);
-extern int mdss_shdisp_dsi_cmd_clk_ctrl(bool enable);
+extern int mdss_shdisp_dsi_bus_clk_ctrl(bool enable);
 static irqreturn_t shdisp_andy_int_isr(int irq_num, void *data);
 static int shdisp_andy_register_driver(void);
 static void shdisp_andy_workqueue_handler(struct work_struct *work);
@@ -169,8 +170,8 @@ static unsigned char andy_rdata[8];
 static char Andy_VCOM_Reg[6] = {0x13, 0x14, 0x15, 0x5C, 0x5D, 0x5E};
 #endif /* SHDISP_NOT_SUPPORT_FLICKER */
 
-static struct shdisp_diag_gamma_info diag_tmp_gamma_info;
-static int diag_tmp_gamma_info_set = 0;
+static struct shdisp_diag_gamma_info diag_tmp_gmm_info;
+static int diag_tmp_gmm_info_set = 0;
 
 #ifdef SHDISP_POWER_MODE_CHK
 static int shdisp_andy_dispon_chk = SHDISP_PANEL_DISPON_CHK_INIT;
@@ -192,13 +193,7 @@ static struct wake_lock shdisp_andy_wakelock;
 /*      LCD ON                                                              */
 /*      Initial Setting                                                     */
 
-#if defined(CONFIG_ARCH_LYNX_DL70)
-#include "./data/shdisp_andy_data_dl70.h"
-#elif defined(CONFIG_ARCH_DECKARD_AL20)
-#include "./data/shdisp_andy_data_al20.h"
-#else  /* CONFIG_ARCH_LYNX_DL70 */
 #include "./data/shdisp_andy_data_default.h"
-#endif /* CONFIG_ARCH_LYNX_DL70 */
 
 #ifndef SHDISP_NOT_SUPPORT_FLICKER
 static unsigned char mipi_sh_shdisp_andy_cmd_vcom_tracking[6][2] = {
@@ -224,7 +219,7 @@ static struct shdisp_dsi_cmd_desc mipi_sh_shdisp_andy_cmds_vcom_tracking[8] = {
 
 #ifdef SHDISP_POWER_MODE_CHK
 static struct shdisp_dsi_cmd_desc mipi_sh_andy_cmds_dispon_check[] = {
-    {SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_andy_cmd_SwitchCommand[0], 0}
+    {SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_andy_cmd_SwitchCommand[0], 0, 0}
 };
 #endif /* SHDISP_POWER_MODE_CHK */
 
@@ -245,12 +240,15 @@ static struct shdisp_panel_operations shdisp_andy_fops = {
     shdisp_andy_API_diag_get_flicker_param,
     shdisp_andy_API_diag_get_flicker_low_param,
     shdisp_andy_API_check_recovery,
-    shdisp_andy_API_diag_set_gammatable_and_voltage,
-    shdisp_andy_API_diag_get_gammatable_and_voltage,
-    shdisp_andy_API_diag_set_gamma,
+    shdisp_andy_API_diag_set_gmmtable_and_voltage,
+    shdisp_andy_API_diag_get_gmmtable_and_voltage,
+    shdisp_andy_API_diag_set_gmm,
     shdisp_andy_API_shutdown,
     shdisp_andy_API_dump,
     shdisp_andy_API_set_irq,
+    NULL,
+    NULL,
+    shdisp_andy_API_set_freq_param,
 };
 
 /* ------------------------------------------------------------------------- */
@@ -476,8 +474,8 @@ static int shdisp_andy_API_init_io(struct shdisp_panel_context *panel_ctx)
         SHDISP_ERR("<RESULT_FAILURE> shdisp_andy_init_flicker_param.");
     }
 
-    if (shdisp_andy_init_phy_gamma(&shdisp_panel_ctx.lcddr_phy_gamma)) {
-        SHDISP_DEBUG("<RESULT_FAILURE> shdisp_andy_init_phy_gamma.");
+    if (shdisp_andy_init_phy_gmm(&shdisp_panel_ctx.lcddr_phy_gmm)) {
+        SHDISP_DEBUG("<RESULT_FAILURE> shdisp_andy_init_phy_gmm.");
     }
 
     shdisp_andy_dispon_chk = shdisp_panel_ctx.disp_on_status;
@@ -705,17 +703,15 @@ static int shdisp_andy_API_set_irq(int enable)
 /* ------------------------------------------------------------------------- */
 /* shdisp_andy_API_set_freq_param                                            */
 /* ------------------------------------------------------------------------- */
-int shdisp_andy_API_set_freq_param(void *freq)
+static int shdisp_andy_API_set_freq_param(struct shdisp_freq_params *freq)
 {
-    mdp_mipi_clkchg_panel_t *panel = (mdp_mipi_clkchg_panel_t *)freq;
     SHDISP_TRACE("in");
-
-    mipi_sh_andy_cmd_DisplayLineSetting[NO_RTN][1] = panel->andy.rtn;
-    mipi_sh_andy_cmd_SuspendTimingSetting[NO_GIP][1] = panel->andy.gip;
-    mipi_sh_andy_cmd_PorchLineSetting[NO_VBP][1] = panel->andy.vbp;
-    mipi_sh_andy_cmd_PorchLineSetting[NO_VFP][1] = panel->andy.vfp;
+    mipi_sh_andy_cmd_DisplayLineSetting[NO_RTN][1] = freq->rtn;
+    mipi_sh_andy_cmd_SuspendTimingSetting[NO_GIP][1] = freq->gip;
+    mipi_sh_andy_cmd_PorchLineSetting[NO_VBP][1] = freq->vbp;
+    mipi_sh_andy_cmd_PorchLineSetting[NO_VFP][1] = freq->vfp;
     SHDISP_DEBUG("RTN=0x%02x GIP=0x%02x VBP=0x%02x VFP=0x%02x"
-                    , panel->andy.rtn, panel->andy.gip, panel->andy.vbp, panel->andy.vfp);
+                    , freq->rtn, freq->gip, freq->vbp, freq->vfp);
     SHDISP_TRACE("out");
     return SHDISP_RESULT_SUCCESS;
 }
@@ -1118,377 +1114,377 @@ static int shdisp_andy_API_check_recovery(void)
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_andy_diag_set_gammatable_and_voltage                               */
+/* shdisp_andy_diag_set_gmmtable_and_voltage                                 */
 /* ------------------------------------------------------------------------- */
-static int shdisp_andy_diag_set_gammatable_and_voltage(struct shdisp_diag_gamma_info *gamma_info,
+static int shdisp_andy_diag_set_gmmtable_and_voltage(struct shdisp_diag_gamma_info *gmm_info,
                                                        int set_applied_voltage)
 {
     int i, j = 0;
     int ret = SHDISP_RESULT_SUCCESS;
-    unsigned char andy_gamma_wdata[372];
-    unsigned char andy_gamma_addr[372] = {
+    unsigned char andy_gmm_wdata[372];
+    unsigned char andy_gmm_addr[372] = {
         mipi_sh_andy_cmd_SwitchCommand[1][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[0][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[1][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[2][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[3][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[4][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[5][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[6][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[7][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[8][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[9][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[10][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[11][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[12][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[13][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[14][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[15][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[16][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[17][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[18][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[19][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[20][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[21][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[22][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[23][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[24][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[25][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[26][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[27][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[28][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[29][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[30][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[31][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[32][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[33][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[34][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[35][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[36][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[37][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[38][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[39][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[40][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[41][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[42][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[43][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[44][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[45][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[46][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[47][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[48][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[49][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[50][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[51][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[52][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[53][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[54][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[55][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[56][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[57][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[58][0],
-        mipi_sh_andy_cmd_GAMMAREDposi[59][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[0][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[1][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[2][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[3][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[4][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[5][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[6][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[7][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[8][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[9][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[10][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[11][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[12][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[13][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[14][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[15][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[16][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[17][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[18][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[19][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[20][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[21][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[22][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[23][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[24][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[25][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[26][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[27][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[28][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[29][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[30][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[31][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[32][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[33][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[34][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[35][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[36][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[37][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[38][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[39][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[40][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[41][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[42][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[43][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[44][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[45][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[46][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[47][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[48][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[49][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[50][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[51][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[52][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[53][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[54][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[55][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[56][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[57][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[58][0],
-        mipi_sh_andy_cmd_GAMMAREDnega[59][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[0][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[1][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[2][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[3][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[4][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[5][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[6][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[7][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[8][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[9][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[10][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[11][0],
+        mipi_sh_andy_cmd_RDPSGMM[0][0],
+        mipi_sh_andy_cmd_RDPSGMM[1][0],
+        mipi_sh_andy_cmd_RDPSGMM[2][0],
+        mipi_sh_andy_cmd_RDPSGMM[3][0],
+        mipi_sh_andy_cmd_RDPSGMM[4][0],
+        mipi_sh_andy_cmd_RDPSGMM[5][0],
+        mipi_sh_andy_cmd_RDPSGMM[6][0],
+        mipi_sh_andy_cmd_RDPSGMM[7][0],
+        mipi_sh_andy_cmd_RDPSGMM[8][0],
+        mipi_sh_andy_cmd_RDPSGMM[9][0],
+        mipi_sh_andy_cmd_RDPSGMM[10][0],
+        mipi_sh_andy_cmd_RDPSGMM[11][0],
+        mipi_sh_andy_cmd_RDPSGMM[12][0],
+        mipi_sh_andy_cmd_RDPSGMM[13][0],
+        mipi_sh_andy_cmd_RDPSGMM[14][0],
+        mipi_sh_andy_cmd_RDPSGMM[15][0],
+        mipi_sh_andy_cmd_RDPSGMM[16][0],
+        mipi_sh_andy_cmd_RDPSGMM[17][0],
+        mipi_sh_andy_cmd_RDPSGMM[18][0],
+        mipi_sh_andy_cmd_RDPSGMM[19][0],
+        mipi_sh_andy_cmd_RDPSGMM[20][0],
+        mipi_sh_andy_cmd_RDPSGMM[21][0],
+        mipi_sh_andy_cmd_RDPSGMM[22][0],
+        mipi_sh_andy_cmd_RDPSGMM[23][0],
+        mipi_sh_andy_cmd_RDPSGMM[24][0],
+        mipi_sh_andy_cmd_RDPSGMM[25][0],
+        mipi_sh_andy_cmd_RDPSGMM[26][0],
+        mipi_sh_andy_cmd_RDPSGMM[27][0],
+        mipi_sh_andy_cmd_RDPSGMM[28][0],
+        mipi_sh_andy_cmd_RDPSGMM[29][0],
+        mipi_sh_andy_cmd_RDPSGMM[30][0],
+        mipi_sh_andy_cmd_RDPSGMM[31][0],
+        mipi_sh_andy_cmd_RDPSGMM[32][0],
+        mipi_sh_andy_cmd_RDPSGMM[33][0],
+        mipi_sh_andy_cmd_RDPSGMM[34][0],
+        mipi_sh_andy_cmd_RDPSGMM[35][0],
+        mipi_sh_andy_cmd_RDPSGMM[36][0],
+        mipi_sh_andy_cmd_RDPSGMM[37][0],
+        mipi_sh_andy_cmd_RDPSGMM[38][0],
+        mipi_sh_andy_cmd_RDPSGMM[39][0],
+        mipi_sh_andy_cmd_RDPSGMM[40][0],
+        mipi_sh_andy_cmd_RDPSGMM[41][0],
+        mipi_sh_andy_cmd_RDPSGMM[42][0],
+        mipi_sh_andy_cmd_RDPSGMM[43][0],
+        mipi_sh_andy_cmd_RDPSGMM[44][0],
+        mipi_sh_andy_cmd_RDPSGMM[45][0],
+        mipi_sh_andy_cmd_RDPSGMM[46][0],
+        mipi_sh_andy_cmd_RDPSGMM[47][0],
+        mipi_sh_andy_cmd_RDPSGMM[48][0],
+        mipi_sh_andy_cmd_RDPSGMM[49][0],
+        mipi_sh_andy_cmd_RDPSGMM[50][0],
+        mipi_sh_andy_cmd_RDPSGMM[51][0],
+        mipi_sh_andy_cmd_RDPSGMM[52][0],
+        mipi_sh_andy_cmd_RDPSGMM[53][0],
+        mipi_sh_andy_cmd_RDPSGMM[54][0],
+        mipi_sh_andy_cmd_RDPSGMM[55][0],
+        mipi_sh_andy_cmd_RDPSGMM[56][0],
+        mipi_sh_andy_cmd_RDPSGMM[57][0],
+        mipi_sh_andy_cmd_RDPSGMM[58][0],
+        mipi_sh_andy_cmd_RDPSGMM[59][0],
+        mipi_sh_andy_cmd_RDNGGMM[0][0],
+        mipi_sh_andy_cmd_RDNGGMM[1][0],
+        mipi_sh_andy_cmd_RDNGGMM[2][0],
+        mipi_sh_andy_cmd_RDNGGMM[3][0],
+        mipi_sh_andy_cmd_RDNGGMM[4][0],
+        mipi_sh_andy_cmd_RDNGGMM[5][0],
+        mipi_sh_andy_cmd_RDNGGMM[6][0],
+        mipi_sh_andy_cmd_RDNGGMM[7][0],
+        mipi_sh_andy_cmd_RDNGGMM[8][0],
+        mipi_sh_andy_cmd_RDNGGMM[9][0],
+        mipi_sh_andy_cmd_RDNGGMM[10][0],
+        mipi_sh_andy_cmd_RDNGGMM[11][0],
+        mipi_sh_andy_cmd_RDNGGMM[12][0],
+        mipi_sh_andy_cmd_RDNGGMM[13][0],
+        mipi_sh_andy_cmd_RDNGGMM[14][0],
+        mipi_sh_andy_cmd_RDNGGMM[15][0],
+        mipi_sh_andy_cmd_RDNGGMM[16][0],
+        mipi_sh_andy_cmd_RDNGGMM[17][0],
+        mipi_sh_andy_cmd_RDNGGMM[18][0],
+        mipi_sh_andy_cmd_RDNGGMM[19][0],
+        mipi_sh_andy_cmd_RDNGGMM[20][0],
+        mipi_sh_andy_cmd_RDNGGMM[21][0],
+        mipi_sh_andy_cmd_RDNGGMM[22][0],
+        mipi_sh_andy_cmd_RDNGGMM[23][0],
+        mipi_sh_andy_cmd_RDNGGMM[24][0],
+        mipi_sh_andy_cmd_RDNGGMM[25][0],
+        mipi_sh_andy_cmd_RDNGGMM[26][0],
+        mipi_sh_andy_cmd_RDNGGMM[27][0],
+        mipi_sh_andy_cmd_RDNGGMM[28][0],
+        mipi_sh_andy_cmd_RDNGGMM[29][0],
+        mipi_sh_andy_cmd_RDNGGMM[30][0],
+        mipi_sh_andy_cmd_RDNGGMM[31][0],
+        mipi_sh_andy_cmd_RDNGGMM[32][0],
+        mipi_sh_andy_cmd_RDNGGMM[33][0],
+        mipi_sh_andy_cmd_RDNGGMM[34][0],
+        mipi_sh_andy_cmd_RDNGGMM[35][0],
+        mipi_sh_andy_cmd_RDNGGMM[36][0],
+        mipi_sh_andy_cmd_RDNGGMM[37][0],
+        mipi_sh_andy_cmd_RDNGGMM[38][0],
+        mipi_sh_andy_cmd_RDNGGMM[39][0],
+        mipi_sh_andy_cmd_RDNGGMM[40][0],
+        mipi_sh_andy_cmd_RDNGGMM[41][0],
+        mipi_sh_andy_cmd_RDNGGMM[42][0],
+        mipi_sh_andy_cmd_RDNGGMM[43][0],
+        mipi_sh_andy_cmd_RDNGGMM[44][0],
+        mipi_sh_andy_cmd_RDNGGMM[45][0],
+        mipi_sh_andy_cmd_RDNGGMM[46][0],
+        mipi_sh_andy_cmd_RDNGGMM[47][0],
+        mipi_sh_andy_cmd_RDNGGMM[48][0],
+        mipi_sh_andy_cmd_RDNGGMM[49][0],
+        mipi_sh_andy_cmd_RDNGGMM[50][0],
+        mipi_sh_andy_cmd_RDNGGMM[51][0],
+        mipi_sh_andy_cmd_RDNGGMM[52][0],
+        mipi_sh_andy_cmd_RDNGGMM[53][0],
+        mipi_sh_andy_cmd_RDNGGMM[54][0],
+        mipi_sh_andy_cmd_RDNGGMM[55][0],
+        mipi_sh_andy_cmd_RDNGGMM[56][0],
+        mipi_sh_andy_cmd_RDNGGMM[57][0],
+        mipi_sh_andy_cmd_RDNGGMM[58][0],
+        mipi_sh_andy_cmd_RDNGGMM[59][0],
+        mipi_sh_andy_cmd_GRPSGMM[0][0],
+        mipi_sh_andy_cmd_GRPSGMM[1][0],
+        mipi_sh_andy_cmd_GRPSGMM[2][0],
+        mipi_sh_andy_cmd_GRPSGMM[3][0],
+        mipi_sh_andy_cmd_GRPSGMM[4][0],
+        mipi_sh_andy_cmd_GRPSGMM[5][0],
+        mipi_sh_andy_cmd_GRPSGMM[6][0],
+        mipi_sh_andy_cmd_GRPSGMM[7][0],
+        mipi_sh_andy_cmd_GRPSGMM[8][0],
+        mipi_sh_andy_cmd_GRPSGMM[9][0],
+        mipi_sh_andy_cmd_GRPSGMM[10][0],
+        mipi_sh_andy_cmd_GRPSGMM[11][0],
         mipi_sh_andy_cmd_SwitchCommand[2][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[12][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[13][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[14][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[15][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[16][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[17][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[18][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[19][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[20][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[21][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[22][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[23][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[24][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[25][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[26][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[27][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[28][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[29][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[30][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[31][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[32][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[33][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[34][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[35][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[36][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[37][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[38][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[39][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[40][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[41][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[42][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[43][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[44][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[45][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[46][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[47][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[48][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[49][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[50][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[51][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[52][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[53][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[54][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[55][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[56][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[57][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[58][0],
-        mipi_sh_andy_cmd_GAMMAGREENposi[59][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[0][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[1][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[2][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[3][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[4][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[5][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[6][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[7][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[8][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[9][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[10][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[11][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[12][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[13][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[14][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[15][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[16][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[17][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[18][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[19][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[20][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[21][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[22][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[23][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[24][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[25][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[26][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[27][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[28][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[29][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[30][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[31][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[32][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[33][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[34][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[35][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[36][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[37][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[38][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[39][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[40][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[41][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[42][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[43][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[44][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[45][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[46][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[47][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[48][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[49][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[50][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[51][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[52][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[53][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[54][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[55][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[56][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[57][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[58][0],
-        mipi_sh_andy_cmd_GAMMAGREENnega[59][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[0][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[1][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[2][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[3][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[4][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[5][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[6][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[7][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[8][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[9][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[10][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[11][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[12][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[13][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[14][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[15][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[16][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[17][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[18][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[19][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[20][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[21][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[22][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[23][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[24][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[25][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[26][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[27][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[28][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[29][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[30][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[31][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[32][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[33][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[34][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[35][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[36][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[37][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[38][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[39][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[40][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[41][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[42][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[43][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[44][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[45][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[46][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[47][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[48][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[49][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[50][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[51][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[52][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[53][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[54][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[55][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[56][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[57][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[58][0],
-        mipi_sh_andy_cmd_GAMMABLUEposi[59][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[0][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[1][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[2][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[3][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[4][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[5][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[6][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[7][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[8][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[9][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[10][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[11][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[12][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[13][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[14][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[15][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[16][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[17][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[18][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[19][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[20][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[21][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[22][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[23][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[24][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[25][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[26][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[27][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[28][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[29][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[30][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[31][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[32][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[33][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[34][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[35][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[36][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[37][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[38][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[39][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[40][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[41][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[42][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[43][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[44][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[45][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[46][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[47][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[48][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[49][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[50][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[51][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[52][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[53][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[54][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[55][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[56][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[57][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[58][0],
-        mipi_sh_andy_cmd_GAMMABLUEnega[59][0],
+        mipi_sh_andy_cmd_GRPSGMM[12][0],
+        mipi_sh_andy_cmd_GRPSGMM[13][0],
+        mipi_sh_andy_cmd_GRPSGMM[14][0],
+        mipi_sh_andy_cmd_GRPSGMM[15][0],
+        mipi_sh_andy_cmd_GRPSGMM[16][0],
+        mipi_sh_andy_cmd_GRPSGMM[17][0],
+        mipi_sh_andy_cmd_GRPSGMM[18][0],
+        mipi_sh_andy_cmd_GRPSGMM[19][0],
+        mipi_sh_andy_cmd_GRPSGMM[20][0],
+        mipi_sh_andy_cmd_GRPSGMM[21][0],
+        mipi_sh_andy_cmd_GRPSGMM[22][0],
+        mipi_sh_andy_cmd_GRPSGMM[23][0],
+        mipi_sh_andy_cmd_GRPSGMM[24][0],
+        mipi_sh_andy_cmd_GRPSGMM[25][0],
+        mipi_sh_andy_cmd_GRPSGMM[26][0],
+        mipi_sh_andy_cmd_GRPSGMM[27][0],
+        mipi_sh_andy_cmd_GRPSGMM[28][0],
+        mipi_sh_andy_cmd_GRPSGMM[29][0],
+        mipi_sh_andy_cmd_GRPSGMM[30][0],
+        mipi_sh_andy_cmd_GRPSGMM[31][0],
+        mipi_sh_andy_cmd_GRPSGMM[32][0],
+        mipi_sh_andy_cmd_GRPSGMM[33][0],
+        mipi_sh_andy_cmd_GRPSGMM[34][0],
+        mipi_sh_andy_cmd_GRPSGMM[35][0],
+        mipi_sh_andy_cmd_GRPSGMM[36][0],
+        mipi_sh_andy_cmd_GRPSGMM[37][0],
+        mipi_sh_andy_cmd_GRPSGMM[38][0],
+        mipi_sh_andy_cmd_GRPSGMM[39][0],
+        mipi_sh_andy_cmd_GRPSGMM[40][0],
+        mipi_sh_andy_cmd_GRPSGMM[41][0],
+        mipi_sh_andy_cmd_GRPSGMM[42][0],
+        mipi_sh_andy_cmd_GRPSGMM[43][0],
+        mipi_sh_andy_cmd_GRPSGMM[44][0],
+        mipi_sh_andy_cmd_GRPSGMM[45][0],
+        mipi_sh_andy_cmd_GRPSGMM[46][0],
+        mipi_sh_andy_cmd_GRPSGMM[47][0],
+        mipi_sh_andy_cmd_GRPSGMM[48][0],
+        mipi_sh_andy_cmd_GRPSGMM[49][0],
+        mipi_sh_andy_cmd_GRPSGMM[50][0],
+        mipi_sh_andy_cmd_GRPSGMM[51][0],
+        mipi_sh_andy_cmd_GRPSGMM[52][0],
+        mipi_sh_andy_cmd_GRPSGMM[53][0],
+        mipi_sh_andy_cmd_GRPSGMM[54][0],
+        mipi_sh_andy_cmd_GRPSGMM[55][0],
+        mipi_sh_andy_cmd_GRPSGMM[56][0],
+        mipi_sh_andy_cmd_GRPSGMM[57][0],
+        mipi_sh_andy_cmd_GRPSGMM[58][0],
+        mipi_sh_andy_cmd_GRPSGMM[59][0],
+        mipi_sh_andy_cmd_GRNGGMM[0][0],
+        mipi_sh_andy_cmd_GRNGGMM[1][0],
+        mipi_sh_andy_cmd_GRNGGMM[2][0],
+        mipi_sh_andy_cmd_GRNGGMM[3][0],
+        mipi_sh_andy_cmd_GRNGGMM[4][0],
+        mipi_sh_andy_cmd_GRNGGMM[5][0],
+        mipi_sh_andy_cmd_GRNGGMM[6][0],
+        mipi_sh_andy_cmd_GRNGGMM[7][0],
+        mipi_sh_andy_cmd_GRNGGMM[8][0],
+        mipi_sh_andy_cmd_GRNGGMM[9][0],
+        mipi_sh_andy_cmd_GRNGGMM[10][0],
+        mipi_sh_andy_cmd_GRNGGMM[11][0],
+        mipi_sh_andy_cmd_GRNGGMM[12][0],
+        mipi_sh_andy_cmd_GRNGGMM[13][0],
+        mipi_sh_andy_cmd_GRNGGMM[14][0],
+        mipi_sh_andy_cmd_GRNGGMM[15][0],
+        mipi_sh_andy_cmd_GRNGGMM[16][0],
+        mipi_sh_andy_cmd_GRNGGMM[17][0],
+        mipi_sh_andy_cmd_GRNGGMM[18][0],
+        mipi_sh_andy_cmd_GRNGGMM[19][0],
+        mipi_sh_andy_cmd_GRNGGMM[20][0],
+        mipi_sh_andy_cmd_GRNGGMM[21][0],
+        mipi_sh_andy_cmd_GRNGGMM[22][0],
+        mipi_sh_andy_cmd_GRNGGMM[23][0],
+        mipi_sh_andy_cmd_GRNGGMM[24][0],
+        mipi_sh_andy_cmd_GRNGGMM[25][0],
+        mipi_sh_andy_cmd_GRNGGMM[26][0],
+        mipi_sh_andy_cmd_GRNGGMM[27][0],
+        mipi_sh_andy_cmd_GRNGGMM[28][0],
+        mipi_sh_andy_cmd_GRNGGMM[29][0],
+        mipi_sh_andy_cmd_GRNGGMM[30][0],
+        mipi_sh_andy_cmd_GRNGGMM[31][0],
+        mipi_sh_andy_cmd_GRNGGMM[32][0],
+        mipi_sh_andy_cmd_GRNGGMM[33][0],
+        mipi_sh_andy_cmd_GRNGGMM[34][0],
+        mipi_sh_andy_cmd_GRNGGMM[35][0],
+        mipi_sh_andy_cmd_GRNGGMM[36][0],
+        mipi_sh_andy_cmd_GRNGGMM[37][0],
+        mipi_sh_andy_cmd_GRNGGMM[38][0],
+        mipi_sh_andy_cmd_GRNGGMM[39][0],
+        mipi_sh_andy_cmd_GRNGGMM[40][0],
+        mipi_sh_andy_cmd_GRNGGMM[41][0],
+        mipi_sh_andy_cmd_GRNGGMM[42][0],
+        mipi_sh_andy_cmd_GRNGGMM[43][0],
+        mipi_sh_andy_cmd_GRNGGMM[44][0],
+        mipi_sh_andy_cmd_GRNGGMM[45][0],
+        mipi_sh_andy_cmd_GRNGGMM[46][0],
+        mipi_sh_andy_cmd_GRNGGMM[47][0],
+        mipi_sh_andy_cmd_GRNGGMM[48][0],
+        mipi_sh_andy_cmd_GRNGGMM[49][0],
+        mipi_sh_andy_cmd_GRNGGMM[50][0],
+        mipi_sh_andy_cmd_GRNGGMM[51][0],
+        mipi_sh_andy_cmd_GRNGGMM[52][0],
+        mipi_sh_andy_cmd_GRNGGMM[53][0],
+        mipi_sh_andy_cmd_GRNGGMM[54][0],
+        mipi_sh_andy_cmd_GRNGGMM[55][0],
+        mipi_sh_andy_cmd_GRNGGMM[56][0],
+        mipi_sh_andy_cmd_GRNGGMM[57][0],
+        mipi_sh_andy_cmd_GRNGGMM[58][0],
+        mipi_sh_andy_cmd_GRNGGMM[59][0],
+        mipi_sh_andy_cmd_BLPSGMM[0][0],
+        mipi_sh_andy_cmd_BLPSGMM[1][0],
+        mipi_sh_andy_cmd_BLPSGMM[2][0],
+        mipi_sh_andy_cmd_BLPSGMM[3][0],
+        mipi_sh_andy_cmd_BLPSGMM[4][0],
+        mipi_sh_andy_cmd_BLPSGMM[5][0],
+        mipi_sh_andy_cmd_BLPSGMM[6][0],
+        mipi_sh_andy_cmd_BLPSGMM[7][0],
+        mipi_sh_andy_cmd_BLPSGMM[8][0],
+        mipi_sh_andy_cmd_BLPSGMM[9][0],
+        mipi_sh_andy_cmd_BLPSGMM[10][0],
+        mipi_sh_andy_cmd_BLPSGMM[11][0],
+        mipi_sh_andy_cmd_BLPSGMM[12][0],
+        mipi_sh_andy_cmd_BLPSGMM[13][0],
+        mipi_sh_andy_cmd_BLPSGMM[14][0],
+        mipi_sh_andy_cmd_BLPSGMM[15][0],
+        mipi_sh_andy_cmd_BLPSGMM[16][0],
+        mipi_sh_andy_cmd_BLPSGMM[17][0],
+        mipi_sh_andy_cmd_BLPSGMM[18][0],
+        mipi_sh_andy_cmd_BLPSGMM[19][0],
+        mipi_sh_andy_cmd_BLPSGMM[20][0],
+        mipi_sh_andy_cmd_BLPSGMM[21][0],
+        mipi_sh_andy_cmd_BLPSGMM[22][0],
+        mipi_sh_andy_cmd_BLPSGMM[23][0],
+        mipi_sh_andy_cmd_BLPSGMM[24][0],
+        mipi_sh_andy_cmd_BLPSGMM[25][0],
+        mipi_sh_andy_cmd_BLPSGMM[26][0],
+        mipi_sh_andy_cmd_BLPSGMM[27][0],
+        mipi_sh_andy_cmd_BLPSGMM[28][0],
+        mipi_sh_andy_cmd_BLPSGMM[29][0],
+        mipi_sh_andy_cmd_BLPSGMM[30][0],
+        mipi_sh_andy_cmd_BLPSGMM[31][0],
+        mipi_sh_andy_cmd_BLPSGMM[32][0],
+        mipi_sh_andy_cmd_BLPSGMM[33][0],
+        mipi_sh_andy_cmd_BLPSGMM[34][0],
+        mipi_sh_andy_cmd_BLPSGMM[35][0],
+        mipi_sh_andy_cmd_BLPSGMM[36][0],
+        mipi_sh_andy_cmd_BLPSGMM[37][0],
+        mipi_sh_andy_cmd_BLPSGMM[38][0],
+        mipi_sh_andy_cmd_BLPSGMM[39][0],
+        mipi_sh_andy_cmd_BLPSGMM[40][0],
+        mipi_sh_andy_cmd_BLPSGMM[41][0],
+        mipi_sh_andy_cmd_BLPSGMM[42][0],
+        mipi_sh_andy_cmd_BLPSGMM[43][0],
+        mipi_sh_andy_cmd_BLPSGMM[44][0],
+        mipi_sh_andy_cmd_BLPSGMM[45][0],
+        mipi_sh_andy_cmd_BLPSGMM[46][0],
+        mipi_sh_andy_cmd_BLPSGMM[47][0],
+        mipi_sh_andy_cmd_BLPSGMM[48][0],
+        mipi_sh_andy_cmd_BLPSGMM[49][0],
+        mipi_sh_andy_cmd_BLPSGMM[50][0],
+        mipi_sh_andy_cmd_BLPSGMM[51][0],
+        mipi_sh_andy_cmd_BLPSGMM[52][0],
+        mipi_sh_andy_cmd_BLPSGMM[53][0],
+        mipi_sh_andy_cmd_BLPSGMM[54][0],
+        mipi_sh_andy_cmd_BLPSGMM[55][0],
+        mipi_sh_andy_cmd_BLPSGMM[56][0],
+        mipi_sh_andy_cmd_BLPSGMM[57][0],
+        mipi_sh_andy_cmd_BLPSGMM[58][0],
+        mipi_sh_andy_cmd_BLPSGMM[59][0],
+        mipi_sh_andy_cmd_BLNGGMM[0][0],
+        mipi_sh_andy_cmd_BLNGGMM[1][0],
+        mipi_sh_andy_cmd_BLNGGMM[2][0],
+        mipi_sh_andy_cmd_BLNGGMM[3][0],
+        mipi_sh_andy_cmd_BLNGGMM[4][0],
+        mipi_sh_andy_cmd_BLNGGMM[5][0],
+        mipi_sh_andy_cmd_BLNGGMM[6][0],
+        mipi_sh_andy_cmd_BLNGGMM[7][0],
+        mipi_sh_andy_cmd_BLNGGMM[8][0],
+        mipi_sh_andy_cmd_BLNGGMM[9][0],
+        mipi_sh_andy_cmd_BLNGGMM[10][0],
+        mipi_sh_andy_cmd_BLNGGMM[11][0],
+        mipi_sh_andy_cmd_BLNGGMM[12][0],
+        mipi_sh_andy_cmd_BLNGGMM[13][0],
+        mipi_sh_andy_cmd_BLNGGMM[14][0],
+        mipi_sh_andy_cmd_BLNGGMM[15][0],
+        mipi_sh_andy_cmd_BLNGGMM[16][0],
+        mipi_sh_andy_cmd_BLNGGMM[17][0],
+        mipi_sh_andy_cmd_BLNGGMM[18][0],
+        mipi_sh_andy_cmd_BLNGGMM[19][0],
+        mipi_sh_andy_cmd_BLNGGMM[20][0],
+        mipi_sh_andy_cmd_BLNGGMM[21][0],
+        mipi_sh_andy_cmd_BLNGGMM[22][0],
+        mipi_sh_andy_cmd_BLNGGMM[23][0],
+        mipi_sh_andy_cmd_BLNGGMM[24][0],
+        mipi_sh_andy_cmd_BLNGGMM[25][0],
+        mipi_sh_andy_cmd_BLNGGMM[26][0],
+        mipi_sh_andy_cmd_BLNGGMM[27][0],
+        mipi_sh_andy_cmd_BLNGGMM[28][0],
+        mipi_sh_andy_cmd_BLNGGMM[29][0],
+        mipi_sh_andy_cmd_BLNGGMM[30][0],
+        mipi_sh_andy_cmd_BLNGGMM[31][0],
+        mipi_sh_andy_cmd_BLNGGMM[32][0],
+        mipi_sh_andy_cmd_BLNGGMM[33][0],
+        mipi_sh_andy_cmd_BLNGGMM[34][0],
+        mipi_sh_andy_cmd_BLNGGMM[35][0],
+        mipi_sh_andy_cmd_BLNGGMM[36][0],
+        mipi_sh_andy_cmd_BLNGGMM[37][0],
+        mipi_sh_andy_cmd_BLNGGMM[38][0],
+        mipi_sh_andy_cmd_BLNGGMM[39][0],
+        mipi_sh_andy_cmd_BLNGGMM[40][0],
+        mipi_sh_andy_cmd_BLNGGMM[41][0],
+        mipi_sh_andy_cmd_BLNGGMM[42][0],
+        mipi_sh_andy_cmd_BLNGGMM[43][0],
+        mipi_sh_andy_cmd_BLNGGMM[44][0],
+        mipi_sh_andy_cmd_BLNGGMM[45][0],
+        mipi_sh_andy_cmd_BLNGGMM[46][0],
+        mipi_sh_andy_cmd_BLNGGMM[47][0],
+        mipi_sh_andy_cmd_BLNGGMM[48][0],
+        mipi_sh_andy_cmd_BLNGGMM[49][0],
+        mipi_sh_andy_cmd_BLNGGMM[50][0],
+        mipi_sh_andy_cmd_BLNGGMM[51][0],
+        mipi_sh_andy_cmd_BLNGGMM[52][0],
+        mipi_sh_andy_cmd_BLNGGMM[53][0],
+        mipi_sh_andy_cmd_BLNGGMM[54][0],
+        mipi_sh_andy_cmd_BLNGGMM[55][0],
+        mipi_sh_andy_cmd_BLNGGMM[56][0],
+        mipi_sh_andy_cmd_BLNGGMM[57][0],
+        mipi_sh_andy_cmd_BLNGGMM[58][0],
+        mipi_sh_andy_cmd_BLNGGMM[59][0],
         mipi_sh_andy_cmd_SwitchCommand[1][0],
         mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGH][0],
         mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGL][0],
@@ -1503,30 +1499,30 @@ static int shdisp_andy_diag_set_gammatable_and_voltage(struct shdisp_diag_gamma_
 
     SHDISP_TRACE("in");
 
-    for (i = 0; i < SHDISP_ANDY_GAMMA_SETTING_SIZE; i++) {
+    for (i = 0; i < SHDISP_ANDY_GMM_SETTING_SIZE; i++) {
         if (i == 0) {
-            andy_gamma_wdata[j++] = mipi_sh_andy_cmd_SwitchCommand[1][1];
+            andy_gmm_wdata[j++] = mipi_sh_andy_cmd_SwitchCommand[1][1];
         }
-        andy_gamma_wdata[j++] = ((gamma_info->gammaR[i] >> 8) & 0x0003);
-        andy_gamma_wdata[j++] = (gamma_info->gammaR[i] & 0x00FF);
+        andy_gmm_wdata[j++] = ((gmm_info->gammaR[i] >> 8) & 0x0003);
+        andy_gmm_wdata[j++] = (gmm_info->gammaR[i] & 0x00FF);
     }
 
-    for (i = 0; i < SHDISP_ANDY_GAMMA_SETTING_SIZE; i++) {
+    for (i = 0; i < SHDISP_ANDY_GMM_SETTING_SIZE; i++) {
         if (i == 6) {
-            andy_gamma_wdata[j++] = mipi_sh_andy_cmd_SwitchCommand[2][1];
+            andy_gmm_wdata[j++] = mipi_sh_andy_cmd_SwitchCommand[2][1];
         }
-        andy_gamma_wdata[j++] = ((gamma_info->gammaG[i] >> 8) & 0x0003);
-        andy_gamma_wdata[j++] = (gamma_info->gammaG[i] & 0x00FF);
+        andy_gmm_wdata[j++] = ((gmm_info->gammaG[i] >> 8) & 0x0003);
+        andy_gmm_wdata[j++] = (gmm_info->gammaG[i] & 0x00FF);
     }
 
-    for (i = 0; i < SHDISP_ANDY_GAMMA_SETTING_SIZE; i++) {
-        andy_gamma_wdata[j++] = ((gamma_info->gammaB[i] >> 8) & 0x0003);
-        andy_gamma_wdata[j++] = (gamma_info->gammaB[i] & 0x00FF);
+    for (i = 0; i < SHDISP_ANDY_GMM_SETTING_SIZE; i++) {
+        andy_gmm_wdata[j++] = ((gmm_info->gammaB[i] >> 8) & 0x0003);
+        andy_gmm_wdata[j++] = (gmm_info->gammaB[i] & 0x00FF);
     }
 
     if (!set_applied_voltage) {
         for (i = 0; i < j; i++) {
-            ret = shdisp_panel_API_mipi_diag_write_reg(SHDISP_DTYPE_DCS_WRITE1, andy_gamma_addr[i], &andy_gamma_wdata[i], 1);
+            ret = shdisp_panel_API_mipi_diag_write_reg(SHDISP_DTYPE_DCS_WRITE1, andy_gmm_addr[i], &andy_gmm_wdata[i], 1);
             if (ret) {
                 SHDISP_ERR("<RESULT_FAILURE> shdisp_panel_API_mipi_diag_write_reg!!" );
                 goto shdisp_end;
@@ -1535,26 +1531,26 @@ static int shdisp_andy_diag_set_gammatable_and_voltage(struct shdisp_diag_gamma_
         goto shdisp_end;
     }
 
-    andy_gamma_wdata[j++] = mipi_sh_andy_cmd_SwitchCommand[1][1];
-    andy_gamma_wdata[j++] = gamma_info->vgh;
-    andy_gamma_wdata[j++] = gamma_info->vgl;
-    andy_gamma_wdata[j++] = gamma_info->gvddp;
-    andy_gamma_wdata[j++] = gamma_info->gvddn;
-    andy_gamma_wdata[j++] = gamma_info->gvddp2;
-    andy_gamma_wdata[j++] = gamma_info->vgho;
-    andy_gamma_wdata[j++] = gamma_info->vglo;
-    andy_gamma_wdata[j++] = gamma_info->avddr;
-    andy_gamma_wdata[j++] = gamma_info->aveer;
+    andy_gmm_wdata[j++] = mipi_sh_andy_cmd_SwitchCommand[1][1];
+    andy_gmm_wdata[j++] = gmm_info->vgh;
+    andy_gmm_wdata[j++] = gmm_info->vgl;
+    andy_gmm_wdata[j++] = gmm_info->gvddp;
+    andy_gmm_wdata[j++] = gmm_info->gvddn;
+    andy_gmm_wdata[j++] = gmm_info->gvddp2;
+    andy_gmm_wdata[j++] = gmm_info->vgho;
+    andy_gmm_wdata[j++] = gmm_info->vglo;
+    andy_gmm_wdata[j++] = gmm_info->avddr;
+    andy_gmm_wdata[j++] = gmm_info->aveer;
 
     for (i = 0; i < j; i++) {
-        ret = shdisp_panel_API_mipi_diag_write_reg(SHDISP_DTYPE_DCS_WRITE1, andy_gamma_addr[i], &andy_gamma_wdata[i], 1);
+        ret = shdisp_panel_API_mipi_diag_write_reg(SHDISP_DTYPE_DCS_WRITE1, andy_gmm_addr[i], &andy_gmm_wdata[i], 1);
         if (ret) {
             SHDISP_ERR("<RESULT_FAILURE> shdisp_panel_API_mipi_diag_write_reg!!" );
             goto shdisp_end;
         }
     }
-    memcpy(&diag_tmp_gamma_info, gamma_info, sizeof(diag_tmp_gamma_info));
-    diag_tmp_gamma_info_set = 1;
+    memcpy(&diag_tmp_gmm_info, gmm_info, sizeof(diag_tmp_gmm_info));
+    diag_tmp_gmm_info_set = 1;
 
 shdisp_end:
     ret = shdisp_panel_API_mipi_diag_write_reg(SHDISP_DTYPE_DCS_WRITE1,
@@ -1571,25 +1567,25 @@ shdisp_end:
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_andy_diag_get_gammatable_and_voltage                               */
+/* shdisp_andy_diag_get_gmmtable_and_voltage                                 */
 /* ------------------------------------------------------------------------- */
-static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_info *gamma_info,
+static int shdisp_andy_diag_get_gmmtable_and_voltage(struct shdisp_diag_gamma_info *gmm_info,
                                                        int set_applied_voltage)
 {
     int i, j;
     int ret = 0;
     unsigned char andy_rdata[1];
-    unsigned short andy_temp_data[SHDISP_ANDY_GAMMA_SETTING_SIZE];
+    unsigned short andy_temp_data[SHDISP_ANDY_GMM_SETTING_SIZE];
 
     SHDISP_TRACE("in");
 
-    if (gamma_info == NULL) {
-        SHDISP_ERR("<NULL_POINTER> gamma_info.");
+    if (gmm_info == NULL) {
+        SHDISP_ERR("<NULL_POINTER> gmm_info.");
         return SHDISP_RESULT_FAILURE;
     }
 
     memset(andy_temp_data, 0, sizeof(andy_temp_data));
-    for (i = 0, j = 0; i < (SHDISP_ANDY_GAMMA_SETTING_SIZE / 2); i++) {
+    for (i = 0, j = 0; i < (SHDISP_ANDY_GMM_SETTING_SIZE / 2); i++) {
         if (i == 0) {
             ret = shdisp_panel_API_mipi_diag_write_reg(SHDISP_DTYPE_DCS_WRITE1,
                                                        mipi_sh_andy_cmd_SwitchCommand[1][0],
@@ -1602,7 +1598,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         }
         memset(andy_rdata, 0, sizeof(andy_rdata));
         ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
-                                                  mipi_sh_andy_cmd_GAMMAREDposi[j++][0],
+                                                  mipi_sh_andy_cmd_RDPSGMM[j++][0],
                                                   andy_rdata,
                                                   1);
         if (ret) {
@@ -1612,7 +1608,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         andy_temp_data[i] = ((andy_rdata[0] << 8) & 0x0300);
         memset(andy_rdata, 0, sizeof(andy_rdata));
         ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
-                                                  mipi_sh_andy_cmd_GAMMAREDposi[j++][0],
+                                                  mipi_sh_andy_cmd_RDPSGMM[j++][0],
                                                   andy_rdata,
                                                   1);
         if (ret) {
@@ -1622,10 +1618,10 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         andy_temp_data[i] |= (andy_rdata[0] & 0x00FF);
     }
 
-    for (i = SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET, j = 0; i < SHDISP_ANDY_GAMMA_SETTING_SIZE; i++) {
+    for (i = SHDISP_ANDY_GMM_NEGATIVE_OFFSET, j = 0; i < SHDISP_ANDY_GMM_SETTING_SIZE; i++) {
         memset(andy_rdata, 0, sizeof(andy_rdata));
         ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
-                                                  mipi_sh_andy_cmd_GAMMAREDnega[j++][0],
+                                                  mipi_sh_andy_cmd_RDNGGMM[j++][0],
                                                   andy_rdata,
                                                   1);
         if (ret) {
@@ -1635,7 +1631,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         andy_temp_data[i] = ((andy_rdata[0] << 8) & 0x0300);
         memset(andy_rdata, 0, sizeof(andy_rdata));
         ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
-                                                  mipi_sh_andy_cmd_GAMMAREDnega[j++][0],
+                                                  mipi_sh_andy_cmd_RDNGGMM[j++][0],
                                                   andy_rdata,
                                                   1);
         if (ret) {
@@ -1644,10 +1640,10 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         }
         andy_temp_data[i] |= (andy_rdata[0] & 0x00FF);
     }
-    memcpy(gamma_info->gammaR, andy_temp_data, sizeof(andy_temp_data));
+    memcpy(gmm_info->gammaR, andy_temp_data, sizeof(andy_temp_data));
 
     memset(andy_temp_data, 0, sizeof(andy_temp_data));
-    for (i = 0, j = 0; i < (SHDISP_ANDY_GAMMA_SETTING_SIZE / 2); i++) {
+    for (i = 0, j = 0; i < (SHDISP_ANDY_GMM_SETTING_SIZE / 2); i++) {
         if (i == 6) {
             ret = shdisp_panel_API_mipi_diag_write_reg(SHDISP_DTYPE_DCS_WRITE1,
                                                        mipi_sh_andy_cmd_SwitchCommand[2][0],
@@ -1660,7 +1656,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         }
         memset(andy_rdata, 0, sizeof(andy_rdata));
         ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
-                                                  mipi_sh_andy_cmd_GAMMAGREENposi[j++][0],
+                                                  mipi_sh_andy_cmd_GRPSGMM[j++][0],
                                                   andy_rdata,
                                                   1);
         if (ret) {
@@ -1670,7 +1666,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         andy_temp_data[i] = ((andy_rdata[0] << 8) & 0x0300);
         memset(andy_rdata, 0, sizeof(andy_rdata));
         ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
-                                                  mipi_sh_andy_cmd_GAMMAGREENposi[j++][0],
+                                                  mipi_sh_andy_cmd_GRPSGMM[j++][0],
                                                   andy_rdata,
                                                   1);
         if (ret) {
@@ -1680,10 +1676,10 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         andy_temp_data[i] |= (andy_rdata[0] & 0x00FF);
     }
 
-    for (i = SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET, j = 0; i < SHDISP_ANDY_GAMMA_SETTING_SIZE; i++) {
+    for (i = SHDISP_ANDY_GMM_NEGATIVE_OFFSET, j = 0; i < SHDISP_ANDY_GMM_SETTING_SIZE; i++) {
         memset(andy_rdata, 0, sizeof(andy_rdata));
         ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
-                                                  mipi_sh_andy_cmd_GAMMAGREENnega[j++][0],
+                                                  mipi_sh_andy_cmd_GRNGGMM[j++][0],
                                                   andy_rdata,
                                                   1);
         if (ret) {
@@ -1693,7 +1689,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         andy_temp_data[i] = ((andy_rdata[0] << 8) & 0x0300);
         memset(andy_rdata, 0, sizeof(andy_rdata));
         ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
-                                                  mipi_sh_andy_cmd_GAMMAGREENnega[j++][0],
+                                                  mipi_sh_andy_cmd_GRNGGMM[j++][0],
                                                   andy_rdata,
                                                   1);
         if (ret) {
@@ -1702,13 +1698,13 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         }
         andy_temp_data[i] |= (andy_rdata[0] & 0x00FF);
     }
-    memcpy(gamma_info->gammaG, andy_temp_data, sizeof(andy_temp_data));
+    memcpy(gmm_info->gammaG, andy_temp_data, sizeof(andy_temp_data));
 
     memset(andy_temp_data, 0, sizeof(andy_temp_data));
-    for (i = 0, j = 0; i < (SHDISP_ANDY_GAMMA_SETTING_SIZE / 2); i++) {
+    for (i = 0, j = 0; i < (SHDISP_ANDY_GMM_SETTING_SIZE / 2); i++) {
         memset(andy_rdata, 0, sizeof(andy_rdata));
         ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
-                                                  mipi_sh_andy_cmd_GAMMABLUEposi[j++][0],
+                                                  mipi_sh_andy_cmd_BLPSGMM[j++][0],
                                                   andy_rdata,
                                                   1);
         if (ret) {
@@ -1718,7 +1714,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         andy_temp_data[i] = ((andy_rdata[0] << 8) & 0x0300);
         memset(andy_rdata, 0, sizeof(andy_rdata));
         ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
-                                                  mipi_sh_andy_cmd_GAMMABLUEposi[j++][0],
+                                                  mipi_sh_andy_cmd_BLPSGMM[j++][0],
                                                   andy_rdata,
                                                   1);
         if (ret) {
@@ -1728,10 +1724,10 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         andy_temp_data[i] |= (andy_rdata[0] & 0x00FF);
     }
 
-    for (i = SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET, j = 0; i < SHDISP_ANDY_GAMMA_SETTING_SIZE; i++) {
+    for (i = SHDISP_ANDY_GMM_NEGATIVE_OFFSET, j = 0; i < SHDISP_ANDY_GMM_SETTING_SIZE; i++) {
         memset(andy_rdata, 0, sizeof(andy_rdata));
         ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
-                                                  mipi_sh_andy_cmd_GAMMABLUEnega[j++][0],
+                                                  mipi_sh_andy_cmd_BLNGGMM[j++][0],
                                                   andy_rdata,
                                                   1);
         if (ret) {
@@ -1741,7 +1737,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         andy_temp_data[i] = ((andy_rdata[0] << 8) & 0x0300);
         memset(andy_rdata, 0, sizeof(andy_rdata));
         ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
-                                                  mipi_sh_andy_cmd_GAMMABLUEnega[j++][0],
+                                                  mipi_sh_andy_cmd_BLNGGMM[j++][0],
                                                   andy_rdata,
                                                   1);
         if (ret) {
@@ -1750,7 +1746,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         }
         andy_temp_data[i] |= (andy_rdata[0] & 0x00FF);
     }
-    memcpy(gamma_info->gammaB, andy_temp_data, sizeof(andy_temp_data));
+    memcpy(gmm_info->gammaB, andy_temp_data, sizeof(andy_temp_data));
 
     if (!set_applied_voltage) {
         goto shdisp_end;
@@ -1774,7 +1770,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         SHDISP_ERR("<RESULT_FAILURE> mipi_sharp_diag_read_reg.");
         goto shdisp_end;
     }
-    gamma_info->vgh = andy_rdata[0];
+    gmm_info->vgh = andy_rdata[0];
 
     memset(andy_rdata, 0, sizeof(andy_rdata));
     ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
@@ -1785,7 +1781,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         SHDISP_ERR("<RESULT_FAILURE> mipi_sharp_diag_read_reg.");
         goto shdisp_end;
     }
-    gamma_info->vgl = andy_rdata[0];
+    gmm_info->vgl = andy_rdata[0];
 
     memset(andy_rdata, 0, sizeof(andy_rdata));
     ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
@@ -1796,7 +1792,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         SHDISP_ERR("<RESULT_FAILURE> mipi_sharp_diag_read_reg.");
         goto shdisp_end;
     }
-    gamma_info->gvddp = andy_rdata[0];
+    gmm_info->gvddp = andy_rdata[0];
 
     memset(andy_rdata, 0, sizeof(andy_rdata));
     ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
@@ -1807,7 +1803,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         SHDISP_ERR("<RESULT_FAILURE> mipi_sharp_diag_read_reg.");
         goto shdisp_end;
     }
-    gamma_info->gvddn = andy_rdata[0];
+    gmm_info->gvddn = andy_rdata[0];
 
     memset(andy_rdata, 0, sizeof(andy_rdata));
     ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
@@ -1818,7 +1814,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         SHDISP_ERR("<RESULT_FAILURE> mipi_sharp_diag_read_reg.");
         goto shdisp_end;
     }
-    gamma_info->gvddp2 = andy_rdata[0];
+    gmm_info->gvddp2 = andy_rdata[0];
 
     memset(andy_rdata, 0, sizeof(andy_rdata));
     ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
@@ -1829,7 +1825,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         SHDISP_ERR("<RESULT_FAILURE> mipi_sharp_diag_read_reg.");
         goto shdisp_end;
     }
-    gamma_info->vgho = andy_rdata[0];
+    gmm_info->vgho = andy_rdata[0];
 
     memset(andy_rdata, 0, sizeof(andy_rdata));
     ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
@@ -1840,7 +1836,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         SHDISP_ERR("<RESULT_FAILURE> mipi_sharp_diag_read_reg.");
         goto shdisp_end;
     }
-    gamma_info->vglo = andy_rdata[0];
+    gmm_info->vglo = andy_rdata[0];
 
     memset(andy_rdata, 0, sizeof(andy_rdata));
     ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
@@ -1851,7 +1847,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         SHDISP_ERR("<RESULT_FAILURE> mipi_sharp_diag_read_reg.");
         goto shdisp_end;
     }
-    gamma_info->avddr = andy_rdata[0];
+    gmm_info->avddr = andy_rdata[0];
 
     memset(andy_rdata, 0, sizeof(andy_rdata));
     ret = shdisp_panel_API_mipi_diag_read_reg(SHDISP_DTYPE_DCS_READ,
@@ -1862,7 +1858,7 @@ static int shdisp_andy_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_
         SHDISP_ERR("<RESULT_FAILURE> mipi_sharp_diag_read_reg.");
         goto shdisp_end;
     }
-    gamma_info->aveer = andy_rdata[0];
+    gmm_info->aveer = andy_rdata[0];
 
 shdisp_end:
     shdisp_panel_API_mipi_diag_write_reg(SHDISP_DTYPE_DCS_WRITE1,
@@ -1879,66 +1875,66 @@ shdisp_end:
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_andy_API_diag_set_gammatable_and_voltage                           */
+/* shdisp_andy_API_diag_set_gmmtable_and_voltage                             */
 /* ------------------------------------------------------------------------- */
-static int shdisp_andy_API_diag_set_gammatable_and_voltage(struct shdisp_diag_gamma_info *gamma_info)
+static int shdisp_andy_API_diag_set_gmmtable_and_voltage(struct shdisp_diag_gamma_info *gmm_info)
 {
     int ret = 0;
     int pcnt, ncnt, i;
 
     SHDISP_TRACE("in");
 
-    mdss_shdisp_dsi_cmd_clk_ctrl(true);
-    ret = shdisp_andy_diag_set_gammatable_and_voltage(gamma_info, 1);
-    mdss_shdisp_dsi_cmd_clk_ctrl(false);
+    mdss_shdisp_dsi_bus_clk_ctrl(true);
+    ret = shdisp_andy_diag_set_gmmtable_and_voltage(gmm_info, 1);
+    mdss_shdisp_dsi_bus_clk_ctrl(false);
     if (ret) {
         return ret;
     }
 
-    for (pcnt = 0; pcnt < SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET; pcnt++) {
-        ncnt = pcnt + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET;
+    for (pcnt = 0; pcnt < SHDISP_ANDY_GMM_NEGATIVE_OFFSET; pcnt++) {
+        ncnt = pcnt + SHDISP_ANDY_GMM_NEGATIVE_OFFSET;
         i = pcnt * 2;
-        mipi_sh_andy_cmd_GAMMAREDposi[i][1]       = ((gamma_info->gammaR[pcnt] >> 8) & 0x0003);
-        mipi_sh_andy_cmd_GAMMAREDposi[i + 1][1]   = ( gamma_info->gammaR[pcnt] & 0x00FF);
-        mipi_sh_andy_cmd_GAMMAREDnega[i][1]       = ((gamma_info->gammaR[ncnt] >> 8) & 0x0003);
-        mipi_sh_andy_cmd_GAMMAREDnega[i + 1][1]   = ( gamma_info->gammaR[ncnt] & 0x00FF);
-        mipi_sh_andy_cmd_GAMMAGREENposi[i][1]     = ((gamma_info->gammaG[pcnt] >> 8) & 0x0003);
-        mipi_sh_andy_cmd_GAMMAGREENposi[i + 1][1] = ( gamma_info->gammaG[pcnt] & 0x00FF);
-        mipi_sh_andy_cmd_GAMMAGREENnega[i][1]     = ((gamma_info->gammaG[ncnt] >> 8) & 0x0003);
-        mipi_sh_andy_cmd_GAMMAGREENnega[i + 1][1] = ( gamma_info->gammaG[ncnt] & 0x00FF);
-        mipi_sh_andy_cmd_GAMMABLUEposi[i][1]      = ((gamma_info->gammaB[pcnt] >> 8) & 0x0003);
-        mipi_sh_andy_cmd_GAMMABLUEposi[i + 1][1]  = ( gamma_info->gammaB[pcnt] & 0x00FF);
-        mipi_sh_andy_cmd_GAMMABLUEnega[i][1]      = ((gamma_info->gammaB[ncnt] >> 8) & 0x0003);
-        mipi_sh_andy_cmd_GAMMABLUEnega[i + 1][1]  = ( gamma_info->gammaB[ncnt] & 0x00FF);
+        mipi_sh_andy_cmd_RDPSGMM[i][1]       = ((gmm_info->gammaR[pcnt] >> 8) & 0x0003);
+        mipi_sh_andy_cmd_RDPSGMM[i + 1][1]   = ( gmm_info->gammaR[pcnt] & 0x00FF);
+        mipi_sh_andy_cmd_RDNGGMM[i][1]       = ((gmm_info->gammaR[ncnt] >> 8) & 0x0003);
+        mipi_sh_andy_cmd_RDNGGMM[i + 1][1]   = ( gmm_info->gammaR[ncnt] & 0x00FF);
+        mipi_sh_andy_cmd_GRPSGMM[i][1]     = ((gmm_info->gammaG[pcnt] >> 8) & 0x0003);
+        mipi_sh_andy_cmd_GRPSGMM[i + 1][1] = ( gmm_info->gammaG[pcnt] & 0x00FF);
+        mipi_sh_andy_cmd_GRNGGMM[i][1]     = ((gmm_info->gammaG[ncnt] >> 8) & 0x0003);
+        mipi_sh_andy_cmd_GRNGGMM[i + 1][1] = ( gmm_info->gammaG[ncnt] & 0x00FF);
+        mipi_sh_andy_cmd_BLPSGMM[i][1]      = ((gmm_info->gammaB[pcnt] >> 8) & 0x0003);
+        mipi_sh_andy_cmd_BLPSGMM[i + 1][1]  = ( gmm_info->gammaB[pcnt] & 0x00FF);
+        mipi_sh_andy_cmd_BLNGGMM[i][1]      = ((gmm_info->gammaB[ncnt] >> 8) & 0x0003);
+        mipi_sh_andy_cmd_BLNGGMM[i + 1][1]  = ( gmm_info->gammaB[ncnt] & 0x00FF);
     }
 
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGH][1]    = gamma_info->vgh;
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGL][1]    = gamma_info->vgl;
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_GVDDP][1]  = gamma_info->gvddp;
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_GVDDN][1]  = gamma_info->gvddn;
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_GVDDP2][1] = gamma_info->gvddp2;
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGHO][1]   = gamma_info->vgho;
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGLO][1]   = gamma_info->vglo;
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_AVDDR][1]  = gamma_info->avddr;
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_AVEER][1]  = gamma_info->aveer;
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGH][1]    = gmm_info->vgh;
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGL][1]    = gmm_info->vgl;
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_GVDDP][1]  = gmm_info->gvddp;
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_GVDDN][1]  = gmm_info->gvddn;
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_GVDDP2][1] = gmm_info->gvddp2;
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGHO][1]   = gmm_info->vgho;
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGLO][1]   = gmm_info->vglo;
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_AVDDR][1]  = gmm_info->avddr;
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_AVEER][1]  = gmm_info->aveer;
 
     SHDISP_TRACE("out");
     return SHDISP_RESULT_SUCCESS;
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_andy_API_diag_get_gammatable_and_voltage                           */
+/* shdisp_andy_API_diag_get_gmmtable_and_voltage                             */
 /* ------------------------------------------------------------------------- */
-static int shdisp_andy_API_diag_get_gammatable_and_voltage(struct shdisp_diag_gamma_info *gamma_info)
+static int shdisp_andy_API_diag_get_gmmtable_and_voltage(struct shdisp_diag_gamma_info *gmm_info)
 {
     int ret = 0;
 
     SHDISP_TRACE("in");
 
     shdisp_andy_stop_video();
-    mdss_shdisp_dsi_cmd_clk_ctrl(true);
-    ret = shdisp_andy_diag_get_gammatable_and_voltage(gamma_info, 1);
-    mdss_shdisp_dsi_cmd_clk_ctrl(false);
+    mdss_shdisp_dsi_bus_clk_ctrl(true);
+    ret = shdisp_andy_diag_get_gmmtable_and_voltage(gmm_info, 1);
+    mdss_shdisp_dsi_bus_clk_ctrl(false);
     shdisp_andy_start_video();
     if (ret) {
         return ret;
@@ -1949,116 +1945,116 @@ static int shdisp_andy_API_diag_get_gammatable_and_voltage(struct shdisp_diag_ga
 }
 
 /* ------------------------------------------------------------------------- */
-/* shdisp_andy_API_diag_set_gamma                                            */
+/* shdisp_andy_API_diag_set_gmm                                              */
 /* ------------------------------------------------------------------------- */
-static int shdisp_andy_API_diag_set_gamma(struct shdisp_diag_gamma *gamma)
+static int shdisp_andy_API_diag_set_gmm(struct shdisp_diag_gamma *gmm)
 {
     int ret = 0;
     int i = 0, j = 0, k = 0;
     int group_idx, level_idx, addr_idx;
-    unsigned char andy_gamma_wdata[26];
-    unsigned char andy_gamma_addr[26];
+    unsigned char andy_gmm_wdata[26];
+    unsigned char andy_gmm_addr[26];
 
     SHDISP_TRACE("in");
 
-    if ((gamma->level < SHDISP_ANDY_GAMMA_LEVEL_MIN) || (gamma->level > SHDISP_ANDY_GAMMA_LEVEL_MAX)) {
-        SHDISP_ERR("<INVALID_VALUE> gamma->level(%d).", gamma->level);
+    if ((gmm->level < SHDISP_ANDY_GMM_LEVEL_MIN) || (gmm->level > SHDISP_ANDY_GMM_LEVEL_MAX)) {
+        SHDISP_ERR("<INVALID_VALUE> gmm->level(%d).", gmm->level);
         return SHDISP_RESULT_FAILURE;
     }
 
-    if (!diag_tmp_gamma_info_set) {
+    if (!diag_tmp_gmm_info_set) {
         shdisp_andy_stop_video();
-        ret = shdisp_andy_diag_get_gammatable_and_voltage(&diag_tmp_gamma_info, 0);
+        ret = shdisp_andy_diag_get_gmmtable_and_voltage(&diag_tmp_gmm_info, 0);
         shdisp_andy_start_video();
         if (ret) {
-            SHDISP_ERR("<RESULT_FAILURE> shdisp_andy_diag_get_gammatable_and_voltage.");
+            SHDISP_ERR("<RESULT_FAILURE> shdisp_andy_diag_get_gmmtable_and_voltage.");
             goto shdisp_end;
         }
-        diag_tmp_gamma_info_set = 1;
+        diag_tmp_gmm_info_set = 1;
     }
 
-    diag_tmp_gamma_info.gammaR[gamma->level - 1] = gamma->gammaR_p;
-    diag_tmp_gamma_info.gammaR[SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET + (gamma->level - 1)] = gamma->gammaR_n;
-    diag_tmp_gamma_info.gammaG[gamma->level - 1] = gamma->gammaG_p;
-    diag_tmp_gamma_info.gammaG[SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET + (gamma->level - 1)] = gamma->gammaG_n;
-    diag_tmp_gamma_info.gammaB[gamma->level - 1] = gamma->gammaB_p;
-    diag_tmp_gamma_info.gammaB[SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET + (gamma->level - 1)] = gamma->gammaB_n;
+    diag_tmp_gmm_info.gammaR[gmm->level - 1] = gmm->gammaR_p;
+    diag_tmp_gmm_info.gammaR[SHDISP_ANDY_GMM_NEGATIVE_OFFSET + (gmm->level - 1)] = gmm->gammaR_n;
+    diag_tmp_gmm_info.gammaG[gmm->level - 1] = gmm->gammaG_p;
+    diag_tmp_gmm_info.gammaG[SHDISP_ANDY_GMM_NEGATIVE_OFFSET + (gmm->level - 1)] = gmm->gammaG_n;
+    diag_tmp_gmm_info.gammaB[gmm->level - 1] = gmm->gammaB_p;
+    diag_tmp_gmm_info.gammaB[SHDISP_ANDY_GMM_NEGATIVE_OFFSET + (gmm->level - 1)] = gmm->gammaB_n;
 
-    group_idx = (gamma->level - 1) / 2;
-    level_idx = group_idx * SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL;
-    addr_idx = group_idx * SHDISP_ANDY_GAMMA_GROUP_BELONG_ADDR;
+    group_idx = (gmm->level - 1) / 2;
+    level_idx = group_idx * SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL;
+    addr_idx = group_idx * SHDISP_ANDY_GMM_GROUP_BELONG_ADDR;
 
-    andy_gamma_wdata[j++] = mipi_sh_andy_cmd_SwitchCommand[1][1];
-    andy_gamma_addr[k++] = mipi_sh_andy_cmd_SwitchCommand[1][0];
+    andy_gmm_wdata[j++] = mipi_sh_andy_cmd_SwitchCommand[1][1];
+    andy_gmm_addr[k++] = mipi_sh_andy_cmd_SwitchCommand[1][0];
 
-    for (i = 0; i < SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL; i++) {
-        andy_gamma_wdata[j++] = ((diag_tmp_gamma_info.gammaR[level_idx + i] >> 8) & 0x0003);
-        andy_gamma_wdata[j++] = (diag_tmp_gamma_info.gammaR[level_idx + i] & 0x00FF);
-        andy_gamma_addr[k++] = mipi_sh_andy_cmd_GAMMAREDposi[addr_idx + i * SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL][0];
-        andy_gamma_addr[k++] =
-            mipi_sh_andy_cmd_GAMMAREDposi[addr_idx + i * SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL + 1][0];
+    for (i = 0; i < SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL; i++) {
+        andy_gmm_wdata[j++] = ((diag_tmp_gmm_info.gammaR[level_idx + i] >> 8) & 0x0003);
+        andy_gmm_wdata[j++] = (diag_tmp_gmm_info.gammaR[level_idx + i] & 0x00FF);
+        andy_gmm_addr[k++] = mipi_sh_andy_cmd_RDPSGMM[addr_idx + i * SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL][0];
+        andy_gmm_addr[k++] =
+            mipi_sh_andy_cmd_RDPSGMM[addr_idx + i * SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL + 1][0];
     }
 
-    for (i = 0; i < SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL; i++) {
-        andy_gamma_wdata[j++] =
-            ((diag_tmp_gamma_info.gammaR[level_idx + i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET] >> 8) & 0x0003);
-        andy_gamma_wdata[j++] =
-             (diag_tmp_gamma_info.gammaR[level_idx + i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET] & 0x00FF);
-        andy_gamma_addr[k++] = mipi_sh_andy_cmd_GAMMAREDnega[addr_idx + i * SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL][0];
-        andy_gamma_addr[k++] =
-            mipi_sh_andy_cmd_GAMMAREDnega[addr_idx + i * SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL + 1][0];
+    for (i = 0; i < SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL; i++) {
+        andy_gmm_wdata[j++] =
+            ((diag_tmp_gmm_info.gammaR[level_idx + i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET] >> 8) & 0x0003);
+        andy_gmm_wdata[j++] =
+             (diag_tmp_gmm_info.gammaR[level_idx + i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET] & 0x00FF);
+        andy_gmm_addr[k++] = mipi_sh_andy_cmd_RDNGGMM[addr_idx + i * SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL][0];
+        andy_gmm_addr[k++] =
+            mipi_sh_andy_cmd_RDNGGMM[addr_idx + i * SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL + 1][0];
     }
 
-    if (gamma->level > 6) {
-        andy_gamma_wdata[j++] = mipi_sh_andy_cmd_SwitchCommand[2][1];
-        andy_gamma_addr[k++] = mipi_sh_andy_cmd_SwitchCommand[2][0];
+    if (gmm->level > 6) {
+        andy_gmm_wdata[j++] = mipi_sh_andy_cmd_SwitchCommand[2][1];
+        andy_gmm_addr[k++] = mipi_sh_andy_cmd_SwitchCommand[2][0];
     }
-    for (i = 0; i < SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL; i++) {
-        andy_gamma_wdata[j++] = ((diag_tmp_gamma_info.gammaG[level_idx + i] >> 8) & 0x0003);
-        andy_gamma_wdata[j++] = (diag_tmp_gamma_info.gammaG[level_idx + i] & 0x00FF);
-        andy_gamma_addr[k++] =
-            mipi_sh_andy_cmd_GAMMAGREENposi[addr_idx + i * SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL][0];
-        andy_gamma_addr[k++] =
-            mipi_sh_andy_cmd_GAMMAGREENposi[addr_idx + i * SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL + 1][0];
-    }
-
-    if (gamma->level <= 6) {
-        andy_gamma_wdata[j++] = mipi_sh_andy_cmd_SwitchCommand[2][1];
-        andy_gamma_addr[k++] = mipi_sh_andy_cmd_SwitchCommand[2][0];
-    }
-    for (i = 0; i < SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL; i++) {
-        andy_gamma_wdata[j++] =
-            ((diag_tmp_gamma_info.gammaG[level_idx + i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET] >> 8) & 0x0003);
-        andy_gamma_wdata[j++] =
-             (diag_tmp_gamma_info.gammaG[level_idx + i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET] & 0x00FF);
-        andy_gamma_addr[k++]  =
-            mipi_sh_andy_cmd_GAMMAGREENnega[addr_idx + i * SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL][0];
-        andy_gamma_addr[k++]  =
-            mipi_sh_andy_cmd_GAMMAGREENnega[addr_idx + i * SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL + 1][0];
+    for (i = 0; i < SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL; i++) {
+        andy_gmm_wdata[j++] = ((diag_tmp_gmm_info.gammaG[level_idx + i] >> 8) & 0x0003);
+        andy_gmm_wdata[j++] = (diag_tmp_gmm_info.gammaG[level_idx + i] & 0x00FF);
+        andy_gmm_addr[k++] =
+            mipi_sh_andy_cmd_GRPSGMM[addr_idx + i * SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL][0];
+        andy_gmm_addr[k++] =
+            mipi_sh_andy_cmd_GRPSGMM[addr_idx + i * SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL + 1][0];
     }
 
-    for (i = 0; i < SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL; i++) {
-        andy_gamma_wdata[j++] = ((diag_tmp_gamma_info.gammaB[level_idx + i] >> 8) & 0x0003);
-        andy_gamma_wdata[j++] = (diag_tmp_gamma_info.gammaB[level_idx + i] & 0x00FF);
-        andy_gamma_addr[k++] = mipi_sh_andy_cmd_GAMMABLUEposi[addr_idx + i * SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL][0];
-        andy_gamma_addr[k++] =
-            mipi_sh_andy_cmd_GAMMABLUEposi[addr_idx + i * SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL + 1][0];
+    if (gmm->level <= 6) {
+        andy_gmm_wdata[j++] = mipi_sh_andy_cmd_SwitchCommand[2][1];
+        andy_gmm_addr[k++] = mipi_sh_andy_cmd_SwitchCommand[2][0];
+    }
+    for (i = 0; i < SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL; i++) {
+        andy_gmm_wdata[j++] =
+            ((diag_tmp_gmm_info.gammaG[level_idx + i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET] >> 8) & 0x0003);
+        andy_gmm_wdata[j++] =
+             (diag_tmp_gmm_info.gammaG[level_idx + i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET] & 0x00FF);
+        andy_gmm_addr[k++]  =
+            mipi_sh_andy_cmd_GRNGGMM[addr_idx + i * SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL][0];
+        andy_gmm_addr[k++]  =
+            mipi_sh_andy_cmd_GRNGGMM[addr_idx + i * SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL + 1][0];
     }
 
-    for (i = 0; i < SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL; i++) {
-        andy_gamma_wdata[j++] =
-            ((diag_tmp_gamma_info.gammaB[level_idx + i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET] >> 8) & 0x0003);
-        andy_gamma_wdata[j++] =
-             (diag_tmp_gamma_info.gammaB[level_idx + i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET] & 0x00FF);
-        andy_gamma_addr[k++] =
-            mipi_sh_andy_cmd_GAMMABLUEnega[addr_idx + i * SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL][0];
-        andy_gamma_addr[k++] =
-            mipi_sh_andy_cmd_GAMMABLUEnega[addr_idx + i * SHDISP_ANDY_GAMMA_GROUP_BELONG_LEVEL + 1][0];
+    for (i = 0; i < SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL; i++) {
+        andy_gmm_wdata[j++] = ((diag_tmp_gmm_info.gammaB[level_idx + i] >> 8) & 0x0003);
+        andy_gmm_wdata[j++] = (diag_tmp_gmm_info.gammaB[level_idx + i] & 0x00FF);
+        andy_gmm_addr[k++] = mipi_sh_andy_cmd_BLPSGMM[addr_idx + i * SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL][0];
+        andy_gmm_addr[k++] =
+            mipi_sh_andy_cmd_BLPSGMM[addr_idx + i * SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL + 1][0];
     }
 
-    for (i = 0; i < (sizeof(andy_gamma_addr) / sizeof(*andy_gamma_addr)); i++) {
-        ret = shdisp_panel_API_mipi_diag_write_reg(SHDISP_DTYPE_DCS_WRITE1, andy_gamma_addr[i],
-                                                            &andy_gamma_wdata[i], 1);
+    for (i = 0; i < SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL; i++) {
+        andy_gmm_wdata[j++] =
+            ((diag_tmp_gmm_info.gammaB[level_idx + i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET] >> 8) & 0x0003);
+        andy_gmm_wdata[j++] =
+             (diag_tmp_gmm_info.gammaB[level_idx + i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET] & 0x00FF);
+        andy_gmm_addr[k++] =
+            mipi_sh_andy_cmd_BLNGGMM[addr_idx + i * SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL][0];
+        andy_gmm_addr[k++] =
+            mipi_sh_andy_cmd_BLNGGMM[addr_idx + i * SHDISP_ANDY_GMM_GROUP_BELONG_LEVEL + 1][0];
+    }
+
+    for (i = 0; i < (sizeof(andy_gmm_addr) / sizeof(*andy_gmm_addr)); i++) {
+        ret = shdisp_panel_API_mipi_diag_write_reg(SHDISP_DTYPE_DCS_WRITE1, andy_gmm_addr[i],
+                                                            &andy_gmm_wdata[i], 1);
         if (ret) {
             SHDISP_ERR("<RESULT_FAILURE> shdisp_panel_API_mipi_diag_write_reg!!" );
             goto shdisp_end;
@@ -2148,13 +2144,16 @@ static int shdisp_panel_andy_reg_read(unsigned char addr, unsigned char *out_dat
     struct shdisp_dsi_cmd_desc cmd[1];
     char cmd_buf[1 + 2];
 
+    memset(cmd_buf, 0x00, sizeof(cmd_buf));
     cmd_buf[0] = addr;
     cmd_buf[1] = 0x00;
 
+    memset(cmd, 0x00, sizeof(cmd));
     cmd[0].dtype = SHDISP_DTYPE_DCS_READ;
     cmd[0].wait = 0x00;
     cmd[0].dlen = 1;
     cmd[0].payload = cmd_buf;
+    cmd[0].mode = 0;
 
     if (shdisp_panel_API_mipi_dsi_cmds_rx(out_data, cmd, 1) != SHDISP_RESULT_SUCCESS) {
         SHDISP_ERR("mipi_dsi_cmds_rx error");
@@ -2232,7 +2231,7 @@ static int shdisp_andy_mipi_cmd_lcd_off(void)
         SHDISP_ERR("mipi_dsi_cmds_tx error ret=%d", ret);
     }
 
-    diag_tmp_gamma_info_set = 0;
+    diag_tmp_gmm_info_set = 0;
 
     SHDISP_TRACE("out");
     return ret;
@@ -2323,23 +2322,14 @@ static int shdisp_andy_sleepout_wait_proc()
     SHDISP_TRACE("in");
 
     getnstimeofday(&ts_start);
-    memcpy(&ts_blk_start, &ts_start, sizeof(ts_blk_start));
 
     (void)shdisp_pm_API_als_user_manager(SHDISP_DEV_TYPE_LCD, SHDISP_DEV_REQ_INIT);
+    shdisp_SYS_API_delay_us(10*1000);
     shdisp_bdic_API_update_led_value();
-
-    getnstimeofday(&ts_blk_end);
-    wtime = (ts_blk_end.tv_sec - ts_blk_start.tv_sec) * 1000000;
-    wtime += (ts_blk_end.tv_nsec - ts_blk_start.tv_nsec) / 1000;
-    SHDISP_PERFORMANCE("rest of als_power_on wait=%lld, wtime=%llu", (10000 - wtime), wtime);
-
-    if (wtime < 10000) {
-        shdisp_SYS_API_delay_us(10000 - wtime);
-    }
 
     getnstimeofday(&ts_blk_start);
 
-    dsi_ret = MIPI_DSI_COMMAND_TX_COMMIT(mipi_sh_andy_cmds_gamma);
+    dsi_ret = MIPI_DSI_COMMAND_TX_COMMIT(mipi_sh_andy_cmds_gmm);
     if (dsi_ret != SHDISP_RESULT_SUCCESS) {
         SHDISP_ERR("mipi_dsi_cmds_tx error ret=%d", dsi_ret);
     }
@@ -2357,7 +2347,7 @@ static int shdisp_andy_sleepout_wait_proc()
     getnstimeofday(&ts_blk_end);
     wtime = (ts_blk_end.tv_sec - ts_blk_start.tv_sec) * 1000000;
     wtime += (ts_blk_end.tv_nsec - ts_blk_start.tv_nsec) / 1000;
-    SHDISP_PERFORMANCE("rest of gamma wait=%lld, wtime=%llu", (10000 - wtime), wtime);
+    SHDISP_PERFORMANCE("rest of gmm wait=%lld, wtime=%llu", (10000 - wtime), wtime);
 
     if (wtime < 10000) {
         shdisp_SYS_API_delay_us(10000 - wtime);
@@ -2448,9 +2438,9 @@ static int shdisp_andy_mipi_cmd_lcd_on(void)
 
 #ifndef SHDISP_NOT_SUPPORT_NO_OS
 /* ------------------------------------------------------------------------- */
-/* shdisp_andy_init_phy_gamma                                                */
+/* shdisp_andy_init_phy_gmm                                                  */
 /* ------------------------------------------------------------------------- */
-static int shdisp_andy_init_phy_gamma(struct shdisp_lcddr_phy_gamma_reg *phy_gamma)
+static int shdisp_andy_init_phy_gmm(struct shdisp_lcddr_phy_gmm_reg *phy_gmm)
 {
     int ret = SHDISP_RESULT_SUCCESS;
     int i;
@@ -2458,68 +2448,68 @@ static int shdisp_andy_init_phy_gamma(struct shdisp_lcddr_phy_gamma_reg *phy_gam
 
     SHDISP_TRACE("in");
 
-    if (phy_gamma == NULL) {
-        SHDISP_ERR("phy_gamma is NULL.");
+    if (phy_gmm == NULL) {
+        SHDISP_ERR("phy_gmm is NULL.");
         return SHDISP_RESULT_FAILURE;
     }
 
-    if (phy_gamma->status != SHDISP_LCDDR_GAMMA_STATUS_OK) {
-        SHDISP_DEBUG("gammg status invalid. status=%02x", phy_gamma->status);
+    if (phy_gmm->status != SHDISP_LCDDR_GMM_STATUS_OK) {
+        SHDISP_DEBUG("gammg status invalid. status=%02x", phy_gmm->status);
         ret = SHDISP_RESULT_FAILURE;
     } else {
-        checksum = phy_gamma->status;
-        for (i = 0; i < SHDISP_LCDDR_PHY_GAMMA_BUF_MAX; i++) {
-            checksum = checksum + phy_gamma->buf[i];
+        checksum = phy_gmm->status;
+        for (i = 0; i < SHDISP_LCDDR_PHY_GMM_BUF_MAX; i++) {
+            checksum = checksum + phy_gmm->buf[i];
         }
         for (i = 0; i < SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE; i++) {
-            checksum = checksum + phy_gamma->applied_voltage[i];
+            checksum = checksum + phy_gmm->applied_voltage[i];
         }
-        if ((checksum & 0x00FFFFFF) != phy_gamma->chksum) {
+        if ((checksum & 0x00FFFFFF) != phy_gmm->chksum) {
             SHDISP_DEBUG("%s: gammg chksum NG. chksum=%06x calc_chksum=%06x",
-                         __func__, phy_gamma->chksum, (checksum & 0x00FFFFFF));
+                         __func__, phy_gmm->chksum, (checksum & 0x00FFFFFF));
             ret = SHDISP_RESULT_FAILURE;
         }
     }
 
     if (ret == SHDISP_RESULT_FAILURE) {
-        SHDISP_ERR("phy_gamma error");
+        SHDISP_ERR("phy_gmm error");
         return SHDISP_RESULT_FAILURE;
     }
 
-    for (i = 0; i < SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET; i++) {
-        mipi_sh_andy_cmd_GAMMAREDposi[i * 2][1] = ((phy_gamma->buf[i] >> 8) & 0x0003);
-        mipi_sh_andy_cmd_GAMMAREDposi[i * 2 + 1][1] = (phy_gamma->buf[i] & 0x00FF);
-        mipi_sh_andy_cmd_GAMMAREDnega[i * 2][1] =
-            ((phy_gamma->buf[i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET] >> 8) & 0x0003);
-        mipi_sh_andy_cmd_GAMMAREDnega[i * 2 + 1][1] =
-            (phy_gamma->buf[i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET] & 0x00FF);
-        mipi_sh_andy_cmd_GAMMAGREENposi[i * 2][1] =
-            ((phy_gamma->buf[i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET * 2] >> 8) & 0x0003);
-        mipi_sh_andy_cmd_GAMMAGREENposi[i * 2 + 1][1] =
-            (phy_gamma->buf[i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET * 2] & 0x00FF);
-        mipi_sh_andy_cmd_GAMMAGREENnega[i * 2][1] =
-            ((phy_gamma->buf[i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET * 3] >> 8) & 0x0003);
-        mipi_sh_andy_cmd_GAMMAGREENnega[i * 2 + 1][1] =
-            (phy_gamma->buf[i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET * 3] & 0x00FF);
-        mipi_sh_andy_cmd_GAMMABLUEposi[i * 2][1] =
-            ((phy_gamma->buf[i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET * 4] >> 8) & 0x0003);
-        mipi_sh_andy_cmd_GAMMABLUEposi[i * 2 + 1][1] =
-            (phy_gamma->buf[i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET * 4] & 0x00FF);
-        mipi_sh_andy_cmd_GAMMABLUEnega[i * 2][1] =
-            ((phy_gamma->buf[i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET * 5] >> 8) & 0x0003);
-        mipi_sh_andy_cmd_GAMMABLUEnega[i * 2 + 1][1] =
-            (phy_gamma->buf[i + SHDISP_ANDY_GAMMA_NEGATIVE_OFFSET * 5] & 0x00FF);
+    for (i = 0; i < SHDISP_ANDY_GMM_NEGATIVE_OFFSET; i++) {
+        mipi_sh_andy_cmd_RDPSGMM[i * 2][1] = ((phy_gmm->buf[i] >> 8) & 0x0003);
+        mipi_sh_andy_cmd_RDPSGMM[i * 2 + 1][1] = (phy_gmm->buf[i] & 0x00FF);
+        mipi_sh_andy_cmd_RDNGGMM[i * 2][1] =
+            ((phy_gmm->buf[i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET] >> 8) & 0x0003);
+        mipi_sh_andy_cmd_RDNGGMM[i * 2 + 1][1] =
+            (phy_gmm->buf[i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET] & 0x00FF);
+        mipi_sh_andy_cmd_GRPSGMM[i * 2][1] =
+            ((phy_gmm->buf[i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET * 2] >> 8) & 0x0003);
+        mipi_sh_andy_cmd_GRPSGMM[i * 2 + 1][1] =
+            (phy_gmm->buf[i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET * 2] & 0x00FF);
+        mipi_sh_andy_cmd_GRNGGMM[i * 2][1] =
+            ((phy_gmm->buf[i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET * 3] >> 8) & 0x0003);
+        mipi_sh_andy_cmd_GRNGGMM[i * 2 + 1][1] =
+            (phy_gmm->buf[i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET * 3] & 0x00FF);
+        mipi_sh_andy_cmd_BLPSGMM[i * 2][1] =
+            ((phy_gmm->buf[i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET * 4] >> 8) & 0x0003);
+        mipi_sh_andy_cmd_BLPSGMM[i * 2 + 1][1] =
+            (phy_gmm->buf[i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET * 4] & 0x00FF);
+        mipi_sh_andy_cmd_BLNGGMM[i * 2][1] =
+            ((phy_gmm->buf[i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET * 5] >> 8) & 0x0003);
+        mipi_sh_andy_cmd_BLNGGMM[i * 2 + 1][1] =
+            (phy_gmm->buf[i + SHDISP_ANDY_GMM_NEGATIVE_OFFSET * 5] & 0x00FF);
     }
 
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGH][1] = phy_gamma->applied_voltage[0];
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGL][1] = phy_gamma->applied_voltage[1];
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_GVDDP][1] = phy_gamma->applied_voltage[2];
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_GVDDN][1] = phy_gamma->applied_voltage[3];
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_GVDDP2][1] = phy_gamma->applied_voltage[4];
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGHO][1] = phy_gamma->applied_voltage[5];
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGLO][1] = phy_gamma->applied_voltage[6];
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_AVDDR][1] = phy_gamma->applied_voltage[7];
-    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_AVEER][1] = phy_gamma->applied_voltage[8];
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGH][1] = phy_gmm->applied_voltage[0];
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGL][1] = phy_gmm->applied_voltage[1];
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_GVDDP][1] = phy_gmm->applied_voltage[2];
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_GVDDN][1] = phy_gmm->applied_voltage[3];
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_GVDDP2][1] = phy_gmm->applied_voltage[4];
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGHO][1] = phy_gmm->applied_voltage[5];
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_VGLO][1] = phy_gmm->applied_voltage[6];
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_AVDDR][1] = phy_gmm->applied_voltage[7];
+    mipi_sh_andy_cmd_RegulatorPumpSetting[SHDISP_ANDY_AVEER][1] = phy_gmm->applied_voltage[8];
 
     SHDISP_TRACE("out ret=%04x", ret);
     return ret;
@@ -2713,18 +2703,18 @@ static int shdisp_andy_dump_reg(void)
     printk("[SHDISP] shdisp_panel_ctx.vcom       = 0x%04X\n", shdisp_panel_ctx.vcom);
     printk("[SHDISP] shdisp_panel_ctx.vcom_low   = 0x%04X\n", shdisp_panel_ctx.vcom_low);
     printk("[SHDISP] shdisp_panel_ctx.vcom_nvram = 0x%04X\n", shdisp_panel_ctx.vcom_nvram);
-    printk("[SHDISP] shdisp_panel_ctx.lcddr_phy_gamma.status = %d\n", shdisp_panel_ctx.lcddr_phy_gamma.status);
-    printk("[SHDISP] shdisp_panel_ctx.lcddr_phy_gamma.buf = ");
-    for (i = 0; i < SHDISP_LCDDR_PHY_GAMMA_BUF_MAX; i++) {
-        printk("%02X,", shdisp_panel_ctx.lcddr_phy_gamma.buf[i]);
+    printk("[SHDISP] shdisp_panel_ctx.lcddr_phy_gmm.status = %d\n", shdisp_panel_ctx.lcddr_phy_gmm.status);
+    printk("[SHDISP] shdisp_panel_ctx.lcddr_phy_gmm.buf = ");
+    for (i = 0; i < SHDISP_LCDDR_PHY_GMM_BUF_MAX; i++) {
+        printk("%02X,", shdisp_panel_ctx.lcddr_phy_gmm.buf[i]);
     }
     printk("\n");
-    printk("[SHDISP] shdisp_panel_ctx.lcddr_phy_gamma.applied_voltage = ");
+    printk("[SHDISP] shdisp_panel_ctx.lcddr_phy_gmm.applied_voltage = ");
     for (i = 0; i < SHDISP_LCDDR_APPLIED_VOLTAGE_SIZE; i++) {
-        printk("%02X,", shdisp_panel_ctx.lcddr_phy_gamma.applied_voltage[i]);
+        printk("%02X,", shdisp_panel_ctx.lcddr_phy_gmm.applied_voltage[i]);
     }
     printk("\n");
-    printk("[SHDISP] shdisp_panel_ctx.lcddr_phy_gamma.chksum = %d\n", shdisp_panel_ctx.lcddr_phy_gamma.chksum);
+    printk("[SHDISP] shdisp_panel_ctx.lcddr_phy_gmm.chksum = %d\n", shdisp_panel_ctx.lcddr_phy_gmm.chksum);
 
     arraysize = ARRAY_SIZE(mipi_sh_andy_cmds_initial1);
     dumpptr = mipi_sh_andy_cmds_initial1;
@@ -2784,8 +2774,8 @@ static int shdisp_andy_dump_reg(void)
         dumpptr++;
     }
 
-    arraysize = ARRAY_SIZE(mipi_sh_andy_cmds_gamma);
-    dumpptr = mipi_sh_andy_cmds_gamma;
+    arraysize = ARRAY_SIZE(mipi_sh_andy_cmds_gmm);
+    dumpptr = mipi_sh_andy_cmds_gmm;
     for (i = 0; i < arraysize; i++) {
         addr = *(dumpptr->payload);
         if (addr == 0xFF) {

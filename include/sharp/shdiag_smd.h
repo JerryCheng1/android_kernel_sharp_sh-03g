@@ -27,6 +27,8 @@
 #define SHDIAG_IOCTL_SET_PROADJ      _IOW  (SHDIAG_IOC_MAGIC,  2, struct shdiag_procadj)
 #define SHDIAG_IOCTL_GET_HW_REVISION _IOR  (SHDIAG_IOC_MAGIC,  3, unsigned long)
 #define SHDIAG_IOCTL_SET_HAPTICSCAL  _IOW  (SHDIAG_IOC_MAGIC,  4, struct shdiag_hapticscal)
+#define SHDIAG_IOCTL_SET_MSMFB_OVERLAY_ID  _IOW  (SHDIAG_IOC_MAGIC,  5, int)
+#define SHDIAG_IOCTL_GET_MSMFB_OVERLAY_ID  _IOR  (SHDIAG_IOC_MAGIC,  6, int)
 
 /* SHDIAG BOOT MODE */
 #define D_SHDIAG_BOOT_NORMAL			0x00	/* Normal Mode    */

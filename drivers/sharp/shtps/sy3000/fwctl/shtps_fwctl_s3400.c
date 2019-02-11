@@ -1,6 +1,6 @@
 /* drivers/sharp/shtps/sy3000/shtps_fwctl_s3400.c
  *
- * Copyright (c) 2014, Sharp. All rights reserved.
+ * Copyright (c) 2015, Sharp. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -82,6 +82,7 @@ static void shtps_fwctl_s3400_get_pen_jitter(struct shtps_fwctl_info *fc_p, u8 *
 static void shtps_fwctl_s3400_get_segmentation_aggressiveness(struct shtps_fwctl_info *fc_p, u8 *val_p);
 static void shtps_fwctl_s3400_get_pixel_touch_threshold_def_val(struct shtps_fwctl_info *fc_p, u8 *val_p);
 static int shtps_fwctl_s3400_set_doze(struct shtps_fwctl_info *fc_p);
+static int shtps_fwctl_s3400_set_doze_param(struct shtps_fwctl_info *fc_p, u8 *param_p, u8 param_size);
 static int shtps_fwctl_s3400_set_active(struct shtps_fwctl_info *fc_p);
 static int shtps_fwctl_s3400_set_sleepmode_on(struct shtps_fwctl_info *fc_p);
 static int shtps_fwctl_s3400_set_sleepmode_off(struct shtps_fwctl_info *fc_p);
@@ -146,6 +147,14 @@ static int shtps_fwctl_s3400_command_force_update(struct shtps_fwctl_info *fc_p)
 static int shtps_fwctl_s3400_command_force_cal(struct shtps_fwctl_info *fc_p);
 static int shtps_fwctl_s3400_f54_command_completion_wait(struct shtps_fwctl_info *fc_p, int max, int interval);
 static int shtps_fwctl_s3400_set_custom_report_rate(struct shtps_fwctl_info *fc_p, u8 rate);
+static int shtps_fwctl_s3400_set_lpwg_sweep_on(struct shtps_fwctl_info *fc_p, u8 enable);
+static int shtps_fwctl_s3400_set_lpwg_double_tap(struct shtps_fwctl_info *fc_p, u8 enable);
+static int shtps_fwctl_s3400_set_palm_amplitude_threshold(struct shtps_fwctl_info *fc_p, u8 threshold);
+static void shtps_fwctl_s3400_get_palm_amplitude_threshold(struct shtps_fwctl_info *fc_p, u8 *val_p);
+static int shtps_fwctl_s3400_set_palm_area(struct shtps_fwctl_info *fc_p, u8 area);
+static void shtps_fwctl_s3400_get_palm_area(struct shtps_fwctl_info *fc_p, u8 *val_p);
+static int shtps_fwctl_s3400_set_palm_filter_mode_enable(struct shtps_fwctl_info *fc_p);
+static int shtps_fwctl_s3400_set_palm_filter_mode_disable(struct shtps_fwctl_info *fc_p);
 
 /* -------------------------------------------------------------------------- */
 static struct rmi_map* shtps_fwctl_s3400_ic_init(struct shtps_fwctl_info *fc_p)
@@ -707,6 +716,8 @@ static int shtps_fwctl_s3400_map_construct(struct shtps_fwctl_info *fc_p, int fu
 					DEVICE_ERR_CHECK(rc, err_exit);
 
 					fc_p->map_p->fn12.ctrl.maxFingerNum = maxFinger[1];
+
+					fc_p->map_p->fn12.ctrl.support_object_glove = ((F12_QUERY_SUPPORTEDOBJECTTYPES(fc_p->map_p->fn12.query.data) >> 5) & 0x01);
 				}
 
 				SHTPS_LOG_DBG_PRINT("F12 Query Data\n");
@@ -723,6 +734,7 @@ static int shtps_fwctl_s3400_map_construct(struct shtps_fwctl_info *fc_p, int fu
 				SHTPS_LOG_DBG_PRINT("DataStructure                  : 0x%02x\n", F12_QUERY_DATASTRUCTURE(fc_p->map_p->fn12.query.data));
 				SHTPS_LOG_DBG_PRINT("MaxPosition                    : (%d, %d)\n", fc_p->map_p->fn12.ctrl.maxXPosition, fc_p->map_p->fn12.ctrl.maxYPosition);
 				SHTPS_LOG_DBG_PRINT("MaxFingerNum                   : %d\n", fc_p->map_p->fn12.ctrl.maxFingerNum);
+				SHTPS_LOG_DBG_PRINT("SupportObject Glove            : %d\n", fc_p->map_p->fn12.ctrl.support_object_glove);
 				break;
 
 			case 0x34:
@@ -940,18 +952,32 @@ static int shtps_fwctl_s3400_map_construct(struct shtps_fwctl_info *fc_p, int fu
 
 	#if defined(SHTPS_CTRL_FW_REPORT_RATE)
 		M_READ_FUNC(fc_p,
-					fc_p->map_p->fn51.ctrlBase + F51_QUERY_CUSTOMREPORTRATEREGISTERADDRESS(fc_p->map_p->fn51.query.data),
+					fc_p->map_p->fn51.ctrlBase + F51_QUERY_CUSTOMREPORTRATEREGISTERADDRESS(fc_p->map_p->fn51.query.data) + 1,
 					&(fc_p->map_p->fn51_custom_report_rate_def), sizeof(fc_p->map_p->fn51_custom_report_rate_def));
 	#endif /* SHTPS_CTRL_FW_REPORT_RATE */
-	
-	#if defined(SHTPS_PEN_DETECT_ENABLE)
+
+	if(rc == 0){
+		rc = M_READ_PACKET_FUNC(fc_p,
+					fc_p->map_p->fn12.ctrl.num[23].addr,
+					&fc_p->map_p->reg_F12_CTRL23_object_report_enable,
+					1);
+	}
+
+	#if defined(SHTPS_INVERTING_GHOST_REJECTION_ENABLE)
 		if(rc == 0){
 			rc = M_READ_PACKET_FUNC(fc_p,
-						fc_p->map_p->fn12.ctrl.num[23].addr,
-						&fc_p->map_p->reg_F12_CTRL23_variable_pen_enable,
+						fc_p->map_p->fn12.ctrl.num[15].addr,
+						fc_p->map_p->reg_F12_CTRL15_val,
+						sizeof(fc_p->map_p->reg_F12_CTRL15_val));
+		}
+		
+		if(rc == 0){
+			rc = M_READ_PACKET_FUNC(fc_p,
+						fc_p->map_p->fn12.ctrl.num[22].addr,
+						&fc_p->map_p->reg_F12_CTRL22_val,
 						1);
 		}
-	#endif /* SHTPS_PEN_DETECT_ENABLE */
+	#endif /* SHTPS_INVERTING_GHOST_REJECTION_ENABLE */
 
 err_exit:
 	return rc;
@@ -1081,6 +1107,28 @@ static int shtps_fwctl_s3400_set_doze(struct shtps_fwctl_info *fc_p)
 }
 
 /* -------------------------------------------------------------------------- */
+static int shtps_fwctl_s3400_set_doze_param(struct shtps_fwctl_info *fc_p, u8 *param_p, u8 param_size)
+{
+	int rc;
+
+	if(param_size >= 1){
+		rc = M_WRITE_FUNC(fc_p, fc_p->map_p->fn01.ctrlBase + 0x02, param_p[0]);
+		if(rc != 0)	goto err_exit;
+	}
+	if(param_size >= 2){
+		rc = M_WRITE_FUNC(fc_p, fc_p->map_p->fn01.ctrlBase + 0x03, param_p[1]);
+		if(rc != 0)	goto err_exit;
+	}
+	if(param_size >= 3){
+		rc = M_WRITE_FUNC(fc_p, fc_p->map_p->fn01.ctrlBase + 0x04, param_p[2]);
+		if(rc != 0)	goto err_exit;
+	}
+
+err_exit:
+	return rc;
+}
+
+/* -------------------------------------------------------------------------- */
 static int shtps_fwctl_s3400_set_active(struct shtps_fwctl_info *fc_p)
 {
 	int rc;
@@ -1135,29 +1183,24 @@ static int shtps_fwctl_s3400_set_lpwg_mode_on(struct shtps_fwctl_info *fc_p)
 		M_WRITE_FUNC(fc_p, fc_p->map_p->fn1A.ctrlBase + 1, 0x00);
 	#endif /* SHTPS_PHYSICAL_KEY_ENABLE */
 
-	M_WRITE_FUNC(fc_p, fc_p->map_p->fn01.ctrlBase + 0x02, SHTPS_LPWG_DOZE_INTERVAL);
-	M_WRITE_FUNC(fc_p, fc_p->map_p->fn01.ctrlBase + 0x03, SHTPS_LPWG_DOZE_WAKEUP_THRESHOLD);
-	M_WRITE_FUNC(fc_p, fc_p->map_p->fn01.ctrlBase + 0x04, SHTPS_LPWG_DOZE_HOLDOFF);
+	if(SHTPS_LPWG_CLIP_SET_TYPE == 1){
+		M_WRITE_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[8].addr, 
+									fc_p->map_p->fn12_ctrl8_enable_settings, 
+									sizeof(fc_p->map_p->fn12_ctrl8_enable_settings));
 
-	M_WRITE_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[8].addr, 
-								fc_p->map_p->fn12_ctrl8_enable_settings, 
-								sizeof(fc_p->map_p->fn12_ctrl8_enable_settings));
-
-	#if defined(SHTPS_LPWG_F51_REPORT_BEYOND_ACTIVE_AREA_ENABLE)
-		M_WRITE_FUNC(fc_p, SHTPS_F51_REPORT_BEYOND_ACTIVE_AREA_ADDR,
-									fc_p->map_p->fn51_report_beyond_active_area_enable_settings);
-	#endif /* SHTPS_LPWG_F51_REPORT_BEYOND_ACTIVE_AREA_ENABLE */
+		#if defined(SHTPS_LPWG_F51_REPORT_BEYOND_ACTIVE_AREA_ENABLE)
+			M_WRITE_FUNC(fc_p, SHTPS_F51_REPORT_BEYOND_ACTIVE_AREA_ADDR,
+										fc_p->map_p->fn51_report_beyond_active_area_enable_settings);
+		#endif /* SHTPS_LPWG_F51_REPORT_BEYOND_ACTIVE_AREA_ENABLE */
+	}
 
 	M_WRITE_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[27].addr, 
 								fc_p->map_p->fn12_ctrl27_enable_settings, 
 								sizeof(fc_p->map_p->fn12_ctrl27_enable_settings));
 
-	#if defined(SHTPS_LPWG_CHANGE_SWIPE_DISTANCE_ENABLE)
-		M_WRITE_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[18].addr, 
-									fc_p->map_p->fn12_ctrl18_enable_settings, 
-									sizeof(fc_p->map_p->fn12_ctrl18_enable_settings));
-	#endif /* SHTPS_LPWG_CHANGE_SWIPE_DISTANCE_ENABLE */
-
+	M_WRITE_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[18].addr, 
+								fc_p->map_p->fn12_ctrl18_enable_settings, 
+								sizeof(fc_p->map_p->fn12_ctrl18_enable_settings));
 
 	#if defined( SHTPS_HOST_LPWG_MODE_ENABLE )
 		if(shtps_check_host_lpwg_enable() == 0){
@@ -1216,6 +1259,11 @@ static int shtps_fwctl_s3400_set_lpwg_mode_on(struct shtps_fwctl_info *fc_p)
 		}
 	#endif /* SHTPS_ACTIVE_SLEEP_WAIT_ALWAYS_ENABLE */
 
+	if(SHTPS_LPWG_CLIP_SET_TYPE == 2){
+		shtps_fwctl_s3400_command_force_update(fc_p);
+		shtps_fwctl_s3400_f54_command_completion_wait(fc_p, SHTPS_F54_COMMAND_WAIT_POLL_COUNT, SHTPS_F54_COMMAND_WAIT_POLL_INTERVAL);
+	}
+
 	return 0;	// no error check
 }
 
@@ -1223,11 +1271,10 @@ static int shtps_fwctl_s3400_set_lpwg_mode_on(struct shtps_fwctl_info *fc_p)
 static int shtps_fwctl_s3400_set_lpwg_mode_off(struct shtps_fwctl_info *fc_p)
 {
 	SHTPS_LOG_FWCTL_FUNC_CALL();
-	#if defined(SHTPS_LPWG_CHANGE_SWIPE_DISTANCE_ENABLE)
-		M_WRITE_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[18].addr, 
-									fc_p->map_p->fn12_ctrl18_disable_settings, 
-									sizeof(fc_p->map_p->fn12_ctrl18_disable_settings));
-	#endif /* SHTPS_LPWG_CHANGE_SWIPE_DISTANCE_ENABLE */
+
+	M_WRITE_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[18].addr, 
+								fc_p->map_p->fn12_ctrl18_disable_settings, 
+								sizeof(fc_p->map_p->fn12_ctrl18_disable_settings));
 
 	M_WRITE_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[27].addr, 
 								fc_p->map_p->fn12_ctrl27_disable_settings, 
@@ -1240,18 +1287,20 @@ static int shtps_fwctl_s3400_set_lpwg_mode_off(struct shtps_fwctl_info *fc_p)
 		M_WRITE_FUNC(fc_p, fc_p->map_p->fn1A.ctrlBase + 1, ((1 << SHTPS_PHYSICAL_KEY_NUM) - 1) & 0xFF);
 	#endif /* SHTPS_PHYSICAL_KEY_ENABLE */
 
-	M_WRITE_FUNC(fc_p, fc_p->map_p->fn01.ctrlBase + 0x02, SHTPS_LPWG_DOZE_INTERVAL_DEF);
-	M_WRITE_FUNC(fc_p, fc_p->map_p->fn01.ctrlBase + 0x03, SHTPS_LPWG_DOZE_WAKEUP_THRESHOLD_DEF);
-	M_WRITE_FUNC(fc_p, fc_p->map_p->fn01.ctrlBase + 0x04, SHTPS_LPWG_DOZE_HOLDOFF_DEF);
+	if(SHTPS_LPWG_CLIP_SET_TYPE == 1){
+		#if defined(SHTPS_LPWG_F51_REPORT_BEYOND_ACTIVE_AREA_ENABLE)
+			M_WRITE_FUNC(fc_p, SHTPS_F51_REPORT_BEYOND_ACTIVE_AREA_ADDR,
+										fc_p->map_p->fn51_report_beyond_active_area_disable_settings);
+		#endif /* SHTPS_LPWG_F51_REPORT_BEYOND_ACTIVE_AREA_ENABLE */
 
-	#if defined(SHTPS_LPWG_F51_REPORT_BEYOND_ACTIVE_AREA_ENABLE)
-		M_WRITE_FUNC(fc_p, SHTPS_F51_REPORT_BEYOND_ACTIVE_AREA_ADDR,
-									fc_p->map_p->fn51_report_beyond_active_area_disable_settings);
-	#endif /* SHTPS_LPWG_F51_REPORT_BEYOND_ACTIVE_AREA_ENABLE */
-
-	M_WRITE_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[8].addr, 
-								fc_p->map_p->fn12_ctrl8_disable_settings, 
-								sizeof(fc_p->map_p->fn12_ctrl8_disable_settings));
+		M_WRITE_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[8].addr, 
+									fc_p->map_p->fn12_ctrl8_disable_settings, 
+									sizeof(fc_p->map_p->fn12_ctrl8_disable_settings));
+	}
+	else if(SHTPS_LPWG_CLIP_SET_TYPE == 2){
+		shtps_fwctl_s3400_command_force_update(fc_p);
+		shtps_fwctl_s3400_f54_command_completion_wait(fc_p, SHTPS_F54_COMMAND_WAIT_POLL_COUNT, SHTPS_F54_COMMAND_WAIT_POLL_INTERVAL);
+	}
 
 	/* shtps_lpwg_disposal(fc_p); */
 
@@ -1521,8 +1570,29 @@ static int shtps_fwctl_s3400_get_keystate(struct shtps_fwctl_info *fc_p, u8 *sta
 /* -------------------------------------------------------------------------- */
 static int shtps_fwctl_s3400_get_gesturetype(struct shtps_fwctl_info *fc_p, u8 *status_p)
 {
+	int rc = 0;
+
 	SHTPS_LOG_FWCTL_FUNC_CALL();
-	return M_READ_FUNC(fc_p, fc_p->map_p->fn12.data.num[4].addr, status_p, 1);
+	rc = M_READ_FUNC(fc_p, fc_p->map_p->fn12.data.num[4].addr, status_p, 1);
+
+	SHTPS_LOG_DBG_PRINT("%s() get gesture <0x%02X><%s>\n", __func__, *status_p,
+							(*status_p == SHTPS_GESTURE_TYPE_NONE) ? "None" :
+							(*status_p == SHTPS_GESTURE_TYPE_ONE_FINGER_SINGLE_TAP) ? "One-Finger single tap" :
+							(*status_p == SHTPS_GESTURE_TYPE_ONE_FINGER_TAP_AND_HOLD) ? "One-Finger tap-and-hold" :
+							(*status_p == SHTPS_GESTURE_TYPE_ONE_FINGER_DOUBLE_TAP) ? "One-Finger double tap" :
+							(*status_p == SHTPS_GESTURE_TYPE_ONE_FINGER_EARLY_TAP) ? "One-Finger early tap" :
+							(*status_p == SHTPS_GESTURE_TYPE_ONE_FINGER_FLICK) ? "One-Finger flick" :
+							(*status_p == SHTPS_GESTURE_TYPE_ONE_FINGER_PRESS) ? "One-Finger press" :
+							(*status_p == SHTPS_GESTURE_TYPE_ONE_FINGER_SWIPE) ? "One-Finger swipe" :
+							(*status_p == SHTPS_GESTURE_TYPE_ONE_FINGER_CIRCLE) ? "Circle" :
+							(*status_p == SHTPS_GESTURE_TYPE_ONE_FINGER_TRIANGLE) ? "Triangle" :
+							(*status_p == SHTPS_GESTURE_TYPE_ONE_FINGER_VEE) ? "Vee" :
+							(*status_p == SHTPS_GESTURE_TYPE_TRIPLE_TAP) ? "Triple tap" :
+							(*status_p == SHTPS_GESTURE_TYPE_CLICK) ? "Click" :
+							(*status_p == SHTPS_GESTURE_TYPE_PINCH) ? "Pinch" :
+							(*status_p == SHTPS_GESTURE_TYPE_ROTATE) ? "Rotate" : "Unkown");
+
+	return rc;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1918,41 +1988,133 @@ static int shtps_fwctl_s3400_get_tm_baseline_raw(struct shtps_fwctl_info *fc_p, 
 /* -------------------------------------------------------------------------- */
 static int shtps_fwctl_s3400_get_tm_hybrid_adc(struct shtps_fwctl_info *fc_p, u8 tm_mode, u8 *tm_data_p)
 {
-	int i, j;
+	int i;
 	u8  tmp[SHTPS_TM_TXNUM_MAX * 4];
 	int index = 0;
 	int receive_num = shtps_fwctl_s3400_get_tm_rxsize(fc_p);
 	int trans_num   = shtps_fwctl_s3400_get_tm_txsize(fc_p);
-	int read_line_num = 1;
 
 	SHTPS_LOG_FWCTL_FUNC_CALL();
 
+	M_WRITE_FUNC(fc_p, fc_p->map_p->fn54.dataBase + 1, (index & 0xFF));
+	M_WRITE_FUNC(fc_p, fc_p->map_p->fn54.dataBase + 2, ((index >> 0x08) & 0xFF));
+
+	M_READ_PACKET_FUNC(fc_p, fc_p->map_p->fn54.dataBase + 3, tmp, receive_num * 4);
 	index += (receive_num * 4);
+		
+	for(i = 0;i < receive_num;i++){
+		tm_data_p[(i * 4)]     = tmp[i * 4];
+		tm_data_p[(i * 4) + 1] = tmp[(i * 4) + 1];
+		tm_data_p[(i * 4) + 2] = tmp[(i * 4) + 2];
+		tm_data_p[(i * 4) + 3] = tmp[(i * 4) + 3];
+	}
 
-	for(i = 0;i < read_line_num;i++){
-		M_WRITE_FUNC(fc_p, fc_p->map_p->fn54.dataBase + 1, (index & 0xFF));
-		M_WRITE_FUNC(fc_p, fc_p->map_p->fn54.dataBase + 2, ((index >> 0x08) & 0xFF));
+	M_WRITE_FUNC(fc_p, fc_p->map_p->fn54.dataBase + 1, (index & 0xFF));
+	M_WRITE_FUNC(fc_p, fc_p->map_p->fn54.dataBase + 2, ((index >> 0x08) & 0xFF));
 
-		M_READ_PACKET_FUNC(fc_p, fc_p->map_p->fn54.dataBase + 3, tmp, trans_num * 4);
-		index += (trans_num * 4);
-			
-		for(j = 0;j < trans_num;j++){
-			tm_data_p[(i * trans_num * 4) + (j * 4)]     = tmp[j * 4];
-			tm_data_p[(i * trans_num * 4) + (j * 4) + 1] = tmp[(j * 4) + 1];
-			tm_data_p[(i * trans_num * 4) + (j * 4) + 2] = tmp[(j * 4) + 2];
-			tm_data_p[(i * trans_num * 4) + (j * 4) + 3] = tmp[(j * 4) + 3];
-		}
+	M_READ_PACKET_FUNC(fc_p, fc_p->map_p->fn54.dataBase + 3, tmp, trans_num * 4);
+	index += (trans_num * 4);
+		
+	for(i = 0;i < trans_num;i++){
+		tm_data_p[(receive_num * 4) + (i * 4)]     = tmp[i * 4];
+		tm_data_p[(receive_num * 4) + (i * 4) + 1] = tmp[(i * 4) + 1];
+		tm_data_p[(receive_num * 4) + (i * 4) + 2] = tmp[(i * 4) + 2];
+		tm_data_p[(receive_num * 4) + (i * 4) + 3] = tmp[(i * 4) + 3];
 	}
 
 	#if defined( SHTPS_LOG_DEBUG_ENABLE )
 	{
-		for(i = 0;i < read_line_num;i++){
+		sprintf(sensor_log_outstr, "           ");
+		for(i = 0;i < SHTPS_TM_RXNUM_MAX;i++){
+			sprintf(sensor_log_tmp, "  [%02d]", i);
+			if(i < (trans_num - 1)){
+				strcat(sensor_log_tmp, " ");
+			}
+			strcat(sensor_log_outstr, sensor_log_tmp);
+		}
+		SHTPS_LOG_SENSOR_DATA_PRINT("%s\n", sensor_log_outstr);
+
+		sprintf(sensor_log_outstr, "           ");
+		for(i = 0;i < trans_num;i++){
+			sprintf(sensor_log_tmp, "%6d", 
+				(signed int)((tm_data_p[(receive_num * 4) + (i * 4) + 3] << 0x18) | 
+				             (tm_data_p[(receive_num * 4) + (i * 4) + 2] << 0x10) | 
+				             (tm_data_p[(receive_num * 4) + (i * 4) + 1] << 0x08) | 
+				             (tm_data_p[(receive_num * 4) + (i * 4)])) );
+			if(i < (trans_num - 1)){
+				strcat(sensor_log_tmp, ",");
+			}
+			strcat(sensor_log_outstr, sensor_log_tmp);
+		}
+		SHTPS_LOG_SENSOR_DATA_PRINT("%s\n", sensor_log_outstr);
+
+		for(i = 0;i < receive_num;i++){
+			sprintf(sensor_log_outstr, "[%02d]", i);
+			sprintf(sensor_log_tmp, "%6d", 
+				(signed int)((tm_data_p[(i * 4) + 3] << 0x18) | 
+				             (tm_data_p[(i * 4) + 2] << 0x10) | 
+				             (tm_data_p[(i * 4) + 1] << 0x08) | 
+				             (tm_data_p[(i * 4)])) );
+			strcat(sensor_log_outstr, sensor_log_tmp);
+			SHTPS_LOG_SENSOR_DATA_PRINT("%s\n", sensor_log_outstr);
+		}
+	}
+	#endif /* SHTPS_LOG_DEBUG_ENABLE */
+	
+	return 0;	// no error check
+}
+
+/* -------------------------------------------------------------------------- */
+static int shtps_fwctl_s3400_get_tm_adc_range(struct shtps_fwctl_info *fc_p, u8 tm_mode, u8 *tm_data_p)
+{
+	int i, j;
+	#if defined(SHTPS_DEF_FWTMDATA_REPLACE_ENABLE)
+		u8  tmp[SHTPS_FWTESTMODE_BLOCK_SIZE * 2];
+	#else
+		u8  tmp[SHTPS_TM_TXNUM_MAX * 2];
+	#endif /* SHTPS_DEF_FWTMDATA_REPLACE_ENABLE */
+	int index = 0;
+	int receive_num = shtps_fwctl_s3400_get_tm_rxsize(fc_p);
+	int trans_num   = shtps_fwctl_s3400_get_tm_txsize(fc_p);
+
+	SHTPS_LOG_FWCTL_FUNC_CALL();
+	memset(tmp, 0, sizeof(tmp));
+	#if defined(SHTPS_DEF_FWTMDATA_REPLACE_ENABLE)
+		for(i = 0;i < (trans_num * receive_num) / SHTPS_FWTESTMODE_BLOCK_SIZE;i++){
+			M_WRITE_FUNC(fc_p, fc_p->map_p->fn54.dataBase + 1, (index & 0xFF));
+			M_WRITE_FUNC(fc_p, fc_p->map_p->fn54.dataBase + 2, ((index >> 0x08) & 0xFF));
+
+			M_READ_FUNC(fc_p, fc_p->map_p->fn54.dataBase + 3, tmp, SHTPS_FWTESTMODE_BLOCK_SIZE * 2);
+			index += (SHTPS_FWTESTMODE_BLOCK_SIZE * 2);
+			
+			for(j = 0;j < SHTPS_FWTESTMODE_BLOCK_SIZE;j++){
+				int dst_index = SHTPS_FWTMDATA_CONV_TBL[i * SHTPS_FWTESTMODE_BLOCK_SIZE + j];
+				tm_data_p[dst_index * 2]     = tmp[j * 2];
+				tm_data_p[dst_index * 2 + 1] = tmp[(j * 2) + 1];
+			}
+		}
+	#else
+		for(i = 0;i < trans_num;i++){
+			M_WRITE_FUNC(fc_p, fc_p->map_p->fn54.dataBase + 1, (index & 0xFF));
+			M_WRITE_FUNC(fc_p, fc_p->map_p->fn54.dataBase + 2, ((index >> 0x08) & 0xFF));
+
+			M_READ_FUNC(fc_p, fc_p->map_p->fn54.dataBase + 3, tmp, receive_num * 2);
+			index += (receive_num * 2);
+				
+			for(j = 0;j < receive_num;j++){
+				tm_data_p[(j * trans_num * 2) + (i * 2)]     = tmp[j * 2];
+				tm_data_p[(j * trans_num * 2) + (i * 2) + 1] = tmp[(j * 2) + 1];
+			}
+		}
+	#endif /* SHTPS_DEF_FWTMDATA_REPLACE_ENABLE */
+
+	#if defined( SHTPS_LOG_DEBUG_ENABLE )
+	{
+		for(i = 0;i < receive_num;i++){
 			for(j = 0, sensor_log_outstr[0] = '\0';j < trans_num;j++){
-				sprintf(sensor_log_tmp, "%6d", 
-					(signed int)((tm_data_p[(i * trans_num * 4) + (j * 4) + 3] << 0x18) | 
-					             (tm_data_p[(i * trans_num * 4) + (j * 4) + 2] << 0x10) | 
-					             (tm_data_p[(i * trans_num * 4) + (j * 4) + 1] << 0x08) | 
-					             (tm_data_p[(i * trans_num * 4) + (j * 4)])) );
+				sprintf(sensor_log_tmp, "%5d", 
+					(signed short)(tm_data_p[(i * trans_num * 2) + (j * 2) + 1] << 0x08 | 
+					               tm_data_p[(i * trans_num * 2) + (j * 2)]));
 				if(j < (trans_num - 1)){
 					strcat(sensor_log_tmp, ", ");
 				}
@@ -2010,6 +2172,19 @@ static int shtps_fwctl_s3400_cmd_tm_hybrid_adc(struct shtps_fwctl_info *fc_p, u8
 	int rc;
 	SHTPS_LOG_FWCTL_FUNC_CALL();
 	rc = M_WRITE_FUNC(fc_p, fc_p->map_p->fn54.dataBase, 0x3B);
+	if(rc == 0)	rc = M_WRITE_FUNC(fc_p, fc_p->map_p->fn54.commandBase, 0x01);
+	if(rc != 0){
+		SHTPS_LOG_ERR_PRINT("%s(): err %d\n", __func__, rc);
+	}
+	return 0;
+}
+
+/* -------------------------------------------------------------------------- */
+static int shtps_fwctl_s3400_cmd_tm_adc_range(struct shtps_fwctl_info *fc_p, u8 tm_mode)
+{
+	int rc;
+	SHTPS_LOG_FWCTL_FUNC_CALL();
+	rc = M_WRITE_FUNC(fc_p, fc_p->map_p->fn54.dataBase, 0x17);
 	if(rc == 0)	rc = M_WRITE_FUNC(fc_p, fc_p->map_p->fn54.commandBase, 0x01);
 	if(rc != 0){
 		SHTPS_LOG_ERR_PRINT("%s(): err %d\n", __func__, rc);
@@ -2109,17 +2284,12 @@ static int shtps_fwctl_s3400_initparam_lpwgmode(struct shtps_fwctl_info *fc_p)
 {
 	int rc = 0;
 
-	SHTPS_LOG_FWCTL_FUNC_CALL();
-	rc = M_WRITE_FUNC(fc_p, fc_p->map_p->fn01.ctrlBase + 0x02, SHTPS_LPWG_DOZE_INTERVAL_DEF);
-	if(rc != 0)	goto err_exit;
+	u8 doze_param[3] = {SHTPS_LPWG_DOZE_INTERVAL_DEF,
+						SHTPS_LPWG_DOZE_WAKEUP_THRESHOLD_DEF,
+						SHTPS_LPWG_DOZE_HOLDOFF_DEF};
 
-	rc = M_WRITE_FUNC(fc_p, fc_p->map_p->fn01.ctrlBase + 0x03, SHTPS_LPWG_DOZE_WAKEUP_THRESHOLD_DEF);
-	if(rc != 0)	goto err_exit;
+	rc = shtps_fwctl_s3400_set_doze_param(fc_p, doze_param, sizeof(doze_param));
 
-	rc = M_WRITE_FUNC(fc_p, fc_p->map_p->fn01.ctrlBase + 0x04, SHTPS_LPWG_DOZE_HOLDOFF_DEF);
-	if(rc != 0)	goto err_exit;
-
-err_exit:
 	return rc;
 }
 
@@ -2289,7 +2459,8 @@ static int shtps_fwctl_s3400_pen_enable(struct shtps_fwctl_info *fc_p)
 {
 	SHTPS_LOG_FWCTL_FUNC_CALL();
 #if defined(SHTPS_PEN_DETECT_ENABLE)
-	return M_WRITE_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[23].addr, fc_p->map_p->reg_F12_CTRL23_variable_pen_enable);
+	fc_p->map_p->reg_F12_CTRL23_object_report_enable |= 0x02;
+	return M_WRITE_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[23].addr, fc_p->map_p->reg_F12_CTRL23_object_report_enable);
 #else
 	return 0;
 #endif
@@ -2300,7 +2471,8 @@ static int shtps_fwctl_s3400_pen_disable(struct shtps_fwctl_info *fc_p)
 {
 	SHTPS_LOG_FWCTL_FUNC_CALL();
 #if defined(SHTPS_PEN_DETECT_ENABLE)
-	return M_WRITE_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[23].addr, fc_p->map_p->reg_F12_CTRL23_variable_pen_enable & ~(0x02));
+	fc_p->map_p->reg_F12_CTRL23_object_report_enable &= (~0x02);
+	return M_WRITE_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[23].addr, fc_p->map_p->reg_F12_CTRL23_object_report_enable);
 #else
 	return 0;
 #endif
@@ -2519,37 +2691,6 @@ static int shtps_fwctl_s3400_initparam_land_lock_distance(struct shtps_fwctl_inf
 static int shtps_fwctl_s3400_get_lpwg_def_settings(struct shtps_fwctl_info *fc_p)
 {
 	SHTPS_LOG_FWCTL_FUNC_CALL();
-	M_READ_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[8].addr,
-								fc_p->map_p->fn12_ctrl8_disable_settings, 
-								sizeof(fc_p->map_p->fn12_ctrl8_disable_settings));
-
-	memcpy(fc_p->map_p->fn12_ctrl8_enable_settings, 
-				fc_p->map_p->fn12_ctrl8_disable_settings, sizeof(fc_p->map_p->fn12_ctrl8_enable_settings));
-	{
-		u16 rx_pitch = 0;
-		u16 tx_pitch = 0;
-		u8 rx_clip = 0;
-		u8 tx_clip = 0;
-
-		rx_pitch = (((((fc_p->map_p->fn12_ctrl8_enable_settings[5] << 8) | fc_p->map_p->fn12_ctrl8_enable_settings[4]) * 100) * 16) / 65535);
-		tx_pitch = (((((fc_p->map_p->fn12_ctrl8_enable_settings[7] << 8) | fc_p->map_p->fn12_ctrl8_enable_settings[6]) * 100) * 16) / 65535);
-
-		if(rx_pitch > 0){
-			rx_clip = ((((SHTPS_LPWG_RX_CLIP_AREA_MM * 100) * 128) / rx_pitch) & 0xFF);
-		}
-		if(tx_pitch > 0){
-			tx_clip = ((((SHTPS_LPWG_TX_CLIP_AREA_MM * 100) * 128) / tx_pitch) & 0xFF);
-		}
-
-		fc_p->map_p->fn12_ctrl8_enable_settings[8]  = rx_clip;
-		fc_p->map_p->fn12_ctrl8_enable_settings[9]  = rx_clip;
-		fc_p->map_p->fn12_ctrl8_enable_settings[10] = tx_clip;
-		fc_p->map_p->fn12_ctrl8_enable_settings[11] = tx_clip;
-	}
-
-	if(SHTPS_LPWG_F12_CTRL08_BUFF_SIZE == 15){
-		fc_p->map_p->fn12_ctrl8_enable_settings[14] = SHTPS_LPWG_REPORT_BEYOND_ACTIVE_AREA;
-	}
 
 	M_READ_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[20].addr,
 								fc_p->map_p->fn12_ctrl20_disable_settings, 
@@ -2564,33 +2705,111 @@ static int shtps_fwctl_s3400_get_lpwg_def_settings(struct shtps_fwctl_info *fc_p
 	M_READ_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[27].addr,
 								fc_p->map_p->fn12_ctrl27_disable_settings, 
 								sizeof(fc_p->map_p->fn12_ctrl27_disable_settings));
-	
+
+	fc_p->map_p->fn12_ctrl27_disable_settings[0] = 0x00;
+
 	memcpy(fc_p->map_p->fn12_ctrl27_enable_settings, 
 				fc_p->map_p->fn12_ctrl27_disable_settings, sizeof(fc_p->map_p->fn12_ctrl27_enable_settings));
 
-	fc_p->map_p->fn12_ctrl27_enable_settings[0] = SHTPS_LPWG_ENABLE_GESTURE;
 	#if defined(SHTPS_LPWG_ALLOWED_SWIPES_ENABLE)
 		fc_p->map_p->fn12_ctrl27_enable_settings[SHTPS_LPWG_F12_CTRL27_BUFF_SIZE - 1] = SHTPS_LPWG_ALLOWED_SWIPES;
 	#endif /* SHTPS_LPWG_ALLOWED_SWIPES_ENABLE */
 
+	M_READ_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[18].addr, 
+								fc_p->map_p->fn12_ctrl18_disable_settings, 
+								sizeof(fc_p->map_p->fn12_ctrl18_disable_settings));
+
+	memcpy(fc_p->map_p->fn12_ctrl18_enable_settings, 
+				fc_p->map_p->fn12_ctrl18_disable_settings, sizeof(fc_p->map_p->fn12_ctrl18_enable_settings));
+
+	#if defined(SHTPS_LPWG_DOUBLE_TAP_ENABLE)
+		fc_p->map_p->fn12_ctrl18_enable_settings[8] = SHTPS_LPWG_MAXIMUM_TAP_TIME;
+		fc_p->map_p->fn12_ctrl18_enable_settings[9] = SHTPS_LPWG_MAXIMUM_TAP_DISTANCE;
+	#endif /* SHTPS_LPWG_DOUBLE_TAP_ENABLE */
+
 	#if defined(SHTPS_LPWG_CHANGE_SWIPE_DISTANCE_ENABLE)
-		M_READ_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[18].addr, 
-									fc_p->map_p->fn12_ctrl18_disable_settings, 
-									sizeof(fc_p->map_p->fn12_ctrl18_disable_settings));
-
-		memcpy(fc_p->map_p->fn12_ctrl18_enable_settings, 
-					fc_p->map_p->fn12_ctrl18_disable_settings, sizeof(fc_p->map_p->fn12_ctrl18_enable_settings));
-
 		if(SHTPS_LPWG_F12_CTRL18_BUFF_SIZE > 0){
 			fc_p->map_p->fn12_ctrl18_enable_settings[SHTPS_LPWG_F12_CTRL18_BUFF_SIZE - 1] = SHTPS_LPWG_SWIPE_MINIMUM_DISTANCE;
 		}
 	#endif /* SHTPS_LPWG_CHANGE_SWIPE_DISTANCE_ENABLE */
-	
-	#if defined(SHTPS_LPWG_F51_REPORT_BEYOND_ACTIVE_AREA_ENABLE)
-		M_READ_PACKET_FUNC(fc_p, SHTPS_F51_REPORT_BEYOND_ACTIVE_AREA_ADDR,
-									&fc_p->map_p->fn51_report_beyond_active_area_disable_settings, 1);
-		fc_p->map_p->fn51_report_beyond_active_area_enable_settings = 0x00;
-	#endif /* SHTPS_LPWG_F51_REPORT_BEYOND_ACTIVE_AREA_ENABLE */
+
+	if(SHTPS_LPWG_CLIP_SET_TYPE == 1){
+		M_READ_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[8].addr,
+									fc_p->map_p->fn12_ctrl8_disable_settings, 
+									sizeof(fc_p->map_p->fn12_ctrl8_disable_settings));
+
+		memcpy(fc_p->map_p->fn12_ctrl8_enable_settings, 
+					fc_p->map_p->fn12_ctrl8_disable_settings, sizeof(fc_p->map_p->fn12_ctrl8_enable_settings));
+		{
+			u16 rx_pitch = 0;
+			u16 tx_pitch = 0;
+			u8 rx_clip = 0;
+			u8 tx_clip = 0;
+			int tmp_clip = 0;
+
+			rx_pitch = (((((fc_p->map_p->fn12_ctrl8_enable_settings[5] << 8) | fc_p->map_p->fn12_ctrl8_enable_settings[4]) * 100) * 16) / 65535);
+			tx_pitch = (((((fc_p->map_p->fn12_ctrl8_enable_settings[7] << 8) | fc_p->map_p->fn12_ctrl8_enable_settings[6]) * 100) * 16) / 65535);
+
+			if(rx_pitch > 0){
+				tmp_clip = (((SHTPS_LPWG_RX_CLIP_AREA_MM * 100) * 128) / rx_pitch);
+				if(tmp_clip > 0xFF){
+					rx_clip = 0xFF;
+					SHTPS_LOG_DBG_PRINT("%s(): rx_clip set req over val <0x%X>\n", __func__, tmp_clip);
+				}else{
+					rx_clip = (tmp_clip & 0xFF);
+				}
+			}
+			if(tx_pitch > 0){
+				tmp_clip = (((SHTPS_LPWG_TX_CLIP_AREA_MM * 100) * 128) / tx_pitch);
+				if(tmp_clip > 0xFF){
+					tx_clip = 0xFF;
+					SHTPS_LOG_DBG_PRINT("%s(): tx_clip set req over val <0x%X>\n", __func__, tmp_clip);
+				}else{
+					tx_clip = (tmp_clip & 0xFF);
+				}
+			}
+
+			fc_p->map_p->fn12_ctrl8_enable_settings[8]  = rx_clip;
+			fc_p->map_p->fn12_ctrl8_enable_settings[9]  = rx_clip;
+			fc_p->map_p->fn12_ctrl8_enable_settings[10] = tx_clip;
+			fc_p->map_p->fn12_ctrl8_enable_settings[11] = tx_clip;
+		}
+
+		if(SHTPS_LPWG_F12_CTRL08_BUFF_SIZE == 15){
+			fc_p->map_p->fn12_ctrl8_enable_settings[14] = SHTPS_LPWG_REPORT_BEYOND_ACTIVE_AREA;
+		}
+	}
+	else if(SHTPS_LPWG_CLIP_SET_TYPE == 2){
+		if( (fc_p->map_p->fn12.ctrl.num[18].sub_size >= 20) && (SHTPS_LPWG_F12_CTRL18_BUFF_SIZE >= 18) ){
+			fc_p->map_p->fn12_ctrl18_enable_settings[0] =  (SHTPS_LPWG_CLIP_AREA_X_THRESHOLD_DOUBLE_TAP & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[1] = ((SHTPS_LPWG_CLIP_AREA_X_THRESHOLD_DOUBLE_TAP >> 8) & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[2] =  (SHTPS_LPWG_CLIP_AREA_Y_THRESHOLD_DOUBLE_TAP & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[3] = ((SHTPS_LPWG_CLIP_AREA_Y_THRESHOLD_DOUBLE_TAP >> 8) & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[4] =  ((CONFIG_SHTPS_SY3000_LCD_SIZE_X - 1 - SHTPS_LPWG_CLIP_AREA_X_THRESHOLD_DOUBLE_TAP) & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[5] = (((CONFIG_SHTPS_SY3000_LCD_SIZE_X - 1 - SHTPS_LPWG_CLIP_AREA_X_THRESHOLD_DOUBLE_TAP) >> 8) & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[6] =  ((CONFIG_SHTPS_SY3000_LCD_SIZE_Y - 1 - SHTPS_LPWG_CLIP_AREA_Y_THRESHOLD_DOUBLE_TAP) & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[7] = (((CONFIG_SHTPS_SY3000_LCD_SIZE_Y - 1 - SHTPS_LPWG_CLIP_AREA_Y_THRESHOLD_DOUBLE_TAP) >> 8) & 0xFF);
+
+			fc_p->map_p->fn12_ctrl18_enable_settings[10] =  (SHTPS_LPWG_CLIP_AREA_X_THRESHOLD_SWEEP_ON & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[11] = ((SHTPS_LPWG_CLIP_AREA_X_THRESHOLD_SWEEP_ON >> 8) & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[12] =  (SHTPS_LPWG_CLIP_AREA_Y_THRESHOLD_SWEEP_ON & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[13] = ((SHTPS_LPWG_CLIP_AREA_Y_THRESHOLD_SWEEP_ON >> 8) & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[14] =  ((CONFIG_SHTPS_SY3000_LCD_SIZE_X - 1 - SHTPS_LPWG_CLIP_AREA_X_THRESHOLD_SWEEP_ON) & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[15] = (((CONFIG_SHTPS_SY3000_LCD_SIZE_X - 1 - SHTPS_LPWG_CLIP_AREA_X_THRESHOLD_SWEEP_ON) >> 8) & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[16] =  ((CONFIG_SHTPS_SY3000_LCD_SIZE_Y - 1 - SHTPS_LPWG_CLIP_AREA_Y_THRESHOLD_SWEEP_ON) & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[17] = (((CONFIG_SHTPS_SY3000_LCD_SIZE_Y - 1 - SHTPS_LPWG_CLIP_AREA_Y_THRESHOLD_SWEEP_ON) >> 8) & 0xFF);
+		}
+		else if( (fc_p->map_p->fn12.ctrl.num[18].sub_size >= 10) && (SHTPS_LPWG_F12_CTRL18_BUFF_SIZE >= 8) ){
+			fc_p->map_p->fn12_ctrl18_enable_settings[0] =  (SHTPS_LPWG_CLIP_AREA_X_THRESHOLD_SWEEP_ON & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[1] = ((SHTPS_LPWG_CLIP_AREA_X_THRESHOLD_SWEEP_ON >> 8) & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[2] =  (SHTPS_LPWG_CLIP_AREA_Y_THRESHOLD_SWEEP_ON & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[3] = ((SHTPS_LPWG_CLIP_AREA_Y_THRESHOLD_SWEEP_ON >> 8) & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[4] =  ((CONFIG_SHTPS_SY3000_LCD_SIZE_X - 1 - SHTPS_LPWG_CLIP_AREA_X_THRESHOLD_SWEEP_ON) & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[5] = (((CONFIG_SHTPS_SY3000_LCD_SIZE_X - 1 - SHTPS_LPWG_CLIP_AREA_X_THRESHOLD_SWEEP_ON) >> 8) & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[6] =  ((CONFIG_SHTPS_SY3000_LCD_SIZE_Y - 1 - SHTPS_LPWG_CLIP_AREA_Y_THRESHOLD_SWEEP_ON) & 0xFF);
+			fc_p->map_p->fn12_ctrl18_enable_settings[7] = (((CONFIG_SHTPS_SY3000_LCD_SIZE_Y - 1 - SHTPS_LPWG_CLIP_AREA_Y_THRESHOLD_SWEEP_ON) >> 8) & 0xFF);
+		}
+	}
 
 	return 0;	// no error check
 }
@@ -2649,15 +2868,49 @@ static int shtps_fwctl_s3400_f54_command_completion_wait(struct shtps_fwctl_info
 /* -------------------------------------------------------------------------- */
 static int shtps_fwctl_s3400_cover_mode_on(struct shtps_fwctl_info *fc_p)
 {
+	int rc = 0;
+
 	SHTPS_LOG_FWCTL_FUNC_CALL();
-	return M_WRITE_FUNC(fc_p, fc_p->map_p->fn51.commandBase, 0x01);
+
+	#if defined(SHTPS_COVER_ENABLE)
+	{
+		u8 reg_param_cover_window[8];
+
+		reg_param_cover_window[0] = (SHTPS_REG_PRM_COVER_WINDOW_LEFT & 0xFF);
+		reg_param_cover_window[1] = ((SHTPS_REG_PRM_COVER_WINDOW_LEFT >> 8) & 0xFF);
+		reg_param_cover_window[2] = (SHTPS_REG_PRM_COVER_WINDOW_TOP & 0xFF);
+		reg_param_cover_window[3] = ((SHTPS_REG_PRM_COVER_WINDOW_TOP >> 8) & 0xFF);
+		reg_param_cover_window[4] = (SHTPS_REG_PRM_COVER_WINDOW_RIGHT & 0xFF);
+		reg_param_cover_window[5] = ((SHTPS_REG_PRM_COVER_WINDOW_RIGHT >> 8) & 0xFF);
+		reg_param_cover_window[6] = (SHTPS_REG_PRM_COVER_WINDOW_BOTTOM & 0xFF);
+		reg_param_cover_window[7] = ((SHTPS_REG_PRM_COVER_WINDOW_BOTTOM >> 8) & 0xFF);
+
+		rc = M_WRITE_PACKET_FUNC(fc_p,
+								 fc_p->map_p->fn51.ctrlBase + F51_QUERY_COVERMODEREGISTERADDRESS(fc_p->map_p->fn51.query.data) + 1,
+								 reg_param_cover_window, sizeof(reg_param_cover_window));
+		if(rc == 0)	rc = M_WRITE_FUNC(fc_p, fc_p->map_p->fn51.ctrlBase + F51_QUERY_COVERMODEREGISTERADDRESS(fc_p->map_p->fn51.query.data), 0x03);
+		if(rc == 0)	rc = shtps_fwctl_s3400_command_force_update(fc_p);
+		if(rc == 0)	rc = shtps_fwctl_s3400_f54_command_completion_wait(fc_p, SHTPS_F54_COMMAND_WAIT_POLL_COUNT, SHTPS_F54_COMMAND_WAIT_POLL_INTERVAL);
+	}
+	#endif /* SHTPS_COVER_ENABLE */
+
+	return rc;
 }
 
 /* -------------------------------------------------------------------------- */
 static int shtps_fwctl_s3400_cover_mode_off(struct shtps_fwctl_info *fc_p)
 {
+	int rc = 0;
+
 	SHTPS_LOG_FWCTL_FUNC_CALL();
-	return M_WRITE_FUNC(fc_p, fc_p->map_p->fn51.commandBase, 0x02);
+
+	#if defined(SHTPS_COVER_ENABLE)
+		rc = M_WRITE_FUNC(fc_p, fc_p->map_p->fn51.ctrlBase, 0x00);
+		if(rc == 0)	rc = shtps_fwctl_s3400_command_force_update(fc_p);
+		if(rc == 0)	rc = shtps_fwctl_s3400_f54_command_completion_wait(fc_p, SHTPS_F54_COMMAND_WAIT_POLL_COUNT, SHTPS_F54_COMMAND_WAIT_POLL_INTERVAL);
+	#endif /* SHTPS_COVER_ENABLE */
+
+	return rc;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2668,23 +2921,150 @@ static int shtps_fwctl_s3400_set_custom_report_rate(struct shtps_fwctl_info *fc_
 	SHTPS_LOG_FUNC_CALL_INPARAM(rate);
 
 	#if defined( SHTPS_CTRL_FW_REPORT_RATE )
-		if(SHTPS_CTRL_FW_REPORT_RATE_ENABLE != 0){
-			if(fc_p->map_p->fn51.enable != 0){
-				ret = M_WRITE_FUNC(fc_p,
-									fc_p->map_p->fn51.ctrlBase + F51_QUERY_CUSTOMREPORTRATEREGISTERADDRESS(fc_p->map_p->fn51.query.data),
-									rate);
-				if(ret == 0){
-					ret = rate;
-				}
-			}else{
-				ret = -1;
+		if(fc_p->map_p->fn51.enable != 0){
+			ret = M_WRITE_FUNC(fc_p,
+								fc_p->map_p->fn51.ctrlBase + F51_QUERY_CUSTOMREPORTRATEREGISTERADDRESS(fc_p->map_p->fn51.query.data) + 1,
+								rate);
+			if(ret == 0){
+				ret = rate;
 			}
 		}else{
-			ret = -2;
+			ret = -1;
 		}
 	#endif /* SHTPS_CTRL_FW_REPORT_RATE */
 
 	return ret;
+}
+
+/* -------------------------------------------------------------------------- */
+static int shtps_fwctl_s3400_set_lpwg_sweep_on(struct shtps_fwctl_info *fc_p, u8 enable)
+{
+
+	if(enable == 0){
+		fc_p->map_p->fn12_ctrl27_enable_settings[0] &= (~0x02);
+	}else{
+		fc_p->map_p->fn12_ctrl27_enable_settings[0] |= 0x02;
+	}
+
+	M_WRITE_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[27].addr, fc_p->map_p->fn12_ctrl27_enable_settings[0]);
+
+	return 0;
+}
+
+/* -------------------------------------------------------------------------- */
+static int shtps_fwctl_s3400_set_lpwg_double_tap(struct shtps_fwctl_info *fc_p, u8 enable)
+{
+	if(enable == 0){
+		fc_p->map_p->fn12_ctrl27_enable_settings[0] &= (~0x01);
+	}else{
+		fc_p->map_p->fn12_ctrl27_enable_settings[0] |= 0x01;
+	}
+
+	M_WRITE_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[27].addr, fc_p->map_p->fn12_ctrl27_enable_settings[0]);
+
+	return 0;
+}
+
+/* -------------------------------------------------------------------------- */
+static int shtps_fwctl_s3400_glove_enable(struct shtps_fwctl_info *fc_p)
+{
+	int ret = 0;
+
+	SHTPS_LOG_FWCTL_FUNC_CALL();
+
+#if defined(SHTPS_GLOVE_DETECT_ENABLE)
+	if(fc_p->map_p->fn12.ctrl.support_object_glove != 0){
+		fc_p->map_p->reg_F12_CTRL23_object_report_enable |= 0x20;
+		ret = M_WRITE_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[23].addr, fc_p->map_p->reg_F12_CTRL23_object_report_enable);
+	}else{
+		SHTPS_LOG_DBG_PRINT("%s(): not supported\n", __func__);
+	}
+#endif /* SHTPS_GLOVE_DETECT_ENABLE */
+
+	return ret;
+}
+
+static int shtps_fwctl_s3400_glove_disable(struct shtps_fwctl_info *fc_p)
+{
+	int ret = 0;
+
+	SHTPS_LOG_FWCTL_FUNC_CALL();
+
+#if defined(SHTPS_GLOVE_DETECT_ENABLE)
+	if(fc_p->map_p->fn12.ctrl.support_object_glove != 0){
+		fc_p->map_p->reg_F12_CTRL23_object_report_enable &= (~0x20);
+		ret = M_WRITE_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[23].addr, fc_p->map_p->reg_F12_CTRL23_object_report_enable);
+	}else{
+		SHTPS_LOG_DBG_PRINT("%s(): not supported\n", __func__);
+	}
+#endif /* SHTPS_GLOVE_DETECT_ENABLE */
+
+	return ret;
+}
+
+/* -------------------------------------------------------------------------- */
+static int shtps_fwctl_s3400_set_palm_amplitude_threshold(struct shtps_fwctl_info *fc_p, u8 threshold)
+{
+	int rc = 0;
+#if defined(SHTPS_INVERTING_GHOST_REJECTION_ENABLE)
+	u8 buf[7];
+	SHTPS_LOG_FWCTL_FUNC_CALL();
+	rc = M_READ_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[15].addr, buf, sizeof(buf));
+	
+	buf[4] = threshold;
+	
+	rc = M_WRITE_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[15].addr, buf, sizeof(buf));
+#endif /* SHTPS_INVERTING_GHOST_REJECTION_ENABLE */
+	return rc;
+}
+
+/* -------------------------------------------------------------------------- */
+static void shtps_fwctl_s3400_get_palm_amplitude_threshold(struct shtps_fwctl_info *fc_p, u8 *val_p)
+{
+	SHTPS_LOG_FWCTL_FUNC_CALL();
+	val_p[0] = fc_p->map_p->reg_F12_CTRL15_val[4];
+}
+
+/* -------------------------------------------------------------------------- */
+static int shtps_fwctl_s3400_set_palm_area(struct shtps_fwctl_info *fc_p, u8 area)
+{
+	int rc = 0;
+#if defined(SHTPS_INVERTING_GHOST_REJECTION_ENABLE)
+	u8 buf[7];
+	SHTPS_LOG_FWCTL_FUNC_CALL();
+	rc = M_READ_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[15].addr, buf, sizeof(buf));
+	
+	buf[5] = area;
+	
+	rc = M_WRITE_PACKET_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[15].addr, buf, sizeof(buf));
+#endif /* SHTPS_INVERTING_GHOST_REJECTION_ENABLE */
+	return rc;
+}
+/* -------------------------------------------------------------------------- */
+static void shtps_fwctl_s3400_get_palm_area(struct shtps_fwctl_info *fc_p, u8 *val_p)
+{
+	SHTPS_LOG_FWCTL_FUNC_CALL();
+	val_p[0] = fc_p->map_p->reg_F12_CTRL15_val[5];
+}
+
+/* -------------------------------------------------------------------------- */
+static int shtps_fwctl_s3400_set_palm_filter_mode_enable(struct shtps_fwctl_info *fc_p)
+{
+	int rc = 0;
+#if defined(SHTPS_INVERTING_GHOST_REJECTION_ENABLE)
+	M_WRITE_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[22].addr, fc_p->map_p->reg_F12_CTRL22_val | 0x01);
+#endif /* SHTPS_INVERTING_GHOST_REJECTION_ENABLE */
+	return rc;
+}
+
+/* -------------------------------------------------------------------------- */
+static int shtps_fwctl_s3400_set_palm_filter_mode_disable(struct shtps_fwctl_info *fc_p)
+{
+	int rc = 0;
+#if defined(SHTPS_INVERTING_GHOST_REJECTION_ENABLE)
+	M_WRITE_FUNC(fc_p, fc_p->map_p->fn12.ctrl.num[22].addr, fc_p->map_p->reg_F12_CTRL22_val & (~0x01));
+#endif /* SHTPS_INVERTING_GHOST_REJECTION_ENABLE */
+	return rc;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2722,6 +3102,7 @@ struct shtps_fwctl_functbl		shtps_fwctl_s3400_function_table = {
 		.get_segmentation_aggressiveness_f			= shtps_fwctl_s3400_get_segmentation_aggressiveness,
 		.get_pixel_touch_threshold_def_val_f		= shtps_fwctl_s3400_get_pixel_touch_threshold_def_val,
 		.set_doze_f									= shtps_fwctl_s3400_set_doze,
+		.set_doze_param_f							= shtps_fwctl_s3400_set_doze_param,
 		.set_active_f								= shtps_fwctl_s3400_set_active,
 		.set_sleepmode_on_f							= shtps_fwctl_s3400_set_sleepmode_on,
 		.set_sleepmode_off_f						= shtps_fwctl_s3400_set_sleepmode_off,
@@ -2755,10 +3136,12 @@ struct shtps_fwctl_functbl		shtps_fwctl_s3400_function_table = {
 		.get_tm_baseline_f							= shtps_fwctl_s3400_get_tm_baseline,
 		.get_tm_baseline_raw_f						= shtps_fwctl_s3400_get_tm_baseline_raw,
 		.get_tm_hybrid_adc_f						= shtps_fwctl_s3400_get_tm_hybrid_adc,
+		.get_tm_adc_range_f							= shtps_fwctl_s3400_get_tm_adc_range,
 		.cmd_tm_frameline_f							= shtps_fwctl_s3400_cmd_tm_frameline,
 		.cmd_tm_baseline_f							= shtps_fwctl_s3400_cmd_tm_baseline,
 		.cmd_tm_baseline_raw_f						= shtps_fwctl_s3400_cmd_tm_baseline_raw,
 		.cmd_tm_hybrid_adc_f						= shtps_fwctl_s3400_cmd_tm_hybrid_adc,
+		.cmd_tm_adc_range_f							= shtps_fwctl_s3400_cmd_tm_adc_range,
 		.initparam_f								= shtps_fwctl_s3400_initparam,
 		.initparam_activemode_f						= shtps_fwctl_s3400_initparam_activemode,
 		.initparam_dozemode_f						= shtps_fwctl_s3400_initparam_dozemode,
@@ -2787,6 +3170,16 @@ struct shtps_fwctl_functbl		shtps_fwctl_s3400_function_table = {
 		.cover_mode_on_f							= shtps_fwctl_s3400_cover_mode_on,
 		.cover_mode_off_f							= shtps_fwctl_s3400_cover_mode_off,
 		.set_custom_report_rate_f					= shtps_fwctl_s3400_set_custom_report_rate,
+		.set_lpwg_sweep_on_f						= shtps_fwctl_s3400_set_lpwg_sweep_on,
+		.set_lpwg_double_tap_f						= shtps_fwctl_s3400_set_lpwg_double_tap,
+		.glove_enable_f								= shtps_fwctl_s3400_glove_enable,
+		.glove_disable_f							= shtps_fwctl_s3400_glove_disable,
+		.set_palm_amplitude_threshold_f				= shtps_fwctl_s3400_set_palm_amplitude_threshold,
+		.get_palm_amplitude_threshold_f				= shtps_fwctl_s3400_get_palm_amplitude_threshold,
+		.set_palm_area_f							= shtps_fwctl_s3400_set_palm_area,
+		.get_palm_area_f							= shtps_fwctl_s3400_get_palm_area,
+		.set_palm_filter_mode_enable_f				= shtps_fwctl_s3400_set_palm_filter_mode_enable,
+		.set_palm_filter_mode_disable_f				= shtps_fwctl_s3400_set_palm_filter_mode_disable,
 };
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */

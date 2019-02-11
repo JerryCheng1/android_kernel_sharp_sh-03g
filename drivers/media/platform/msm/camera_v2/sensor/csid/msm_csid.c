@@ -43,7 +43,13 @@
 #define FALSE  0
 
 #undef CDBG
+/* SHLOCAL_CAMERA_DRIVERS-> */
+#if 0
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
+#else
+#define CDBG(fmt, args...) do { } while (0)
+#endif
+/* SHLOCAL_CAMERA_DRIVERS<- */
 
 static struct msm_cam_clk_info csid_clk_info[CSID_NUM_CLK_MAX];
 static struct msm_cam_clk_info csid_clk_src_info[CSID_NUM_CLK_MAX];
@@ -70,10 +76,14 @@ static int msm_csid_cid_lut(
 		pr_err("%s:%d csid_lut_params NULL\n", __func__, __LINE__);
 		return -EINVAL;
 	}
-	for (i = 0; i < csid_lut_params->num_cid && i < 16; i++) {
-		if (csid_lut_params->vc_cfg[i]->cid >=
-			csid_lut_params->num_cid ||
-			csid_lut_params->vc_cfg[i]->cid < 0) {
+
+	if (csid_lut_params->num_cid > MAX_CID) {
+		pr_err("%s:%d num_cid exceeded limit num_cid = %d max = %d\n",
+			__func__, __LINE__, csid_lut_params->num_cid, MAX_CID);
+		return -EINVAL;
+	}
+	for (i = 0; i < csid_lut_params->num_cid; i++) {
+		if (csid_lut_params->vc_cfg[i]->cid >= MAX_CID) {
 			pr_err("%s: cid outside range %d\n",
 				 __func__, csid_lut_params->vc_cfg[i]->cid);
 			return -EINVAL;

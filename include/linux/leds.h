@@ -33,6 +33,7 @@ struct led_classdev {
 	const char		*name;
 	int			 brightness;
 	int			 max_brightness;
+	int			 usr_brightness_req;
 	int			 flags;
 
 	/* Lower 16 bits reflect status */
@@ -138,6 +139,11 @@ extern void led_blink_set_oneshot(struct led_classdev *led_cdev,
  */
 extern void led_set_brightness(struct led_classdev *led_cdev,
 			       enum led_brightness brightness);
+
+#ifdef CONFIG_SHDISP /* CUST_ID_00057 */
+extern int leds_api_insert_sp_pierce(void);
+extern int leds_api_remove_sp_pierce(void);
+#endif /* CONFIG_SHDISP */
 
 /*
  * LED Triggers

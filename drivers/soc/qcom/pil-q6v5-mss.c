@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -139,6 +139,7 @@ static int modem_powerup(const struct subsys_desc *subsys)
 	INIT_COMPLETION(drv->stop_ack);
 	drv->subsys_desc.ramdump_disable = 0;
 	drv->ignore_errors = false;
+	drv->q6->desc.fw_name = subsys->fw_name;
 	return pil_boot(&drv->q6->desc);
 }
 
@@ -180,7 +181,7 @@ static int modem_ramdump(int enable, const struct subsys_desc *subsys)
 	if (ret < 0)
 		pr_err("Unable to dump modem fw memory (rc = %d).\n", ret);
 
-	ret = pil_mss_deinit_image(&drv->q6->desc);
+	ret = __pil_mss_deinit_image(&drv->q6->desc, false);
 	if (ret < 0)
 		pr_err("Unable to free up resources (rc = %d).\n", ret);
 

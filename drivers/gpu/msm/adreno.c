@@ -49,6 +49,10 @@
 
 #define KGSL_LOG_LEVEL_DEFAULT 3
 
+#define SECVID_PROGRAM_PATH_UNKNOWN	0x0
+#define SECVID_PROGRAM_PATH_GPU		0x1
+#define SECVID_PROGRAM_PATH_CPU		0x2
+
 static void adreno_input_work(struct work_struct *work);
 
 static struct devfreq_msm_adreno_tz_data adreno_tz_data = {
@@ -395,7 +399,7 @@ void adreno_hang_int_callback(struct adreno_device *adreno_dev, int bit)
 	struct kgsl_device *device = &adreno_dev->dev;
 
 	KGSL_DRV_CRIT(device, "MISC: GPU hang detected\n");
-	kgsl_pwrctrl_irq(device, KGSL_PWRFLAGS_OFF);
+	adreno_irqctrl(adreno_dev, 0);
 
 	/* Trigger a fault in the dispatcher - this will effect a restart */
 	adreno_dispatcher_irq_fault(device);
@@ -988,15 +992,14 @@ static int adreno_init(struct kgsl_device *device)
 	if (test_bit(ADRENO_DEVICE_INITIALIZED, &adreno_dev->priv))
 		return 0;
 
-	/* Power up the device */
-	ret = kgsl_pwrctrl_enable(device);
+	/* Put the GPU in a responsive state */
+	ret = kgsl_pwrctrl_change_state(device, KGSL_STATE_AWARE);
 	if (ret)
 		return ret;
 
 	/* Initialize coresight for the target */
 	adreno_coresight_init(adreno_dev);
 
-	kgsl_pwrctrl_change_state(device, KGSL_STATE_INIT);
 	/*
 	 * Check if firmware supports the sync lock PM4 packets needed
 	 * for IOMMUv1
@@ -1012,11 +1015,13 @@ static int adreno_init(struct kgsl_device *device)
 	adreno_ft_regs_num = (ARRAY_SIZE(adreno_ft_regs_default) +
 				   gpudev->ft_perf_counters_count*2);
 
-	adreno_ft_regs = kzalloc(adreno_ft_regs_num, GFP_KERNEL);
+	adreno_ft_regs = kzalloc(adreno_ft_regs_num * sizeof(unsigned int),
+						GFP_KERNEL);
 	if (!adreno_ft_regs)
 		return -ENOMEM;
 
-	adreno_ft_regs_val = kzalloc(adreno_ft_regs_num, GFP_KERNEL);
+	adreno_ft_regs_val = kzalloc(adreno_ft_regs_num * sizeof(unsigned int),
+						GFP_KERNEL);
 	if (!adreno_ft_regs_val)
 		return -ENOMEM;
 
@@ -1027,10 +1032,10 @@ static int adreno_init(struct kgsl_device *device)
 	ret = adreno_perfcounter_init(adreno_dev);
 
 	/* Power down the device */
-	kgsl_pwrctrl_disable(device);
+	kgsl_pwrctrl_change_state(device, KGSL_STATE_INIT);
 
 	if (ret)
-		goto done;
+		return ret;
 
 	/*
 	 * Enable the power on shader corruption fix
@@ -1081,13 +1086,154 @@ static int adreno_init(struct kgsl_device *device)
 
 		adreno_dev->cmdbatch_profile_index = 0;
 
-		if (r == 0)
+		if (r == 0) {
 			set_bit(ADRENO_DEVICE_CMDBATCH_PROFILE,
 				&adreno_dev->priv);
+			kgsl_sharedmem_set(&adreno_dev->dev,
+				&adreno_dev->cmdbatch_profile_buffer, 0, 0,
+				PAGE_SIZE);
+		}
+
 	}
 
-done:
 	return ret;
+}
+
+static void secvid_cpu_path(struct adreno_device *adreno_dev)
+{
+	if (adreno_is_a4xx(adreno_dev))
+		adreno_writereg(adreno_dev,
+			ADRENO_REG_RBBM_SECVID_TRUST_CONFIG, 0x2);
+	adreno_writereg(adreno_dev, ADRENO_REG_RBBM_SECVID_TSB_CONTROL, 0x0);
+	adreno_writereg(adreno_dev, ADRENO_REG_RBBM_SECVID_TSB_TRUSTED_BASE,
+		KGSL_IOMMU_SECURE_MEM_BASE);
+	adreno_writereg(adreno_dev, ADRENO_REG_RBBM_SECVID_TSB_TRUSTED_SIZE,
+		KGSL_IOMMU_SECURE_MEM_SIZE);
+}
+
+static void secvid_gpu_path(struct adreno_device *adreno_dev)
+{
+	unsigned int *cmds;
+	struct adreno_ringbuffer *rb = ADRENO_CURRENT_RINGBUFFER(adreno_dev);
+	int ret = 0;
+
+	cmds = adreno_ringbuffer_allocspace(rb, 13);
+
+	*cmds++ = cp_type3_packet(CP_SET_PROTECTED_MODE, 1);
+	*cmds++ = 0;
+
+	*cmds++ = cp_type3_packet(CP_WIDE_REG_WRITE, 2);
+	*cmds++ = adreno_getreg(adreno_dev,
+			ADRENO_REG_RBBM_SECVID_TSB_CONTROL);
+	*cmds++ = 0x0;
+
+	*cmds++ = cp_type3_packet(CP_WIDE_REG_WRITE, 2);
+	*cmds++ = adreno_getreg(adreno_dev,
+			ADRENO_REG_RBBM_SECVID_TSB_TRUSTED_BASE);
+	*cmds++ = KGSL_IOMMU_SECURE_MEM_BASE;
+
+	*cmds++ = cp_type3_packet(CP_WIDE_REG_WRITE, 2);
+	*cmds++ = adreno_getreg(adreno_dev,
+			ADRENO_REG_RBBM_SECVID_TSB_TRUSTED_SIZE);
+	*cmds++ = KGSL_IOMMU_SECURE_MEM_SIZE;
+
+	*cmds++ = cp_type3_packet(CP_SET_PROTECTED_MODE, 1);
+	*cmds++ = 1;
+
+	adreno_ringbuffer_submit(rb, NULL);
+
+	/* idle device to validate secure init */
+	ret = adreno_spin_idle(&adreno_dev->dev);
+	if (ret) {
+		KGSL_DRV_ERR(rb->device,
+			"secure init failed to idle %d\n", ret);
+		secvid_cpu_path(adreno_dev);
+		}
+}
+
+static int secvid_verify_gpu_path(struct adreno_device *adreno_dev)
+{
+	unsigned int *cmds, val = 0;
+	struct adreno_ringbuffer *rb = ADRENO_CURRENT_RINGBUFFER(adreno_dev);
+	int ret = 0;
+
+	cmds = adreno_ringbuffer_allocspace(rb, 19);
+
+	*cmds++ = cp_type3_packet(CP_SET_PROTECTED_MODE, 1);
+	*cmds++ = 0;
+
+	/* init the scratch register with default value */
+	*cmds++ = cp_type3_packet(CP_WIDE_REG_WRITE, 2);
+	*cmds++ = adreno_getreg(adreno_dev, ADRENO_REG_CP_SCRATCH_REG0);
+	*cmds++ = 0x0;
+
+	/* write one of the secvid registers */
+	*cmds++ = cp_type3_packet(CP_WIDE_REG_WRITE, 2);
+	*cmds++ = adreno_getreg(adreno_dev,
+			ADRENO_REG_RBBM_SECVID_TSB_TRUSTED_BASE);
+	*cmds++ = KGSL_IOMMU_SECURE_MEM_BASE;
+
+	/* wait for register writes to complete */
+	*cmds++ = cp_type3_packet(CP_WAIT_FOR_IDLE, 1);
+	*cmds++ = 0x0;
+
+	/*
+	 * Check if the SECVID trust base register write went through.
+	 * If it did, then write 0x1 in the scratch register otherwise
+	 * do nothing. This tells us whether CP writes to SECVID
+	 * registers is supported in TZ or not.
+	 */
+	*cmds++ = cp_type3_packet(CP_COND_WRITE, 6);
+	*cmds++ = 0x3;
+	*cmds++ =  adreno_getreg(adreno_dev,
+				ADRENO_REG_RBBM_SECVID_TSB_TRUSTED_BASE);
+	*cmds++ = KGSL_IOMMU_SECURE_MEM_BASE;
+	*cmds++ = 0xFFFFFFFF;
+	*cmds++ = adreno_getreg(adreno_dev, ADRENO_REG_CP_SCRATCH_REG0);
+	*cmds++ = 0x1;
+
+	*cmds++ = cp_type3_packet(CP_SET_PROTECTED_MODE, 1);
+	*cmds++ = 1;
+
+	adreno_ringbuffer_submit(rb, NULL);
+
+	ret = adreno_spin_idle(&adreno_dev->dev);
+	if (ret) {
+		KGSL_DRV_ERR(rb->device,
+		"secure init verification failed to idle %d\n", ret);
+		secvid_cpu_path(adreno_dev);
+		return SECVID_PROGRAM_PATH_CPU;
+	}
+
+	adreno_readreg(adreno_dev, ADRENO_REG_CP_SCRATCH_REG0, &val);
+
+	if (val == 0x1) {
+		secvid_gpu_path(adreno_dev);
+		return SECVID_PROGRAM_PATH_GPU;
+	}
+
+	secvid_cpu_path(adreno_dev);
+
+	return SECVID_PROGRAM_PATH_CPU;
+}
+
+static void adreno_secvid_start(struct kgsl_device *device)
+{
+	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
+	static unsigned int secvid_path = SECVID_PROGRAM_PATH_UNKNOWN;
+
+	/*
+	 * For a4x only, writing secvid registers through cpu might cause
+	 * xPU violation. So first write secvid registers through GPU.
+	 * If that fails, then fall back to CPU.
+	 */
+	if (!adreno_is_a4xx(adreno_dev) ||
+		secvid_path == SECVID_PROGRAM_PATH_CPU) {
+		secvid_cpu_path(adreno_dev);
+	} else if (secvid_path == SECVID_PROGRAM_PATH_GPU)
+		secvid_gpu_path(adreno_dev);
+	else
+		secvid_path = secvid_verify_gpu_path(adreno_dev);
 }
 
 /**
@@ -1115,8 +1261,6 @@ static int _adreno_start(struct adreno_device *adreno_dev)
 
 	kgsl_cffdump_open(device);
 
-	kgsl_pwrctrl_change_state(device, KGSL_STATE_INIT);
-
 	regulator_left_on = (regulator_is_enabled(device->pwrctrl.gpu_reg) ||
 				(device->pwrctrl.gpu_cx &&
 				regulator_is_enabled(device->pwrctrl.gpu_cx)));
@@ -1124,17 +1268,17 @@ static int _adreno_start(struct adreno_device *adreno_dev)
 	/* Clear any GPU faults that might have been left over */
 	adreno_clear_gpu_fault(adreno_dev);
 
-	/* Power up the device */
-	status = kgsl_pwrctrl_enable(device);
+	/* Put the GPU in a responsive state */
+	status = kgsl_pwrctrl_change_state(device, KGSL_STATE_AWARE);
 	if (status)
-		goto error_rail_off;
+		goto error_pwr_off;
 
 	/* Set the bit to indicate that we've just powered on */
 	set_bit(ADRENO_DEVICE_PWRON, &adreno_dev->priv);
 
 	status = kgsl_mmu_start(device);
 	if (status)
-		goto error_clk_off;
+		goto error_pwr_off;
 
 	status = adreno_ocmem_malloc(adreno_dev);
 	if (status) {
@@ -1179,18 +1323,20 @@ static int _adreno_start(struct adreno_device *adreno_dev)
 	/* Re-initialize the coresight registers if applicable */
 	adreno_coresight_start(adreno_dev);
 
-	kgsl_pwrctrl_irq(device, KGSL_PWRFLAGS_ON);
 	adreno_irqctrl(adreno_dev, 1);
 
 	status = adreno_perfcounter_start(adreno_dev);
 
 	if (status)
-		goto error_irq_off;
+		goto error_mmu_off;
 
 	status = adreno_ringbuffer_cold_start(adreno_dev);
 
 	if (status)
-		goto error_irq_off;
+		goto error_mmu_off;
+
+	if (device->mmu.secured)
+		adreno_secvid_start(device);
 
 	/* Enable h/w power collapse feature */
 	if (gpudev->enable_pc)
@@ -1213,15 +1359,10 @@ static int _adreno_start(struct adreno_device *adreno_dev)
 
 	return 0;
 
-error_irq_off:
-	kgsl_pwrctrl_irq(device, KGSL_PWRFLAGS_OFF);
-
 error_mmu_off:
 	kgsl_mmu_stop(&device->mmu);
 
-error_clk_off:
-	kgsl_pwrctrl_disable(device);
-error_rail_off:
+error_pwr_off:
 	/* set the state back to original state */
 	kgsl_pwrctrl_change_state(device, state);
 
@@ -1297,8 +1438,6 @@ static int adreno_stop(struct kgsl_device *device)
 	if (!test_bit(ADRENO_DEVICE_STARTED, &adreno_dev->priv))
 		return 0;
 
-	kgsl_pwrctrl_enable(device);
-
 	adreno_set_active_ctx_null(adreno_dev);
 
 	adreno_dispatcher_stop(adreno_dev);
@@ -1306,8 +1445,6 @@ static int adreno_stop(struct kgsl_device *device)
 	adreno_ringbuffer_stop(adreno_dev);
 
 	adreno_irqctrl(adreno_dev, 0);
-	kgsl_pwrctrl_irq(device, KGSL_PWRFLAGS_OFF);
-	del_timer_sync(&device->idle_timer);
 
 	adreno_ocmem_free(adreno_dev);
 
@@ -1318,9 +1455,6 @@ static int adreno_stop(struct kgsl_device *device)
 	adreno_perfcounter_save(adreno_dev);
 
 	kgsl_mmu_stop(&device->mmu);
-	/* Power down the device */
-	kgsl_pwrctrl_disable(device);
-
 	kgsl_cffdump_close(device);
 
 	clear_bit(ADRENO_DEVICE_STARTED, &adreno_dev->priv);
@@ -1343,16 +1477,21 @@ int adreno_reset(struct kgsl_device *device)
 	struct kgsl_mmu *mmu = &device->mmu;
 	int i = 0;
 
-	/* Try soft reset first, for non mmu fault case only */
+	/*
+	 * Try soft reset first, for non mmu fault case only and if VBIF
+	 * pipe clears cleanly.
+	 * Skip soft reset and use hard reset for A304 GPU, As
+	 * A304 is not able to do SMMU programming after soft reset.
+	 */
 	if (!adreno_vbif_clear_pending_transactions(device) &&
-		!atomic_read(&mmu->fault)) {
+		!atomic_read(&mmu->fault) && !adreno_is_a304(adreno_dev)) {
 		ret = adreno_soft_reset(device);
 		if (ret)
 			KGSL_DEV_ERR_ONCE(device, "Device soft reset failed\n");
 	}
 	if (ret) {
 		/* If soft reset failed/skipped, then pull the power */
-		adreno_stop(device);
+		kgsl_pwrctrl_change_state(device, KGSL_STATE_INIT);
 
 		/* Keep trying to start the device until it works */
 		for (i = 0; i < NUM_TIMES_RESET_RETRY; i++) {
@@ -1376,6 +1515,8 @@ int adreno_reset(struct kgsl_device *device)
 
 	if (atomic_read(&device->active_cnt))
 		kgsl_pwrctrl_change_state(device, KGSL_STATE_ACTIVE);
+	else
+		kgsl_pwrctrl_change_state(device, KGSL_STATE_NAP);
 
 	/* Set the page table back to the default page table */
 	kgsl_mmu_set_pt(&device->mmu, device->mmu.defaultpagetable);
@@ -1490,8 +1631,7 @@ static ssize_t _ft_pagefault_policy_store(struct device *dev,
 			KGSL_FT_PAGEFAULT_GPUHALT_ENABLE |
 			KGSL_FT_PAGEFAULT_LOG_ONE_PER_PAGE |
 			KGSL_FT_PAGEFAULT_LOG_ONE_PER_INT);
-	ret = kgsl_mmu_set_pagefault_policy(&(adreno_dev->dev.mmu),
-			adreno_dev->ft_pf_policy);
+	ret = kgsl_mmu_set_pagefault_policy(&(adreno_dev->dev.mmu), policy);
 	if (!ret)
 		adreno_dev->ft_pf_policy = policy;
 
@@ -1648,6 +1788,8 @@ static ssize_t _ft_hang_intr_status_store(struct device *dev,
 	if (device == NULL)
 		return 0;
 	adreno_dev = ADRENO_DEVICE(device);
+	if (adreno_dev == NULL)
+		return 0;
 
 	mutex_lock(&device->mutex);
 	ret = kgsl_sysfs_store(buf, &new_setting);
@@ -1663,21 +1805,10 @@ static ssize_t _ft_hang_intr_status_store(struct device *dev,
 		else
 			clear_bit(ADRENO_DEVICE_HANG_INTR, &adreno_dev->priv);
 		/* Set the new setting based on device state */
-		switch (device->state) {
-		case KGSL_STATE_NAP:
-		case KGSL_STATE_SLEEP:
+		if (test_bit(ADRENO_DEVICE_STARTED, &adreno_dev->priv)) {
 			kgsl_pwrctrl_change_state(device, KGSL_STATE_ACTIVE);
-		case KGSL_STATE_ACTIVE:
 			adreno_irqctrl(adreno_dev, 1);
-		/*
-		 * For following states setting will be picked up on device
-		 * start. Still need them in switch statement to differentiate
-		 * from default
-		 */
-		case KGSL_STATE_SLUMBER:
-		case KGSL_STATE_SUSPEND:
-			break;
-		default:
+		} else if (device->state == KGSL_STATE_INIT) {
 			ret = -EACCES;
 			/* reset back to old setting on error */
 			if (new_setting)
@@ -2259,22 +2390,14 @@ static int adreno_soft_reset(struct kgsl_device *device)
 	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
 	int ret;
 
+	kgsl_pwrctrl_change_state(device, KGSL_STATE_AWARE);
 	adreno_set_active_ctx_null(adreno_dev);
 
-	if (kgsl_pwrctrl_isenabled(device))
-		adreno_irqctrl(adreno_dev, 0);
-
-	kgsl_pwrctrl_irq(device, KGSL_PWRFLAGS_OFF);
+	adreno_irqctrl(adreno_dev, 0);
 
 	adreno_clear_gpu_fault(adreno_dev);
 	/* since device is oficially off now clear start bit */
 	clear_bit(ADRENO_DEVICE_STARTED, &adreno_dev->priv);
-
-	/* Delete the idle timer */
-	del_timer_sync(&device->idle_timer);
-
-	/* Make sure we are totally awake */
-	kgsl_pwrctrl_enable(device);
 
 	/* save physical performance counter values before GPU soft reset */
 	adreno_perfcounter_save(adreno_dev);
@@ -2296,7 +2419,6 @@ static int adreno_soft_reset(struct kgsl_device *device)
 	adreno_coresight_start(adreno_dev);
 
 	/* Enable IRQ */
-	kgsl_pwrctrl_irq(device, KGSL_PWRFLAGS_ON);
 	adreno_irqctrl(adreno_dev, 1);
 
 	/* stop all ringbuffers to cancel RB events */
@@ -2333,7 +2455,7 @@ bool adreno_isidle(struct kgsl_device *device)
 	struct adreno_ringbuffer *rb;
 	int i;
 
-	if (!kgsl_pwrctrl_isenabled(device))
+	if (!kgsl_state_is_awake(device))
 		return true;
 
 	adreno_get_rptr(ADRENO_CURRENT_RINGBUFFER(adreno_dev));
@@ -2560,9 +2682,9 @@ static int adreno_waittimestamp(struct kgsl_device *device,
 		return -ENOTTY;
 	}
 
-	/* Return -EINVAL if the context has been detached */
+	/* Return -ENOENT if the context has been detached */
 	if (kgsl_context_detached(context))
-		return -EINVAL;
+		return -ENOENT;
 
 	ret = adreno_drawctxt_wait(ADRENO_DEVICE(device), context,
 		timestamp, msecs);
@@ -2753,6 +2875,13 @@ static inline s64 adreno_ticks_to_us(u32 ticks, u32 freq)
 	return ticks / freq;
 }
 
+/**
+ * adreno_power_stats() - Reads the counters needed for freq decisions
+ * @device: Pointer to device whose counters are read
+ * @stats: Pointer to stats set that needs updating
+ * Power: The caller is expected to be in a clock enabled state as this
+ * function does reg reads
+ */
 static void adreno_power_stats(struct kgsl_device *device,
 				struct kgsl_power_stats *stats)
 {
@@ -2762,14 +2891,6 @@ static void adreno_power_stats(struct kgsl_device *device,
 	struct adreno_busy_data busy_data;
 
 	memset(stats, 0, sizeof(*stats));
-
-	/*
-	 * If we're not currently active, there shouldn't have been
-	 * any cycles since the last time this function was called.
-	 */
-
-	if (device->state != KGSL_STATE_ACTIVE)
-		return;
 
 	/* Get the busy cycles counted since the counter was last reset */
 	gpudev->busy_cycles(adreno_dev, &busy_data);

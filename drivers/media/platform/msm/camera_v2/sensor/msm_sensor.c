@@ -22,6 +22,10 @@
 #include "linux/vmalloc.h"
 
 static uint8_t *shcam_diag_data = NULL;
+
+#ifdef CONFIG_SHCAMERA_PDAF
+static uint32_t shcam_is_otp_data = 0;
+#endif /* CONFIG_SHCAMERA_PDAF */
 /* SHLOCAL_CAMERA_DRIVERS<- */
 
 /* SHLOCAL_CAMERA_DRIVERS-> */
@@ -37,6 +41,28 @@ static uint8_t *shcam_diag_data = NULL;
 #define CDBG(fmt, args...) do { } while (0)
 #endif
 #endif
+/* SHLOCAL_CAMERA_DRIVERS<- */
+
+/* SHLOCAL_CAMERA_DRIVERS-> */
+#ifdef CONFIG_SHCAMERA_PDAF
+extern int32_t shcampdaf_fw_init(struct msm_sensor_ctrl_t *s_ctrl, struct sensorb_cfg_data *cdata);
+extern int32_t shcampdaf_fw_init32(struct msm_sensor_ctrl_t *s_ctrl, struct sensorb_cfg_data32 *cdata);
+extern int32_t shcampdaf_fw_exe(struct msm_sensor_ctrl_t *s_ctrl, struct sensorb_cfg_data *cdata);
+extern int32_t shcampdaf_fw_exe32(struct msm_sensor_ctrl_t *s_ctrl, struct sensorb_cfg_data32 *cdata);
+extern int32_t shcampdaf_category_read(struct msm_sensor_ctrl_t *s_ctrl, struct sensorb_cfg_data *cdata);
+extern int32_t shcampdaf_category_read32(struct msm_sensor_ctrl_t *s_ctrl, struct sensorb_cfg_data32 *cdata);
+extern int32_t shcampdaf_category_write(struct msm_sensor_ctrl_t *s_ctrl, struct sensorb_cfg_data *cdata);
+extern int32_t shcampdaf_category_write32(struct msm_sensor_ctrl_t *s_ctrl, struct sensorb_cfg_data32 *cdata);
+extern int32_t shcampdaf_start_stream(struct msm_sensor_ctrl_t *s_ctrl, struct sensorb_cfg_data *cdata);
+extern int32_t shcampdaf_start_stream32(struct msm_sensor_ctrl_t *s_ctrl, struct sensorb_cfg_data32 *cdata);
+extern int32_t shcampdaf_stop_stream(struct msm_sensor_ctrl_t *s_ctrl, struct sensorb_cfg_data *cdata);
+extern int32_t shcampdaf_stop_stream32(struct msm_sensor_ctrl_t *s_ctrl, struct sensorb_cfg_data32 *cdata);
+extern int32_t shcampdaf_irq_init(struct msm_sensor_ctrl_t *s_ctrl);
+extern int32_t shcampdaf_irq_exit(struct msm_sensor_ctrl_t *s_ctrl);
+extern int32_t shcampdaf_read_otp(struct msm_sensor_ctrl_t *s_ctrl, uint8_t *shcam_diag_data);
+extern int32_t shcampdaf_get_otp(struct msm_sensor_ctrl_t *s_ctrl, struct sensorb_cfg_data *cdata);
+extern int32_t shcampdaf_get_otp32(struct msm_sensor_ctrl_t *s_ctrl, struct sensorb_cfg_data32 *cdata);
+#endif /* CONFIG_SHCAMERA_PDAF */
 /* SHLOCAL_CAMERA_DRIVERS<- */
 
 static struct v4l2_file_operations msm_sensor_v4l2_subdev_fops;
@@ -141,7 +167,10 @@ static int32_t msm_sensor_get_dt_data(struct device_node *of_node,
 	struct msm_camera_sensor_board_info *sensordata = NULL;
 	uint16_t *gpio_array = NULL;
 	uint16_t gpio_array_size = 0;
-	uint32_t id_info[3];
+	uint32_t id_info[MSM_SENSOR_NUM_ID_INFO_DATA];
+	uint32_t count;
+	const uint32_t *p;
+	struct msm_camera_slave_info *slave_info;
 
 	s_ctrl->sensordata = kzalloc(sizeof(
 		struct msm_camera_sensor_board_info),
@@ -305,21 +334,40 @@ static int32_t msm_sensor_get_dt_data(struct device_node *of_node,
 		goto FREE_ACTUATOR_INFO;
 	}
 
+	slave_info = sensordata->slave_info;
+
+	p = of_get_property(of_node, "qcom,slave-id", &count);
+	if (!p || !count) {
+		pr_err("%s failed %d\n", __func__, __LINE__);
+		goto FREE_SLAVE_INFO;
+	}
+
+	count /= sizeof(uint32_t);
+
+	if (count > MSM_SENSOR_NUM_ID_INFO_DATA) {
+		pr_err("%s failed %d\n", __func__, __LINE__);
+		goto FREE_SLAVE_INFO;
+	}
+
+	memset(id_info, 0, sizeof(*id_info)*MSM_SENSOR_NUM_ID_INFO_DATA);
+
 	rc = of_property_read_u32_array(of_node, "qcom,slave-id",
-		id_info, 3);
+		id_info, count);
 	if (rc < 0) {
 		pr_err("%s failed %d\n", __func__, __LINE__);
 		goto FREE_SLAVE_INFO;
 	}
 
-	sensordata->slave_info->sensor_slave_addr = id_info[0];
-	sensordata->slave_info->sensor_id_reg_addr = id_info[1];
-	sensordata->slave_info->sensor_id = id_info[2];
-	CDBG("%s:%d slave addr 0x%x sensor reg 0x%x id 0x%x\n",
+	slave_info->sensor_slave_addr = id_info[MSM_SENSOR_SLAVEADDR_DATA];
+	slave_info->sensor_id_reg_addr = id_info[MSM_SENSOR_IDREGADDR_DATA];
+	slave_info->sensor_id = id_info[MSM_SENSOR_SENSOR_ID_DATA];
+	slave_info->sensor_id_mask = id_info[MSM_SENSOR_SENIDMASK_DATA];
+	CDBG("%s:%d slave addr 0x%x sensor reg 0x%x id 0x%x mask 0x%x\n",
 		__func__, __LINE__,
-		sensordata->slave_info->sensor_slave_addr,
-		sensordata->slave_info->sensor_id_reg_addr,
-		sensordata->slave_info->sensor_id);
+		slave_info->sensor_slave_addr,
+		slave_info->sensor_id_reg_addr,
+		slave_info->sensor_id,
+		slave_info->sensor_id_mask);
 
 	/*Optional property, don't return error if absent */
 	ret = of_property_read_string(of_node, "qcom,vdd-cx-name",
@@ -411,10 +459,6 @@ int32_t msm_sensor_free_sensor_data(struct msm_sensor_ctrl_t *s_ctrl)
 	kfree(s_ctrl->sensordata->sensor_info);
 	kfree(s_ctrl->sensordata->power_info.clk_info);
 	kfree(s_ctrl->sensordata);
-	if(shcam_diag_data != NULL){
-		kfree(shcam_diag_data);
-		shcam_diag_data = NULL;
-	}
 	return 0;
 }
 
@@ -425,11 +469,19 @@ static struct msm_cam_clk_info cam_8960_clk_info[] = {
 static struct msm_cam_clk_info cam_8610_clk_info[] = {
 	[SENSOR_CAM_MCLK] = {"cam_src_clk", 24000000},
 	[SENSOR_CAM_CLK] = {"cam_clk", 0},
+/* SHLOCAL_CAMERA_DRIVERS-> */
+	[SENSOR_CAM_MCLK+2] = {"cam_src_clk2", 24000000},
+	[SENSOR_CAM_CLK+2] = {"cam_clk2", 0},
+/* SHLOCAL_CAMERA_DRIVERS<- */
 };
 
 static struct msm_cam_clk_info cam_8974_clk_info[] = {
 	[SENSOR_CAM_MCLK] = {"cam_src_clk", 24000000},
 	[SENSOR_CAM_CLK] = {"cam_clk", 0},
+/* SHLOCAL_CAMERA_DRIVERS-> */
+	[SENSOR_CAM_MCLK+2] = {"cam_src_clk2", 24000000},
+	[SENSOR_CAM_CLK+2] = {"cam_clk2", 0},
+/* SHLOCAL_CAMERA_DRIVERS<- */
 };
 
 int msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
@@ -453,13 +505,11 @@ int msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 			__func__, __LINE__, power_info, sensor_i2c_client);
 		return -EINVAL;
 	}
-	
 /* SHLOCAL_CAMERA_DRIVERS-> */
-#if defined(CONFIG_ARCH_LYNX_GP11D)
-	usleep_range(1000, 1000 + 1000);
-#endif
+#ifdef CONFIG_SHCAMERA_PDAF
+	shcampdaf_irq_exit(s_ctrl);
+#endif /* CONFIG_SHCAMERA_PDAF */
 /* SHLOCAL_CAMERA_DRIVERS<- */
-				
 	return msm_camera_power_down(power_info, sensor_device_type,
 		sensor_i2c_client);
 }
@@ -478,6 +528,11 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 			__func__, __LINE__, s_ctrl);
 		return -EINVAL;
 	}
+
+/* SHLOCAL_CAMERA_DRIVERS-> */
+#ifdef CONFIG_SHCAMERA_PDAF
+	shcampdaf_irq_init(s_ctrl);
+#endif /* CONFIG_SHCAMERA_PDAF */
 
 	power_info = &s_ctrl->sensordata->power_info;
 	sensor_i2c_client = s_ctrl->sensor_i2c_client;
@@ -512,6 +567,25 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 	}
 
 	return rc;
+}
+
+static uint16_t msm_sensor_id_by_mask(struct msm_sensor_ctrl_t *s_ctrl,
+	uint16_t chipid)
+{
+	uint16_t sensor_id = chipid;
+	int16_t sensor_id_mask = s_ctrl->sensordata->slave_info->sensor_id_mask;
+
+	if (!sensor_id_mask)
+		sensor_id_mask = ~sensor_id_mask;
+
+	sensor_id &= sensor_id_mask;
+	sensor_id_mask &= -sensor_id_mask;
+	sensor_id_mask -= 1;
+	while (sensor_id_mask) {
+		sensor_id_mask >>= 1;
+		sensor_id >>= 1;
+	}
+	return sensor_id;
 }
 
 int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
@@ -552,7 +626,7 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 
 	CDBG("%s: read id: 0x%x expected id 0x%x:\n", __func__, chipid,
 		slave_info->sensor_id);
-	if (chipid != slave_info->sensor_id) {
+	if (msm_sensor_id_by_mask(s_ctrl, chipid) != slave_info->sensor_id) {
 		pr_err("msm_sensor_match_id chip id doesnot match\n");
 		return -ENODEV;
 	}
@@ -767,7 +841,8 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 		conf_array.size = conf_array32.size;
 		conf_array.reg_setting = compat_ptr(conf_array32.reg_setting);
 
-		if (!conf_array.size) {
+		if (!conf_array.size ||
+			conf_array.size > I2C_REG_DATA_MAX) {
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 			rc = -EFAULT;
 			break;
@@ -1036,10 +1111,15 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 /* SHLOCAL_CAMERA_DRIVERS-> */
 #if 0
 		struct msm_camera_i2c_read_config read_config;
+		struct msm_camera_i2c_read_config *read_config_ptr = NULL;
 		uint16_t local_data = 0;
 		uint16_t orig_slave_addr = 0, read_slave_addr = 0;
-		if (copy_from_user(&read_config,
-			(void *)compat_ptr(cdata->cfg.setting),
+
+		read_config_ptr =
+			(struct msm_camera_i2c_read_config *)
+			compat_ptr(cdata->cfg.setting);
+
+		if (copy_from_user(&read_config, read_config_ptr,
 			sizeof(struct msm_camera_i2c_read_config))) {
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 			rc = -EFAULT;
@@ -1076,12 +1156,7 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 			pr_err("%s:%d: i2c_read failed\n", __func__, __LINE__);
 			break;
 		}
-		if (copy_to_user(&read_config.data,
-			(void *)&local_data, sizeof(uint16_t))) {
-			pr_err("%s:%d copy failed\n", __func__, __LINE__);
-			rc = -EFAULT;
-			break;
-		}
+		read_config_ptr->data = local_data;
 		break;
 #else
 		struct msm_camera_i2c_read_config32 read_config32;
@@ -1166,11 +1241,13 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 		conf_array.size = conf_array32.size;
 		conf_array.reg_setting = compat_ptr(conf_array32.reg_setting);
 
-		if (!conf_array.size) {
+		if (!conf_array.size ||
+			conf_array.size > I2C_SEQ_REG_DATA_MAX) {
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 			rc = -EFAULT;
 			break;
 		}
+
 		reg_setting = kzalloc(conf_array.size *
 			(sizeof(struct msm_camera_i2c_seq_reg_array)),
 			GFP_KERNEL);
@@ -1380,8 +1457,80 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 
 		break;
 	}
-/* SHLOCAL_CAMERA_DRIVERS<- */
 
+	case SHCFG_GET_SMEM_HW_REVISION: {
+		struct smem_info_t smem_get;
+		sharp_smem_common_type *p_sh_smem_common_type = NULL;
+		uint32_t hw_revision;
+
+		CDBG("%s:SHCFG_GET_SMEM_HW_REVISION:\n", __func__);
+
+		smem_get.data = compat_ptr(cdata->cfg.smem_info.data);
+
+		p_sh_smem_common_type = sh_smem_get_common_address();
+		if(p_sh_smem_common_type == NULL){
+			pr_err("%s p_sh_smem_common_type == NULL\n",__func__);
+			rc = -EFAULT;
+			break;
+		}
+		
+		hw_revision = p_sh_smem_common_type->sh_hw_revision;
+		CDBG("%s hw_revision=0x%08x\n", __func__, hw_revision);
+		
+		if (copy_to_user((void __user *)(smem_get.data), &hw_revision, sizeof(uint32_t))){
+			pr_err("%s copy_to_user error\n",__func__);
+			rc = -EFAULT;
+			break;
+		}
+
+		break;
+	}
+
+/* SHLOCAL_CAMERA_DRIVERS<- */
+/* SHLOCAL_CAMERA_DRIVERS-> */
+	case SHCFG_MH1_FW_INIT: {
+#ifdef CONFIG_SHCAMERA_PDAF
+		rc = shcampdaf_fw_init32(s_ctrl, cdata);
+#endif /* CONFIG_SHCAMERA_PDAF */
+		break;
+	}
+	case SHCFG_MH1_FW_EXE: {
+#ifdef CONFIG_SHCAMERA_PDAF
+		rc = shcampdaf_fw_exe32(s_ctrl, cdata);
+#endif /* CONFIG_SHCAMERA_PDAF */
+		break;
+	}
+	case SHCFG_MH1_GET_CATEGORY_DATA: {
+#ifdef CONFIG_SHCAMERA_PDAF
+		rc = shcampdaf_category_read32(s_ctrl, cdata);
+#endif /* CONFIG_SHCAMERA_PDAF */
+		break;
+	}
+	case SHCFG_MH1_SET_CATEGORY_DATA: {
+#ifdef CONFIG_SHCAMERA_PDAF
+		rc = shcampdaf_category_write32(s_ctrl, cdata);
+#endif /* CONFIG_SHCAMERA_PDAF */
+		break;
+	}
+	case SHCFG_MH1_START_STREAM: {
+#ifdef CONFIG_SHCAMERA_PDAF
+		rc = shcampdaf_start_stream32(s_ctrl, cdata);
+#endif /* CONFIG_SHCAMERA_PDAF */
+		break;
+	}
+	case SHCFG_MH1_STOP_STREAM: {
+#ifdef CONFIG_SHCAMERA_PDAF
+		rc = shcampdaf_stop_stream32(s_ctrl, cdata);
+#endif /* CONFIG_SHCAMERA_PDAF */
+		break;
+	}
+	case SHCFG_MH1_OTP_READ: {
+#ifdef CONFIG_SHCAMERA_PDAF
+		rc = shcampdaf_get_otp32(s_ctrl, cdata);
+#endif /* CONFIG_SHCAMERA_PDAF */
+		break;
+	}
+/* SHLOCAL_CAMERA_DRIVERS<- */
 	default:
 		rc = -EFAULT;
 		break;
@@ -1475,7 +1624,8 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 			break;
 		}
 
-		if (!conf_array.size) {
+		if (!conf_array.size ||
+			conf_array.size > I2C_REG_DATA_MAX) {
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 			rc = -EFAULT;
 			break;
@@ -1729,11 +1879,16 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 /* SHLOCAL_CAMERA_DRIVERS<- */
 	}
 	case CFG_SLAVE_READ_I2C: {
+/* SHLOCAL_CAMERA_DRIVERS-> */
+#if 0
 		struct msm_camera_i2c_read_config read_config;
+		struct msm_camera_i2c_read_config *read_config_ptr = NULL;
 		uint16_t local_data = 0;
 		uint16_t orig_slave_addr = 0, read_slave_addr = 0;
-		if (copy_from_user(&read_config,
-			(void *)cdata->cfg.setting,
+
+		read_config_ptr =
+			(struct msm_camera_i2c_read_config *)cdata->cfg.setting;
+		if (copy_from_user(&read_config, read_config_ptr,
 			sizeof(struct msm_camera_i2c_read_config))) {
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 			rc = -EFAULT;
@@ -1770,13 +1925,62 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 			pr_err("%s:%d: i2c_read failed\n", __func__, __LINE__);
 			break;
 		}
-		if (copy_to_user(&read_config.data,
+		read_config_ptr->data = local_data;
+		break;
+#else
+		struct msm_camera_i2c_read_config read_config;
+		struct msm_camera_i2c_read_config *read_config_ptr = NULL;
+		uint16_t local_data = 0;
+		uint16_t orig_slave_addr = 0, read_slave_addr = 0;
+		read_config_ptr =
+			(struct msm_camera_i2c_read_config *)cdata->cfg.setting;
+		if (copy_from_user(&read_config, read_config_ptr,
+			sizeof(struct msm_camera_i2c_read_config))) {
+			pr_err("%s:%d failed\n", __func__, __LINE__);
+			rc = -EFAULT;
+			break;
+		}
+		
+		read_slave_addr = read_config.slave_addr;
+		CDBG("%s:CFG_SLAVE_READ_I2C:", __func__);
+		CDBG("%s:slave_addr=0x%x reg_addr=0x%x, data_type=%d\n",
+			__func__, read_config.slave_addr,
+			read_config.reg_addr, read_config.data_type);
+		if (s_ctrl->sensor_i2c_client->cci_client) {
+			orig_slave_addr =
+				s_ctrl->sensor_i2c_client->cci_client->sid;
+			s_ctrl->sensor_i2c_client->cci_client->sid =
+				read_slave_addr >> 1;
+		} else if (s_ctrl->sensor_i2c_client->client) {
+			orig_slave_addr =
+				s_ctrl->sensor_i2c_client->client->addr;
+			s_ctrl->sensor_i2c_client->client->addr =
+				read_slave_addr >> 1;
+		} else {
+			pr_err("%s: error: no i2c/cci client found.", __func__);
+			rc = -EFAULT;
+			break;
+		}
+		CDBG("%s:orig_slave_addr=0x%x, new_slave_addr=0x%x",
+				__func__, orig_slave_addr,
+				read_slave_addr >> 1);
+		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_read(
+				s_ctrl->sensor_i2c_client,
+				read_config.reg_addr,
+				&local_data, read_config.data_type);
+		if (rc < 0) {
+			pr_err("%s:%d: i2c_read failed\n", __func__, __LINE__);
+			break;
+		}
+		if (copy_to_user((void __user *)read_config.data,
 			(void *)&local_data, sizeof(uint16_t))) {
 			pr_err("%s:%d copy failed\n", __func__, __LINE__);
 			rc = -EFAULT;
 			break;
 		}
 		break;
+#endif
+/* SHLOCAL_CAMERA_DRIVERS<- */
 	}
 	case CFG_SLAVE_WRITE_I2C_ARRAY: {
 		struct msm_camera_i2c_array_write_config write_config;
@@ -1796,11 +2000,13 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 			write_config.slave_addr,
 			write_config.conf_array.size);
 
-		if (!write_config.conf_array.size) {
+		if (!write_config.conf_array.size ||
+			write_config.conf_array.size > I2C_SEQ_REG_DATA_MAX) {
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 			rc = -EFAULT;
 			break;
 		}
+
 		reg_setting = kzalloc(write_config.conf_array.size *
 			(sizeof(struct msm_camera_i2c_reg_array)), GFP_KERNEL);
 		if (!reg_setting) {
@@ -1874,11 +2080,13 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 			break;
 		}
 
-		if (!conf_array.size) {
+		if (!conf_array.size ||
+			conf_array.size > I2C_SEQ_REG_DATA_MAX) {
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 			rc = -EFAULT;
 			break;
 		}
+
 		reg_setting = kzalloc(conf_array.size *
 			(sizeof(struct msm_camera_i2c_seq_reg_array)),
 			GFP_KERNEL);
@@ -2084,6 +2292,79 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 
 		break;
 	}
+
+	case SHCFG_GET_SMEM_HW_REVISION: {
+		struct smem_info_t smem_get;
+		sharp_smem_common_type *p_sh_smem_common_type = NULL;
+		uint32_t hw_revision;
+
+		CDBG("%s:SHCFG_GET_SMEM_HW_REVISION:\n", __func__);
+
+		smem_get.data = cdata->cfg.smem_info.data;
+
+		p_sh_smem_common_type = sh_smem_get_common_address();
+		if(p_sh_smem_common_type == NULL){
+			pr_err("%s p_sh_smem_common_type == NULL\n",__func__);
+			rc = -EFAULT;
+			break;
+		}
+		
+		hw_revision = p_sh_smem_common_type->sh_hw_revision;
+		CDBG("%s hw_revision=0x%08x\n", __func__, hw_revision);
+		
+		if (copy_to_user((void __user *)(smem_get.data), &hw_revision, sizeof(uint32_t))){
+			pr_err("%s copy_to_user error\n",__func__);
+			rc = -EFAULT;
+			break;
+		}
+
+		break;
+	}
+
+/* SHLOCAL_CAMERA_DRIVERS<- */
+/* SHLOCAL_CAMERA_DRIVERS-> */
+	case SHCFG_MH1_FW_INIT: {
+#ifdef CONFIG_SHCAMERA_PDAF
+		rc = shcampdaf_fw_init(s_ctrl, cdata);
+#endif /* CONFIG_SHCAMERA_PDAF */
+		break;
+	}
+	case SHCFG_MH1_FW_EXE: {
+#ifdef CONFIG_SHCAMERA_PDAF
+		rc = shcampdaf_fw_exe(s_ctrl, cdata);
+#endif /* CONFIG_SHCAMERA_PDAF */
+		break;
+	}
+	case SHCFG_MH1_GET_CATEGORY_DATA: {
+#ifdef CONFIG_SHCAMERA_PDAF
+		rc = shcampdaf_category_read(s_ctrl, cdata);
+#endif /* CONFIG_SHCAMERA_PDAF */
+		break;
+	}
+	case SHCFG_MH1_SET_CATEGORY_DATA: {
+#ifdef CONFIG_SHCAMERA_PDAF
+		rc = shcampdaf_category_write(s_ctrl, cdata);
+#endif /* CONFIG_SHCAMERA_PDAF */
+		break;
+	}
+	case SHCFG_MH1_START_STREAM: {
+#ifdef CONFIG_SHCAMERA_PDAF
+		rc = shcampdaf_start_stream(s_ctrl, cdata);
+#endif /* CONFIG_SHCAMERA_PDAF */
+		break;
+	}
+	case SHCFG_MH1_STOP_STREAM: {
+#ifdef CONFIG_SHCAMERA_PDAF
+		rc = shcampdaf_stop_stream(s_ctrl, cdata);
+#endif /* CONFIG_SHCAMERA_PDAF */
+		break;
+	}
+	case SHCFG_MH1_OTP_READ: {
+#ifdef CONFIG_SHCAMERA_PDAF
+		rc = shcampdaf_get_otp(s_ctrl, cdata);
+#endif /* CONFIG_SHCAMERA_PDAF */
+		break;
+	}
 /* SHLOCAL_CAMERA_DRIVERS<- */
 	default:
 		rc = -EFAULT;
@@ -2105,6 +2386,17 @@ int msm_sensor_check_id(struct msm_sensor_ctrl_t *s_ctrl)
 		rc = msm_sensor_match_id(s_ctrl);
 	if (rc < 0)
 		pr_err("%s:%d match id failed rc %d\n", __func__, __LINE__, rc);
+
+#ifdef CONFIG_SHCAMERA_PDAF
+	CDBG("%s:%d shcam_is_otp_data %d\n", __func__, __LINE__, shcam_is_otp_data);
+	if(shcam_is_otp_data == 0){
+		rc = shcampdaf_read_otp(s_ctrl, shcam_diag_data);
+		CDBG("%s:%d shcampdaf_read_otp rc=%d\n", __func__, __LINE__, rc);
+		if (rc >= 0)
+			shcam_is_otp_data = 1;
+	}
+#endif /* CONFIG_SHCAMERA_PDAF */
+
 	return rc;
 }
 

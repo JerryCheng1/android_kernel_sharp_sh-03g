@@ -33,6 +33,7 @@
 #include <sharp/shdisp_kerl.h>
 #include "shdisp_kerl_priv.h"
 #include "shdisp_dbg.h"
+#include "shdisp_system.h"
 
 /* ------------------------------------------------------------------------- */
 /* MACROS                                                                    */
@@ -470,8 +471,14 @@ void shdisp_dbg_API_init(void)
 
     shdisp_dbg_reset_work_wq = create_singlethread_workqueue("shdisp_dbg_reset_work_wq");
     if (!shdisp_dbg_reset_work_wq) {
-        SHDISP_DEBUG("shdisp_dbg_reset_work_wq create failed." );
+        SHDISP_DEBUG("shdisp_dbg_reset_work_wq create failed.");
     }
+
+#ifdef SHDISP_LOG_ENABLE
+    if (shdisp_SYS_API_get_debugflg() & SHDISP_DEBUGFLG_BIT_KERNEL_LOG) {
+        shdisp_log_lv = SHDISP_LOG_LV_ALL;
+    }
+#endif /* SHDISP_LOG_ENABLE */
 }
 
 /* ------------------------------------------------------------------------- */
@@ -662,7 +669,7 @@ static size_t shdisp_dbg_get_stacktrace(char *stackdumpbuf, size_t length)
     while (1) {
         int urc, rtn;
 
-        rtn = snprintf( stackdumpbuf, length, "%pS\n", (void *)frame.pc );
+        rtn = snprintf(stackdumpbuf, length, "%pS\n", (void *)frame.pc);
 
 
         if (rtn < 0) {
@@ -1992,7 +1999,7 @@ static void shdisp_dbg_dispdump_worker(void *arg, int *reset)
             struct timespec ts;
 
             if (shdisp_dbg_dispdump_worker_wait_ms > 0) {
-                msleep(shdisp_dbg_dispdump_worker_wait_ms);
+                shdisp_SYS_API_msleep(shdisp_dbg_dispdump_worker_wait_ms);
             }
 
             getnstimeofday(&ts);
@@ -2016,7 +2023,7 @@ retry:
             break;
         }
         SHDISP_WARN("Output FW dumpfile retry(%d)", retry_cnt);
-        msleep(1000);
+        shdisp_SYS_API_msleep(1000);
     }
 
 out:

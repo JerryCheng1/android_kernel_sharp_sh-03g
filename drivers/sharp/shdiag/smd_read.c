@@ -33,6 +33,7 @@
 
 static char		*buffer = NULL;
 static size_t	buffer_size = 0;
+static int		msmfb_overlay_id = -1;
 
 static int smd_mode_open(struct inode *inode, struct file *filp)
 {
@@ -166,6 +167,40 @@ static int smd_ioctl_set_hapticscal(unsigned long arg)
 	return ret;
 }
 
+static int smd_ioctl_set_msmfb_overlay_id(unsigned long arg)
+{
+	int ret = 0;
+
+	if(copy_from_user(&msmfb_overlay_id, (int __user *)arg, sizeof(int)) != 0)
+	{
+		printk("[SH]smd_ioctl_set_msmfb_overlay_id: copy_from_user FAILE\n");
+		ret = -EFAULT;
+	}
+	
+	return ret;
+}
+
+static int smd_ioctl_get_msmfb_overlay_id(unsigned long arg)
+{
+	int ret = 0;
+
+	if( msmfb_overlay_id != -1 )
+	{
+		if(copy_to_user((int __user *)arg, &msmfb_overlay_id, sizeof(int)) != 0)
+		{
+			printk("[SH]smd_ioctl_get_msmfb_overlay_id: copy_to_user FAILE\n");
+			ret = -EFAULT;
+		}
+	}
+	else
+	{
+		printk("[SH]smd_ioctl_get_msmfb_overlay_id: not set\n");
+		ret = -EFAULT;
+	}
+	
+	return ret;
+}
+
 static long smd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int ret;
@@ -183,6 +218,12 @@ static long smd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case SHDIAG_IOCTL_SET_HAPTICSCAL:
 		ret = smd_ioctl_set_hapticscal(arg);
 		break;
+	case SHDIAG_IOCTL_SET_MSMFB_OVERLAY_ID:
+		ret = smd_ioctl_set_msmfb_overlay_id(arg);
+		break;
+	case SHDIAG_IOCTL_GET_MSMFB_OVERLAY_ID:
+		ret = smd_ioctl_get_msmfb_overlay_id(arg);
+		break;
 	default:
 		printk("[SH]smd_ioctl: cmd FAILE\n");
 		ret = -EFAULT;
@@ -191,6 +232,13 @@ static long smd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	return ret;
 }
+
+#ifdef CONFIG_COMPAT
+static long smd_compat_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+	return smd_ioctl(filp, cmd, (unsigned long)compat_ptr(arg));
+}
+#endif /* CONFIG_COMPAT */
 
 static int create_buffer( unsigned long length )
 {
@@ -272,6 +320,9 @@ static struct file_operations smd_mode_fops = {
 	.open		= smd_mode_open,
 	.release	= smd_mode_release,
 	.unlocked_ioctl = smd_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl = smd_compat_ioctl,
+#endif /* CONFIG_COMPAT */
 	.mmap		= smd_read_mmap,
 };
 

@@ -160,7 +160,9 @@ struct shgrip_sampling_val {
 
 struct shgrip_user_setting {
 	unsigned char ch0;
+	unsigned char ch1;
 	unsigned char ch2;
+	unsigned char ch3;
 	unsigned char lptime;
 	unsigned char sptime;
 };
@@ -230,7 +232,9 @@ struct shgrip_fw_data {
 struct shgrip_sensor_state {
 	unsigned char state_grip;
 	unsigned char ch0;
+	unsigned char ch1;
 	unsigned char ch2;
+	unsigned char ch3;
 };
 
 struct shgrip_sfr1_reg {

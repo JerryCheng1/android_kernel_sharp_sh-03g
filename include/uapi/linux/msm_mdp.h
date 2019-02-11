@@ -74,9 +74,10 @@
 #define MSMFB_CHANGE_BASE_FPS_LOW  _IOW(MSMFB_IOCTL_MAGIC, 182, unsigned int)
 #define MSMFB_SPECIFIED_IGC_LUT _IOWR(MSMFB_IOCTL_MAGIC, 183, struct mdp_specified_igc_lut_data)
 #define MSMFB_SPECIFIED_ARGC_LUT _IOWR(MSMFB_IOCTL_MAGIC, 184, struct mdp_specified_pgc_lut_data)
+
 #define MSMFB_MIPI_DSI_CHECK _IOWR(MSMFB_IOCTL_MAGIC, 185, struct mdp_mipi_check_param)
 #define MSMFB_MIPI_DSI_CLKCHG _IOW(MSMFB_IOCTL_MAGIC, 186, struct mdp_mipi_clkchg_param)
-#define MSMFB_SET_MFR _IOW(MSMFB_IOCTL_MAGIC, 230, int)
+#define MSMFB_SET_MFR _IOW(MSMFB_IOCTL_MAGIC, 187, int)
 
 #define FB_TYPE_3D_PANEL 0x10101010
 #define MDP_IMGTYPE2_START 0x10000
@@ -125,6 +126,7 @@ enum {
 	NOTIFY_TYPE_SUSPEND,
 	NOTIFY_TYPE_UPDATE,
 	NOTIFY_TYPE_BL_UPDATE,
+	NOTIFY_TYPE_BL_AD_ATTEN_UPDATE,
 };
 
 enum {
@@ -172,6 +174,9 @@ enum {
 	MDP_RGBA_5551,	/*RGBA 5551*/
 	MDP_ARGB_4444,	/*ARGB 4444*/
 	MDP_RGBA_4444,	/*RGBA 4444*/
+	MDP_RGB_565_UBWC,
+	MDP_RGBA_8888_UBWC,
+	MDP_Y_CBCR_H2V2_UBWC,
 	MDP_IMGTYPE_LIMIT,
 	MDP_RGB_BORDERFILL,	/* border fill pipe */
 	MDP_FB_FORMAT = MDP_IMGTYPE2_START,    /* framebuffer format */
@@ -236,6 +241,12 @@ enum {
 #define MDP_TRANSP_NOP 0xffffffff
 #define MDP_ALPHA_NOP 0xff
 
+/*
+ * MDP_DEINTERLACE & MDP_SHARPENING Flags are not valid for MDP3
+ * so using them together for MDP_SMART_BLIT.
+ */
+#define MDP_SMART_BLIT			0xC0000000
+
 #define MDP_FB_PAGE_PROTECTION_NONCACHED         (0)
 #define MDP_FB_PAGE_PROTECTION_WRITECOMBINE      (1)
 #define MDP_FB_PAGE_PROTECTION_WRITETHROUGHCACHE (2)
@@ -246,10 +257,10 @@ enum {
 /* Count of the number of MDP_FB_PAGE_PROTECTION_... values. */
 #define MDP_NUM_FB_PAGE_PROTECTION_VALUES        (5)
 
-enum {
-	MSMFB_BASE_FPS_LOW_DISABLE,
-	MSMFB_BASE_FPS_LOW_ENABLE,
-};
+#define MDSS_BASE_FPS_30		(30)
+#define MDSS_BASE_FPS_60		(60)
+#define MDSS_BASE_FPS_120		(120)
+#define MDSS_BASE_FPS_DEFAULT	MDSS_BASE_FPS_60
 
 struct mdp_rect {
 	uint32_t x;
@@ -317,6 +328,7 @@ struct mdp_blit_req {
 	uint32_t flags;
 	int sharpening_strength;  /* -127 <--> 127, default 64 */
 	uint8_t color_space;
+	uint32_t fps;
 };
 
 struct mdp_blit_req_list {
@@ -556,6 +568,7 @@ enum mdss_mdp_blend_op {
 	BLEND_OP_MAX,
 };
 
+#define DECIMATED_DIMENSION(dim, deci) (((dim) + ((1 << (deci)) - 1)) >> (deci))
 #define MAX_PLANES	4
 struct mdp_scale_data {
 	uint8_t enable_pxl_ext;
@@ -798,6 +811,7 @@ enum {
 	mdp_lut_igc,
 	mdp_lut_pgc,
 	mdp_lut_hist,
+	mdp_lut_rgb,
 	mdp_lut_max,
 };
 
@@ -827,12 +841,28 @@ struct mdp_specified_pgc_lut_data {
 	struct mdp_ar_gc_lut_data b_data;
 };
 
+/*
+ * mdp_rgb_lut_data is used to provide parameters for configuring the
+ * generic RGB lut in case of gamma correction or other LUT updation usecases
+ */
+struct mdp_rgb_lut_data {
+	uint32_t flags;
+	uint32_t lut_type;
+	struct fb_cmap cmap;
+};
+
+enum {
+	mdp_rgb_lut_gc,
+	mdp_rgb_lut_hist,
+};
+
 struct mdp_lut_cfg_data {
 	uint32_t lut_type;
 	union {
 		struct mdp_igc_lut_data igc_lut_data;
 		struct mdp_pgc_lut_data pgc_lut_data;
 		struct mdp_hist_lut_data hist_lut_data;
+		struct mdp_rgb_lut_data rgb_lut_data;
 	} data;
 };
 
@@ -1195,11 +1225,11 @@ enum {
 #define MDSS_MIPICHK_RESULT_NUM (((MDSS_MIPICHK_SENSITIV_NUM + (8 - 1)) / 8) * MDSS_MIPICHK_AMP_NUM)
 
 struct mdp_mipi_check_param {
-	uint8_t mode;
-	uint8_t flame_cnt;
+	uint8_t frame_cnt;
 	uint8_t amp;
 	uint8_t sensitiv;
-	uint8_t result[MDSS_MIPICHK_RESULT_NUM];
+	uint8_t result_master;
+	uint8_t result_slave;
 };
 
 struct mdp_mipi_clkchg_host {
@@ -1223,27 +1253,15 @@ struct mdp_mipi_clkchg_panel_andy {
 	unsigned char vbp;
 	unsigned char vfp;
 };
-
-struct mdp_mipi_clkchg_panel_aria {
-	unsigned char sti;
-	unsigned char swi;
-	unsigned char muxs;
-	unsigned char muxw;
-	unsigned char muxg1;
-	unsigned char rtn_h;
-	unsigned char rtna;
-	unsigned char fp;
-	unsigned char bp;
-};
-
 typedef union mdp_mipi_clkchg_panel_tag {
+/* Please insert panel driver parameters here, if need. */
 	struct mdp_mipi_clkchg_panel_andy andy;
-	struct mdp_mipi_clkchg_panel_aria aria;
 } mdp_mipi_clkchg_panel_t;
 
 struct mdp_mipi_clkchg_param {
 	struct mdp_mipi_clkchg_host host;
 	mdp_mipi_clkchg_panel_t panel;
+	int internal_osc;
 };
 
 #endif /*_UAPI_MSM_MDP_H_*/

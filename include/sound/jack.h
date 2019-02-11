@@ -50,6 +50,9 @@ enum snd_jack_types {
 	SND_JACK_MICROPHONE2    = 0x0000200,
 	SND_JACK_ANC_HEADPHONE = SND_JACK_HEADPHONE | SND_JACK_MICROPHONE |
 				 SND_JACK_MICROPHONE2,
+#if defined( CONFIG_SH_SMARTPHONE_PIERCE )
+	SND_JACK_PIERCE     = 0x0000400,
+#endif
 	/* Kept separate from switches to facilitate implementation */
 	SND_JACK_BTN_0		= 0x4000000,
 	SND_JACK_BTN_1		= 0x2000000,

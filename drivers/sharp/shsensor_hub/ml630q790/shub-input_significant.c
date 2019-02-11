@@ -40,6 +40,8 @@
 #define INDEX_TMNS         1
 #define INDEX_SUM          2
 
+#define TOTAL_DETECT_ENABLE     1      /* SHMDS_HUB_0213_01 add */
+
 // SHMDS_HUB_0701_01 add S
 #ifdef CONFIG_ANDROID_ENGINEERING
 static int shub_signif_log = 0;
@@ -96,10 +98,13 @@ static long shub_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 // SHMDS_HUB_1101_01 add S
 static long shub_ioctl_wrapper(struct file *filp, unsigned int cmd, unsigned long arg)
 {
+    SHUB_DBG_TIME_INIT     /* SHMDS_HUB_1801_01 add */
     long ret = 0;
 
     shub_qos_start();
+    SHUB_DBG_TIME_START    /* SHMDS_HUB_1801_01 add */
     ret = shub_ioctl(filp, cmd , arg);
+    SHUB_DBG_TIME_END(cmd) /* SHMDS_HUB_1801_01 add */
     shub_qos_end();
 
     return ret;
@@ -108,14 +113,26 @@ static long shub_ioctl_wrapper(struct file *filp, unsigned int cmd, unsigned lon
 
 void shub_input_report_significant(int32_t *data)
 {
+/* SHMDS_HUB_0213_01 add S */
+    int32_t ret = 0;
+
+    if(shub_vibe_notify_check(1)){
+        mutex_lock(&shub_lock);
+        ret = shub_activate( SHUB_ACTIVE_SIGNIFICANT, TOTAL_DETECT_ENABLE);
+        mutex_unlock(&shub_lock);
+        return;
+    }
+/* SHMDS_HUB_0213_01 add E */
 // SHMDS_HUB_0701_01 add S
     DBG_SIGNIF_DATA("data t(s)=%d, t(ns)=%d\n", data[INDEX_TM],data[INDEX_TMNS]);
 // SHMDS_HUB_0701_01 add E
     shub_input_sync_init(shub_idev); /* SHMDS_HUB_0602_01 mod */
 #if 1  // SHMDS_HUB_0601_04 mod S
+    SHUB_INPUT_VAL_CLEAR(shub_idev, ABS_HAT3Y, data[INDEX_TM]); /* SHMDS_HUB_0603_01 add */ /* SHMDS_HUB_0603_02 add */
     input_report_abs(shub_idev, ABS_HAT3Y, data[INDEX_TM]);
     input_report_abs(shub_idev, ABS_HAT3X, data[INDEX_TMNS]);
 #else
+    SHUB_INPUT_VAL_CLEAR(shub_idev, ABS_MISC, data[INDEX_TM]); /* SHMDS_HUB_0603_01 add */ /* SHMDS_HUB_0603_02 add */
     input_report_abs(shub_idev, ABS_MISC, data[INDEX_TM]);
     input_report_abs(shub_idev, ABS_VOLUME, data[INDEX_TMNS]);
 #endif // SHMDS_HUB_0601_04 mod E

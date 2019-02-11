@@ -16,7 +16,6 @@
 /*+-----------------------------------------------------------------------------+*/
 /*| @ DEFINE COMPILE SWITCH :                                                   |*/
 /*+-----------------------------------------------------------------------------+*/
-
 /* log control for read_adc_channel */
 #define SHBATT_DEBUG_READ_ADC_CHANNEL
 
@@ -25,6 +24,7 @@
 /*+-----------------------------------------------------------------------------+*/
 /*| @ INCLUDE FILE :                                                            |*/
 /*+-----------------------------------------------------------------------------+*/
+#define pr_fmt(fmt) "SHBATT:%s: " fmt, __func__
 
 #include <linux/init.h>
 #include <linux/module.h>
@@ -48,6 +48,7 @@
 #include <linux/input.h>
 #include <linux/qpnp/qpnp-adc.h>
 
+#include <linux/bitops.h>
 #include "sharp/shbatt_kerl.h"
 #include "sharp/shpwr_log.h"
 #include "sharp/sh_smem.h"
@@ -138,6 +139,13 @@
 #define DEBUG_CAPACITY_IS_ENABLE() \
 		((debug_capacity >= 0) && (debug_capacity <= 100))
 
+#define SHPWR_LOG_INFO(fmt, ...) { \
+     shpwr_add_dbg_log(pr_fmt(fmt), ##__VA_ARGS__); \
+     pr_info(fmt, ##__VA_ARGS__); \
+}
+#define SHPWR_DUMP_REG_INFO(fmt, ...) shpwr_add_dump_reg(false, fmt, ##__VA_ARGS__)
+#define SHPWR_DUMP_REG_INFO_AND_FORCESAVE(fmt, ...) shpwr_add_dump_reg(true, fmt, ##__VA_ARGS__)
+
 /*+-----------------------------------------------------------------------------+*/
 /*| @ VALUE DEFINE DECLARE :                                                    |*/
 /*+-----------------------------------------------------------------------------+*/
@@ -203,6 +211,13 @@
 #define SHBATT_FAIL_SAFE_RESUME		1
 #define SHBATT_NON_DISP_CHAR (-128) 
 
+#define USB_SOC								BIT(0)
+#define USE_SOC_SLEEP						BIT(1)
+#define USE_SOC_MULTI						BIT(2)
+#define USE_SOC_SLEEP_MULTI					BIT(3)
+#define USE_SOC_AND_SOC_SLEEP				(BIT(0) | BIT(1))
+#define USE_SOC_MULTI_AND_SOC_SLEEP_MULTI	(BIT(2) | BIT(3))
+
 /*+-----------------------------------------------------------------------------+*/
 /*| @ ENUMERATION DECLARE :                                                     |*/
 /*+-----------------------------------------------------------------------------+*/
@@ -235,6 +250,19 @@ typedef enum
 	SHBATT_TIMER_TYPE_NUM
 }shbatt_timer_type;
 
+#ifdef CONFIG_PM_SUPPORT_BATT_TRACEABILITY
+typedef enum {
+	SHBATT_SYSFS_PARAM_TYPE_STRING,
+	SHBATT_SYSFS_PARAM_TYPE_STRING_DATE,
+	SHBATT_SYSFS_PARAM_TYPE_STRING_DEC,
+	SHBATT_SYSFS_PARAM_TYPE_STRING_HEX,
+	SHBATT_SYSFS_PARAM_TYPE_UINT8_DEC,
+	SHBATT_SYSFS_PARAM_TYPE_UINT8_HEX,
+	SHBATT_SYSFS_PARAM_TYPE_UINT16_DEC,
+	SHBATT_SYSFS_PARAM_TYPE_UINT16_HEX,
+	SHBATT_SYSFS_PARAM_TYPE_MAX
+} shbatt_sysfs_parameter_type_t;
+#endif /* CONFIG_PM_SUPPORT_BATT_TRACEABILITY */
 /*+-----------------------------------------------------------------------------+*/
 /*| @ STRUCT & UNION DECLARE :                                                  |*/
 /*+-----------------------------------------------------------------------------+*/
@@ -261,8 +289,18 @@ typedef struct shbatt_timer_tag
 	shbatt_timer_type			timer_type;
 	enum alarmtimer_type		alarm_type;
 	int							prm;
+	bool						in_use;
 } shbatt_timer_t;
 
+#ifdef CONFIG_PM_SUPPORT_BATT_TRACEABILITY
+typedef struct {
+	const char*					name;
+	char*						address;
+	const unsigned int			size;
+	char						str_buf[16];
+	shbatt_sysfs_parameter_type_t	param_type;
+} write_info_t;
+#endif /* CONFIG_PM_SUPPORT_BATT_TRACEABILITY */
 /*+-----------------------------------------------------------------------------+*/
 /*| @ EXTERN VARIABLE :                                                         |*/
 /*+-----------------------------------------------------------------------------+*/
@@ -280,6 +318,7 @@ typedef struct shbatt_timer_tag
 /*+-----------------------------------------------------------------------------+*/
 
 static bool						shbatt_task_is_initialized = false;
+static bool						shbatt_seq_is_initialized = false;
 static struct wake_lock			shbatt_wake_lock;
 static atomic_t					shbatt_wake_lock_num;
 
@@ -442,6 +481,8 @@ module_param_array(absolute, int, NULL, S_IRUSR | S_IWUSR);
 static int			ratiometric[2] = {0,0};
 module_param_array(ratiometric, int, NULL, S_IRUSR | S_IWUSR);
 
+static int						soc_poll_failsafe = 1800;
+module_param_named(soc_poll_failsafe, soc_poll_failsafe, int, S_IRUSR | S_IWUSR);
 /*+-----------------------------------------------------------------------------+*/
 /*| @ EXTERN FUNCTION PROTO TYPE DECLARE :                                      |*/
 /*+-----------------------------------------------------------------------------+*/
@@ -468,11 +509,11 @@ static void shbatt_task_cmd_exec_fuelgauge_soc_poll_sequence(
 static void shbatt_task_cmd_get_battery_log_info(
 	shbatt_packet_t*			pkt_p );
 
-static void shbatt_task_cmd_get_battery_log_info_async(
-	shbatt_packet_t*			pkt_p );
-
 /* low batt */
 static void shbatt_task_cmd_exec_low_battery_check_sequence(
+	shbatt_packet_t*			pkt_p );
+
+static void shbatt_task_cmd_battlog_event(
 	shbatt_packet_t*			pkt_p );
 
 /* seq */
@@ -537,6 +578,9 @@ static enum alarmtimer_restart shbatt_seq_fatal_battery_poll_timer_expire_cb(
 	struct alarm*				alm_p,
 	ktime_t						kerl_time );
 
+static shbatt_result_t shbatt_seq_battlog_event(
+	int							evt );
+
 /* api */
 /* Timer */
 static shbatt_result_t shbatt_api_initialize( void );
@@ -570,13 +614,6 @@ static shbatt_result_t shbatt_api_exec_low_battery_check_sequence(
 	int							evt );
 
 static shbatt_result_t shbatt_api_initialize_fuelgauge_calibration_data( void );
-
-static shbatt_result_t shbatt_api_kernel_battery_log_info(
-	shbatt_batt_log_info_t		bli,
-	int							info );
-
-static shbatt_result_t shbatt_api_get_battery_log_info_async(
-	shbattlog_event_num			event );
 
 static void  shbatt_api_send_battlog_info(
 	shbattlog_info_t*			shterm_bli );
@@ -814,6 +851,8 @@ static int shbatt_drv_i2c_remove(
 static int __init shbatt_drv_module_init( void );
 static void __exit shbatt_drv_module_exit( void );
 
+bool is_shbatt_prs_launched( void );
+
 /* [PMIC/BATT][#37322]2015.03.06 ADD-START */
 int smbchg_get_pon_pbl_status(shbatt_pon_pbl_status_t* pon_pbl_status);
 /* [PMIC/BATT][#37322]2015.03.06 ADD-END */
@@ -931,7 +970,7 @@ static void (*const shbatt_task_cmd_func[])( shbatt_packet_t* pkt_p ) =
 	/* low batt */
 	shbatt_task_cmd_exec_low_battery_check_sequence,			/* SHBATT_TASK_CMD_EXEC_LOW_BATTERY_CHECK_SEQUENCE */
 	shbatt_task_cmd_get_battery_log_info,						/* SHBATT_TASK_CMD_GET_BATTERY_LOG_INFO*/
-	shbatt_task_cmd_get_battery_log_info_async,					/* SHBATT_TASK_CMD_GET_BATTERY_LOG_INFO_ASYNC */
+	shbatt_task_cmd_battlog_event,								/* SHBATT_TASK_CMD_BATTLOG_EVENT */
 };
 
 static shbatt_timer_t			shbatt_poll_timer[NUM_SHBATT_POLL_TIMER_TYPE] =
@@ -943,6 +982,7 @@ static shbatt_timer_t			shbatt_poll_timer[NUM_SHBATT_POLL_TIMER_TYPE] =
 		},
 		.alarm_type	= ALARM_BOOTTIME,
 		.timer_type	= SHBATT_TIMER_TYPE_ALARMTIMER,
+		.in_use = false,
 	},
 	{
 		.cb_func =
@@ -951,6 +991,7 @@ static shbatt_timer_t			shbatt_poll_timer[NUM_SHBATT_POLL_TIMER_TYPE] =
 		},
 		.alarm_type	= ALARM_BOOTTIME,
 		.timer_type	= SHBATT_TIMER_TYPE_HRTIMER,
+		.in_use = false,
 	},
 	{
 		.cb_func =
@@ -959,6 +1000,7 @@ static shbatt_timer_t			shbatt_poll_timer[NUM_SHBATT_POLL_TIMER_TYPE] =
 		},
 		.alarm_type	= ALARM_BOOTTIME,
 		.timer_type	= SHBATT_TIMER_TYPE_ALARMTIMER,
+		.in_use = false,
 	},
 	{
 		.cb_func =
@@ -967,6 +1009,7 @@ static shbatt_timer_t			shbatt_poll_timer[NUM_SHBATT_POLL_TIMER_TYPE] =
 		},
 		.alarm_type	= ALARM_BOOTTIME,
 		.timer_type	= SHBATT_TIMER_TYPE_HRTIMER,
+		.in_use = false,
 	},
 	/* low batt */
 	{
@@ -976,6 +1019,7 @@ static shbatt_timer_t			shbatt_poll_timer[NUM_SHBATT_POLL_TIMER_TYPE] =
 		},
 		.alarm_type	= ALARM_BOOTTIME,
 		.timer_type	= SHBATT_TIMER_TYPE_ALARMTIMER,
+		.in_use = false,
 	},
 	{
 		.cb_func =
@@ -984,6 +1028,7 @@ static shbatt_timer_t			shbatt_poll_timer[NUM_SHBATT_POLL_TIMER_TYPE] =
 		},
 		.alarm_type	= ALARM_BOOTTIME,
 		.timer_type	= SHBATT_TIMER_TYPE_ALARMTIMER,
+		.in_use = false,
 	},
 };
 
@@ -1091,26 +1136,6 @@ shbatt_result_t shbatt_api_get_smem_info( shbatt_smem_info_t * p_smem_info )
 	return result;
 }
 
-shbatt_result_t shbatt_api_kernel_battery_log_info_event(
-	int							event_num,
-	int							info
-){
-	shbatt_batt_log_info_t		bli;
-	shbatt_result_t				result = SHBATT_RESULT_SUCCESS;
-
-	SHPWR_LOG( SHPWR_LOG_LEVEL_NOTICE, SHPWR_LOG_TYPE_BATT,
-				"[S] %s()\n",__FUNCTION__);
-
-	memset(&bli, 0, sizeof(bli));
-	bli.event_num = event_num;
-	result = shbatt_api_kernel_battery_log_info( bli, info );
-
-	SHPWR_LOG( SHPWR_LOG_LEVEL_NOTICE, SHPWR_LOG_TYPE_BATT,
-				"[E] %s() result:%d\n", __FUNCTION__, result );
-
-	return SHBATT_RESULT_SUCCESS;
-}
-
 shbatt_result_t shbatt_api_notify_charge_full( void )
 {
 
@@ -1120,6 +1145,9 @@ shbatt_result_t shbatt_api_notify_charge_full( void )
 				"[S] %s()\n", __FUNCTION__ );
 
 	alarm_cancel(&(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer));
+
+	shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].in_use = false;
+	SHBATT_TRACE("%s : Change timer[%d] in use=%d\n",__FUNCTION__,SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC,shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].in_use);
 
 	soc.type	= SHBATT_TIMER_TYPE_0;
 	soc.sleep	= SHBATT_TIMER_TYPE_WAKEUP;
@@ -1156,6 +1184,9 @@ shbatt_result_t shbatt_api_get_battery_log_info(
 		return SHBATT_RESULT_REJECTED;
 	}
 
+	if (bli_p->event_num == SHBATTLOG_EVENT_NONE)	// SHBATTLOG_EVENT_BATT_REPORT_NORM or SHBATTLOG_EVENT_BATT_REPORT_CHG
+		sh_dump_regs();
+
 	INIT_COMPLETION(shbatt_api_cmp);
 
 	SHBATT_WAKE_CTL(1);
@@ -1188,6 +1219,135 @@ shbatt_result_t shbatt_api_get_battery_log_info(
 /*+-----------------------------------------------------------------------------+*/
 /*| @ LOCAL FUNCTION'S CODE AREA :                                              |*/
 /*+-----------------------------------------------------------------------------+*/
+#ifdef CONFIG_PM_SUPPORT_BATT_TRACEABILITY
+static int shbatt_api_chk_smem_str( write_info_t *file )
+{
+	unsigned int	chk_cntr;
+	char*			tmp_buf = NULL;
+
+	SHBATT_TRACE( "[S] %s str:%s\n", __FUNCTION__, file->str_buf );
+
+	tmp_buf = file->str_buf;
+	for( chk_cntr = 0; chk_cntr < file->size; chk_cntr++ ) {
+		if( ( tmp_buf[chk_cntr] >= '0' ) &&
+			( tmp_buf[chk_cntr] <= '9' ) ) {
+			;
+		}
+		else if( ( ( tmp_buf[chk_cntr] >= 'A' ) &&
+				( tmp_buf[chk_cntr] <= 'F' ) ) ||
+				( ( tmp_buf[chk_cntr] >= 'a' ) &&
+				( tmp_buf[chk_cntr] <= 'f' ) ) ) {
+			switch( file->param_type ) {
+			case SHBATT_SYSFS_PARAM_TYPE_STRING_DATE:
+			case SHBATT_SYSFS_PARAM_TYPE_STRING_DEC:
+			case SHBATT_SYSFS_PARAM_TYPE_UINT8_DEC:
+			case SHBATT_SYSFS_PARAM_TYPE_UINT16_DEC:
+				SHBATT_ERROR( "[E]A-F a-f found in str_buff[%d]:%c. type:%d\n", chk_cntr, tmp_buf[chk_cntr], file->param_type );
+				snprintf( file->str_buf, file->size+1, "000000000000000" );
+				return 1;
+			default:
+				break;
+			}
+		}
+		else if( ( ( tmp_buf[chk_cntr] >= 'G' ) &&
+				( tmp_buf[chk_cntr] <= 'Z' ) ) ||
+				( ( tmp_buf[chk_cntr] >= 'g' ) &&
+				( tmp_buf[chk_cntr] <= 'z' ) ) ) {
+			switch( file->param_type ) {
+			case SHBATT_SYSFS_PARAM_TYPE_STRING:
+				break;
+			default:
+				SHBATT_ERROR( "[E]G-Z a-f found in str_buff[%d]:%c. type:%d\n", chk_cntr, tmp_buf[chk_cntr], file->param_type );
+				snprintf( file->str_buf, file->size+1, "000000000000000" );
+				return 1;
+			}
+		}
+		else if( tmp_buf[chk_cntr] == '\0' ) {
+			SHBATT_ERROR( "[E]str_buf[%d] is NULL. type:%d\n",chk_cntr, file->param_type );
+			snprintf( file->str_buf, file->size+1, "000000000000000" );
+			return 1;
+		}
+		else {
+			SHBATT_ERROR( "[E]str_buf[%d]:%c. type:%d\n",chk_cntr, tmp_buf[chk_cntr], file->param_type );
+			snprintf( file->str_buf, file->size+1, "000000000000000" );
+			return 1;
+		}
+	}
+
+	SHBATT_TRACE( "[E] %s\n", __FUNCTION__ );
+	return 0;
+}
+
+static shbatt_result_t shbatt_api_write_traceability( void )
+{
+	static write_info_t	write_attr[] =
+	{
+		{
+			.name = "cell_date",
+			.address = &cell_date[0],
+			.size = sizeof("YYYYMMDD")-1,
+			.str_buf = "",
+			.param_type = SHBATT_SYSFS_PARAM_TYPE_STRING_DATE
+		},
+		{
+			.name = "cell_line",
+			.address = &cell_line[0],
+			.size = sizeof("xx")-1,
+			.str_buf = "",
+			.param_type = SHBATT_SYSFS_PARAM_TYPE_STRING_HEX
+		},
+		{
+			.name = "pack_date",
+			.address = &pack_date[0],
+			.size = sizeof("yyyymmdd")-1,
+			.str_buf = "",
+			.param_type = SHBATT_SYSFS_PARAM_TYPE_STRING_DATE
+		},
+		{
+			.name = "pack_manu_num",
+			.address = &pack_manu_num[0],
+			.size = sizeof("ssss")-1,
+			.str_buf = "",
+			.param_type = SHBATT_SYSFS_PARAM_TYPE_UINT16_DEC
+		},
+	};
+	shbatt_smem_info_t			smem_info;
+	char*						write_p;
+	shbatt_result_t				shbatt_result;
+	unsigned int				write_cntr;
+
+	SHBATT_TRACE("[S] %s\n", __FUNCTION__);
+
+	memset(&smem_info, 0x00, sizeof(shbatt_smem_info_t));
+	shbatt_result = shbatt_api_get_smem_info(&smem_info);
+	if (shbatt_result != SHBATT_RESULT_SUCCESS) {
+		SHBATT_ERROR("[E] shbatt_api_get_smem_info failed:%d.\n", shbatt_result );
+		return shbatt_result;
+	}
+
+	write_p = smem_info.traceability_info;
+
+	for( write_cntr = 0; write_cntr < sizeof(write_attr)/sizeof(write_attr[0]); write_cntr++ ) {
+
+		write_info_t *w = &write_attr[write_cntr];
+		snprintf( w->str_buf, w->size+1, "%s", write_p );
+
+		if( shbatt_api_chk_smem_str( w ) == 1 ) {
+			SHBATT_ERROR("smem check %s. end fail-safe.\n", w->name);
+		}
+
+		SHBATT_TRACE("[P] %s. size:%d str:%s\n", w->name, w->size, w->str_buf );
+
+		strncpy(w->address, w->str_buf, w->size);
+
+		write_p += w->size;
+	}
+
+	SHBATT_TRACE("[E] %s\n", __FUNCTION__);
+
+	return SHBATT_RESULT_SUCCESS;
+}
+#endif /* CONFIG_PM_SUPPORT_BATT_TRACEABILITY */
 
 static int shbatt_drv_create_device( void )
 {
@@ -1378,49 +1538,16 @@ static void shbatt_task_cmd_get_battery_log_info(
 	SHBATT_TRACE("[E] %s \n",__FUNCTION__);
 }
 
-static void shbatt_task_cmd_get_battery_log_info_async(
+static void shbatt_task_cmd_battlog_event(
 	shbatt_packet_t*			pkt_p
 ){
-	shbatt_batt_log_info_t		bli;
-	shbatt_result_t				result;
-	shbattlog_info_t			term_bli;
+	SHPWR_LOG( SHPWR_LOG_LEVEL_DEBUG,SHPWR_LOG_TYPE_BATT,
+				"[S] %s()\n", __FUNCTION__);
 
-	SHBATT_TRACE("[S] %s()\n",__FUNCTION__);
+	shbatt_seq_battlog_event(pkt_p->prm.evt);
 
-	memset( &term_bli, 0x00, sizeof( term_bli) );
-	term_bli.event_num	= pkt_p->prm.event;
-	SHBATT_TRACE( "[S] %s(): evt=%d.\n",__FUNCTION__, pkt_p->prm.event );
-
-	result = shbatt_seq_get_battery_log_info( &bli );
-	if( result == SHBATT_RESULT_SUCCESS )
-	{
-		term_bli.bat_vol	= bli.bat_vol;
-		term_bli.chg_vol	= bli.chg_vol;
-		term_bli.chg_cur	= bli.chg_cur;
-		term_bli.bat_temp	= bli.bat_temp;
-		term_bli.cpu_temp	= bli.cpu_temp;
-		term_bli.chg_temp	= bli.chg_temp;
-		term_bli.cam_temp	= bli.cam_temp;
-		term_bli.pmic_temp	= bli.pmic_temp;
-		term_bli.pa_temp	= bli.pa_temp;
-		term_bli.lcd_temp	= bli.lcd_temp;
-		term_bli.avg_cur	= bli.avg_cur;
-		term_bli.avg_vol	= bli.avg_vol;
-		term_bli.latest_cur	= bli.latest_cur;
-		term_bli.acc_cur	= bli.acc_cur;
-		term_bli.vol_per	= bli.vol_per;
-		term_bli.cur_dep_per= bli.cur_dep_per;
-		term_bli.avg_dep_per= bli.avg_dep_per;
-	}
-	else
-	{
-		SHPWR_LOG( SHPWR_LOG_LEVEL_ERR,SHPWR_LOG_TYPE_BATT,
-					"[P] %s() shbatt_seq_get_battery_log_info() failed.\n", __FUNCTION__ );
-	}
-
-	shbatt_api_send_battlog_info( &term_bli);
-
-	SHBATT_TRACE("[E] %s()\n",__FUNCTION__);
+	SHPWR_LOG( SHPWR_LOG_LEVEL_DEBUG,SHPWR_LOG_TYPE_BATT,
+				"[E] %s()\n", __FUNCTION__ );
 }
 
 static shbatt_result_t shbatt_seq_initialize( void )
@@ -1438,6 +1565,7 @@ static shbatt_result_t shbatt_seq_initialize( void )
 					"[P] %s() failed shbatt_i2c_device_init(). ret:%d\n", __FUNCTION__, i2c_ret );
 	}
 	shbatt_task_is_initialized = true;
+	shbatt_seq_is_initialized = true;
 
 	SHPWR_LOG( SHPWR_LOG_LEVEL_DEBUG,SHPWR_LOG_TYPE_BATT,
 				"[E] %s()\n",__FUNCTION__);
@@ -1477,7 +1605,7 @@ static void shbatt_seq_scale_fuelgauge_current(
 		*cur_mA += calc_offs;
 	}
 	else{
-		/* current (mA) = current_code* 11.77 / Rsense (mƒ¶) */
+		/* current (mA) = current_code* 11.77 / Rsense (m??) */
 		*cur_mA = cur * 1177 / 10 / 100;
 	}
 	SHBATT_TRACE("[E] %s cur_mA=%d\n",__FUNCTION__, *cur_mA);
@@ -1872,6 +2000,8 @@ static enum hrtimer_restart shbatt_seq_fuelgauge_soc_poll_hrtimer_expire_cb(
 		shbatt_timer_restarted = false;
 	}
 
+	shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP].in_use = false;
+	SHBATT_TRACE("%s : Change timer[%d] in use=%d\n",__FUNCTION__,SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP,shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP].in_use);
 
 	SHPWR_LOG( SHPWR_LOG_LEVEL_DEBUG,SHPWR_LOG_TYPE_BATT,
 				"[E] %s()\n",__FUNCTION__);
@@ -1913,6 +2043,8 @@ static enum hrtimer_restart shbatt_seq_fuelgauge_soc_poll_hrtimer_expire_multi_c
 		shbatt_timer_restarted = false;
 	}
 
+	shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP_MULTI].in_use = false;
+	SHBATT_TRACE("%s : Change timer[%d] in use=%d\n",__FUNCTION__,SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP_MULTI,shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP_MULTI].in_use);
 
 	SHPWR_LOG( SHPWR_LOG_LEVEL_DEBUG,SHPWR_LOG_TYPE_BATT,
 				"[E] %s()\n",__FUNCTION__);
@@ -1946,6 +2078,9 @@ static enum alarmtimer_restart shbatt_seq_fuelgauge_soc_poll_timer_expire_cb(
 		shbatt_timer_restarted = false;
 	}
 
+	shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].in_use = false;
+	SHBATT_TRACE("%s : Change timer[%d] in use=%d\n",__FUNCTION__,SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC,shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].in_use);
+
 	SHPWR_LOG( SHPWR_LOG_LEVEL_DEBUG,SHPWR_LOG_TYPE_BATT,
 				"[E] %s()\n",__FUNCTION__);
 	return ret;
@@ -1977,6 +2112,9 @@ static enum alarmtimer_restart shbatt_seq_fuelgauge_soc_poll_timer_expire_multi_
 		shbatt_timer_restarted = false;
 	}
 
+	shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].in_use = false;
+	SHBATT_TRACE("%s : Change timer[%d] in use=%d\n",__FUNCTION__,SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI,shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].in_use);
+
 	SHPWR_LOG( SHPWR_LOG_LEVEL_DEBUG,SHPWR_LOG_TYPE_BATT,
 				"[E] %s()\n",__FUNCTION__);
 
@@ -1995,6 +2133,9 @@ static enum alarmtimer_restart shbatt_seq_low_battery_poll_timer_expire_cb(
 
 	shbatt_api_exec_low_battery_check_sequence(SHBATT_LOW_BATTERY_EVENT_LOW_TIMER);
 
+	shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_LOW_BATTERY].in_use = false;
+	SHBATT_TRACE("%s : Change timer[%d] in use=%d\n",__FUNCTION__,SHBATT_POLL_TIMER_TYPE_LOW_BATTERY,shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_LOW_BATTERY].in_use);
+
 	SHPWR_LOG( SHPWR_LOG_LEVEL_DEBUG,SHPWR_LOG_TYPE_BATT,
 				"[E] %s()\n",__FUNCTION__);
 
@@ -2011,6 +2152,9 @@ static enum alarmtimer_restart shbatt_seq_fatal_battery_poll_timer_expire_cb(
 				"[S] %s()\n",__FUNCTION__);
 
 	shbatt_api_exec_low_battery_check_sequence(SHBATT_LOW_BATTERY_EVENT_FATAL_TIMER);
+
+	shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FATAL_BATTERY].in_use = false;
+	SHBATT_TRACE("%s : Change timer[%d] in use=%d\n",__FUNCTION__,SHBATT_POLL_TIMER_TYPE_FATAL_BATTERY,shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FATAL_BATTERY].in_use);
 
 	SHPWR_LOG( SHPWR_LOG_LEVEL_DEBUG,SHPWR_LOG_TYPE_BATT,
 				"[E] %s()\n",__FUNCTION__);
@@ -2147,6 +2291,9 @@ static shbatt_result_t shbatt_api_exec_fuelgauge_soc_poll_sequence(
 		set_time.tv64 = SHBATT_TIMER_FG_PERIOD_NS;
 		alarm_start_relative(&(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer),
 					set_time );
+
+		shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].in_use = true;
+		SHBATT_TRACE("%s : Change timer[%d] in use=%d\n",__FUNCTION__,SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC,shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].in_use);
 		return SHBATT_RESULT_REJECTED;
 	}
 
@@ -2568,36 +2715,220 @@ static shbatt_result_t shbatt_api_initialize_fuelgauge_calibration_data( void )
 	return result;
 }
 
-static shbatt_result_t shbatt_api_kernel_battery_log_info(
-	shbatt_batt_log_info_t		bli,
-	int							info
+shbatt_result_t shbatt_api_battlog_event(
+	shbattlog_event_num			evt
+){
+	shbatt_packet_t*			pkt_p;
+
+	SHPWR_LOG( SHPWR_LOG_LEVEL_DEBUG,SHPWR_LOG_TYPE_BATT,
+				"[S] %s()\n",__FUNCTION__);
+
+	if(shbatt_task_is_initialized == false)
+	{
+		return SHBATT_RESULT_REJECTED;
+	}
+
+	pkt_p = shbatt_task_get_packet();
+
+	if(pkt_p == NULL)
+	{
+		return SHBATT_RESULT_REJECTED;
+	}
+
+	SHBATT_WAKE_CTL(1);
+
+	pkt_p->hdr.cmd		= SHBATT_TASK_CMD_BATTLOG_EVENT;
+	pkt_p->hdr.cb_p		= NULL;
+	pkt_p->hdr.cmp_p	= NULL;
+	pkt_p->hdr.ret_p	= NULL;
+	pkt_p->prm.evt		= evt;
+
+	INIT_WORK((struct work_struct*)pkt_p,shbatt_task);
+
+	queue_work(shbatt_task_workqueue_p,(struct work_struct*)pkt_p);
+
+	SHPWR_LOG( SHPWR_LOG_LEVEL_DEBUG,SHPWR_LOG_TYPE_BATT,
+				"[E] %s()\n",__FUNCTION__);
+
+	return SHBATT_RESULT_SUCCESS;
+}
+
+shbatt_result_t shbatt_api_battlog_charge_status(
+	int			status
+){
+	int charge_status_event = SHBATTLOG_EVENT_NONE;
+	static int pre_charge_status_event = SHBATTLOG_EVENT_NONE;
+
+	switch (status) {
+	case POWER_SUPPLY_STATUS_CHARGING:
+		charge_status_event = SHBATTLOG_EVENT_CHG_START;
+		break;
+	case POWER_SUPPLY_STATUS_DISCHARGING:
+		charge_status_event = SHBATTLOG_EVENT_CHG_END;
+		break;
+	case POWER_SUPPLY_STATUS_FULL:
+		charge_status_event = SHBATTLOG_EVENT_CHG_COMP;
+		break;
+	case POWER_SUPPLY_STATUS_NOT_CHARGING:
+		charge_status_event = SHBATTLOG_EVENT_CHG_ERROR;
+		break;
+	default:
+		charge_status_event = SHBATTLOG_EVENT_NONE;
+	}
+
+	if(charge_status_event != SHBATTLOG_EVENT_NONE && charge_status_event != pre_charge_status_event) {
+		SHPWR_LOG_INFO("pre_charge_status_event = %d, charge_status_event = %d\n", pre_charge_status_event, charge_status_event);
+
+		shbatt_api_battlog_event(charge_status_event);
+		pre_charge_status_event = charge_status_event;
+	}
+
+	return SHBATT_RESULT_SUCCESS;
+}
+
+shbatt_result_t shbatt_api_battlog_charge_error(
+	int			charge_error_event
+){
+	static int pre_charge_error_event = SHBATTLOG_EVENT_NONE;
+
+	if(charge_error_event != SHBATTLOG_EVENT_NONE && charge_error_event != pre_charge_error_event) {
+		SHPWR_LOG_INFO("pre_charge_error_event = %d, charge_error_event = %d\n", pre_charge_error_event, charge_error_event);
+
+		shbatt_api_battlog_event(charge_error_event);
+		pre_charge_error_event = charge_error_event;
+	}
+
+	return SHBATT_RESULT_SUCCESS;
+}
+
+shbatt_result_t shbatt_api_battlog_jeita_status(
+	int			jeita_cur_status
+){
+	static int jeita_pre_status = POWER_SUPPLY_HEALTH_UNKNOWN;
+
+	if (jeita_cur_status  != jeita_pre_status) {
+		SHPWR_LOG_INFO("jeita_pre_status = %d,jeita_cur_status  = %d\n", jeita_pre_status , jeita_cur_status );
+
+		switch (jeita_cur_status){
+		case POWER_SUPPLY_HEALTH_OVERHEAT:
+			shbatt_api_battlog_event(SHBATTLOG_EVENT_CHG_HOT_STOP_ST);
+			break;
+		case POWER_SUPPLY_HEALTH_COLD:
+			shbatt_api_battlog_event(SHBATTLOG_EVENT_CHG_COLD_STOP_ST);
+			break;
+		case POWER_SUPPLY_HEALTH_WARM:
+			shbatt_api_battlog_event(SHBATTLOG_EVENT_CHG_HOT_FAST_ST);
+			break;
+		case POWER_SUPPLY_HEALTH_COOL:
+			shbatt_api_battlog_event(SHBATTLOG_EVENT_CHG_COLD_FAST_ST);
+			break;
+		case POWER_SUPPLY_HEALTH_GOOD:
+			shbatt_api_battlog_event(SHBATTLOG_EVENT_CHG_FAST_ST);
+			break;
+		default:
+			break;
+		}
+	}
+	jeita_pre_status = jeita_cur_status;
+
+	return SHBATT_RESULT_SUCCESS;
+}
+
+shbatt_result_t shbatt_api_battlog_capacity(
+	int			cur_capacity
+){
+	static int pre_capacity = 80;
+	static const shbattlog_event_num event_tbl[10] =
+	{
+		SHBATTLOG_EVENT_FGIC_EX10,
+		SHBATTLOG_EVENT_FGIC_EX20,
+		SHBATTLOG_EVENT_FGIC_EX30,
+		SHBATTLOG_EVENT_FGIC_EX40,
+		SHBATTLOG_EVENT_FGIC_EX50,
+		SHBATTLOG_EVENT_FGIC_EX60,
+		SHBATTLOG_EVENT_FGIC_EX70,
+		SHBATTLOG_EVENT_FGIC_EX80,
+		SHBATTLOG_EVENT_FGIC_EX90,
+		SHBATTLOG_EVENT_FGIC_EX100
+	};
+
+	if( pre_capacity != cur_capacity ){
+		pr_debug("pre_capacity = %d cur_capacity  = %d\n", pre_capacity, cur_capacity );
+		
+		if(cur_capacity == 0)
+		{
+			shbatt_api_battlog_event(SHBATTLOG_EVENT_INDICATER_0);
+			shbatt_api_battlog_event(SHBATTLOG_EVENT_FATAL_BATT);
+		}
+		else
+		{
+			if(cur_capacity % 10 == 0)
+			{
+				pr_debug("event cur_cap  = %d tbl:%d\n", cur_capacity, event_tbl[(cur_capacity/10)-1] );
+				shbatt_api_battlog_event(event_tbl[(cur_capacity/10)-1]);
+			}
+		}
+		pre_capacity = cur_capacity;
+	}
+
+	return SHBATT_RESULT_SUCCESS;
+}
+
+shbatt_result_t shbatt_api_battlog_usb_type(
+	int			usb_type
+){
+	int usb_type_event = SHBATTLOG_EVENT_NONE;
+//	static int pre_usb_type = USB_INVALID_CHARGER;
+
+//	pr_info("usb_type = %d, pre_usb_type = %d\n", usb_type, pre_usb_type);
+
+//	if (usb_type == USB_INVALID_CHARGER) {
+//		pre_usb_type = USB_INVALID_CHARGER;
+//		return SHBATT_RESULT_SUCCESS;
+//	}
+
+//	if (pre_usb_type == usb_type) {
+//		return SHBATT_RESULT_SUCCESS;
+//	}
+	
+//	pre_usb_type = usb_type;
+
+	switch (usb_type) {
+	case 0:
+		usb_type_event = SHBATTLOG_EVENT_CHG_TYPE_SDP;
+		break;
+	case 2:
+		usb_type_event = SHBATTLOG_EVENT_CHG_TYPE_DCP;
+		break;
+	case 3:
+		usb_type_event = SHBATTLOG_EVENT_CHG_TYPE_CDP;
+		break;
+	default:
+		usb_type_event = SHBATTLOG_EVENT_CHG_TYPE_OTHER;
+	}
+
+	SHPWR_LOG_INFO("usb_type = %d, usb_type_event = %d\n", usb_type, usb_type_event);
+
+	shbatt_api_battlog_event(usb_type_event);
+
+	return SHBATT_RESULT_SUCCESS;
+}
+
+static shbatt_result_t shbatt_seq_battlog_event(
+	int		evt
 ){
 	shbattlog_info_t			shterm_bli;
+	shbatt_batt_log_info_t		bli;
 
 	SHBATT_TRACE("[S] %s()\n",__FUNCTION__);
 
 	memset(&shterm_bli, 0, sizeof(shterm_bli));
-	shterm_bli.event_num = bli.event_num;
+	shterm_bli.event_num = evt;
 
 	switch(shterm_bli.event_num )
 	{
-	case SHBATTLOG_EVENT_CAPACITY_FAILSAFE:
-		shterm_bli.bat_vol	= info;
-		shterm_bli.bat_temp	= SHBATT_NON_DISP_CHAR;
-		shterm_bli.cpu_temp	= SHBATT_NON_DISP_CHAR;
-		shterm_bli.chg_temp	= SHBATT_NON_DISP_CHAR;
-		shterm_bli.cam_temp	= SHBATT_NON_DISP_CHAR;
-		shterm_bli.pmic_temp= SHBATT_NON_DISP_CHAR;
-		shterm_bli.pa_temp	= SHBATT_NON_DISP_CHAR;
-		shterm_bli.lcd_temp	= SHBATT_NON_DISP_CHAR;
-		shterm_bli.vol_per	= shbatt_batt_capacity;
-		break;
 	case SHBATTLOG_EVENT_CHG_INSERT_USB:
 	case SHBATTLOG_EVENT_CHG_REMOVE_USB:
-	case SHBATTLOG_EVENT_CHG_INSERT_CHGR:
-	case SHBATTLOG_EVENT_CHG_REMOVE_CHGR:
-	case SHBATTLOG_EVENT_CHG_INSERT_PROP_CHGR:
-	case SHBATTLOG_EVENT_CHG_REMOVE_PROP_CHGR:
 	case SHBATTLOG_EVENT_CHG_START:
 	case SHBATTLOG_EVENT_CHG_END:
 	case SHBATTLOG_EVENT_CHG_COMP:
@@ -2610,57 +2941,51 @@ static shbatt_result_t shbatt_api_kernel_battery_log_info(
 	case SHBATTLOG_EVENT_CHG_HOT_STOP_ST:
 	case SHBATTLOG_EVENT_CHG_HOT_ADD_FAST_ST:
 	case SHBATTLOG_EVENT_CHG_COLD_STOP_ST:
-		if( shbatt_api_get_battery_log_info_async( bli.event_num ) == SHBATT_RESULT_SUCCESS )
+	case SHBATTLOG_EVENT_CHG_COUNT_OVER_STOP_ST:
+	case SHBATTLOG_EVENT_CHG_TYPE_SDP:
+	case SHBATTLOG_EVENT_CHG_TYPE_CDP:
+	case SHBATTLOG_EVENT_CHG_TYPE_DCP:
+	case SHBATTLOG_EVENT_CHG_TYPE_HVDCP:
+	case SHBATTLOG_EVENT_CHG_TYPE_OTHER:
+		if( shbatt_seq_get_battery_log_info(&bli) == SHBATT_RESULT_SUCCESS )
 		{
-			SHBATT_TRACE("[E] %s() Asynchronous. return=SHBATT_RESULT_SUCCESS\n",__FUNCTION__);
-			return SHBATT_RESULT_SUCCESS;
+			shterm_bli.bat_vol		= bli.bat_vol;
+			shterm_bli.chg_vol		= bli.chg_vol;
+			shterm_bli.chg_cur		= bli.chg_cur;
+			shterm_bli.bat_temp		= bli.bat_temp;
+			shterm_bli.cpu_temp		= bli.cpu_temp;
+			shterm_bli.chg_temp		= bli.chg_temp;
+			shterm_bli.cam_temp		= bli.cam_temp;
+			shterm_bli.pmic_temp	= bli.pmic_temp;
+			shterm_bli.pa_temp		= bli.pa_temp;
+			shterm_bli.lcd_temp		= bli.lcd_temp;
+			shterm_bli.avg_cur		= bli.avg_cur;
+			shterm_bli.avg_vol		= bli.avg_vol;
+			shterm_bli.latest_cur	= bli.latest_cur;
+			shterm_bli.acc_cur		= bli.acc_cur;
+			shterm_bli.vol_per		= bli.vol_per;
+			shterm_bli.cur_dep_per	= bli.cur_dep_per;
+			shterm_bli.avg_dep_per	= bli.avg_dep_per;
 		}
-		// data error
-		SHPWR_LOG( SHPWR_LOG_LEVEL_ERR,SHPWR_LOG_TYPE_BATT,
-					"[P] %s()  rejected. event:%d.\n", __FUNCTION__, bli.event_num );
+		else
+		{
+			SHPWR_LOG( SHPWR_LOG_LEVEL_ERR,SHPWR_LOG_TYPE_BATT,
+						"[P] %s() event:%d. shbatt_api_get_battery_log_info() failed.\n", __FUNCTION__,
+						shterm_bli.event_num );
+			// data error
+			memset(&shterm_bli, 0, sizeof(shterm_bli));
+			shterm_bli.event_num = evt;
+		}
+		break;
+
 	default:
 		// other event
 		memset(&shterm_bli, 0, sizeof(shterm_bli));
-		shterm_bli.event_num = bli.event_num;
+		shterm_bli.event_num = evt;
 		break;
 	}
 
 	shbatt_api_send_battlog_info(&shterm_bli);
-
-	SHBATT_TRACE("[E] %s()\n",__FUNCTION__);
-
-	return SHBATT_RESULT_SUCCESS;
-}
-
-static shbatt_result_t shbatt_api_get_battery_log_info_async(
-	shbattlog_event_num			event
-){
-	shbatt_packet_t*			pkt_p;
-
-	SHBATT_TRACE("[S] %s() evt=%d.\n",__FUNCTION__, event);
-
-	if(shbatt_task_is_initialized == false)
-	{
-		return SHBATT_RESULT_REJECTED;
-	}
-	pkt_p = shbatt_task_get_packet();
-
-	if(pkt_p == NULL)
-	{
-		return SHBATT_RESULT_REJECTED;
-	}
-
-	SHBATT_WAKE_CTL(1);
-
-	pkt_p->hdr.cmd		= SHBATT_TASK_CMD_GET_BATTERY_LOG_INFO_ASYNC;
-	pkt_p->hdr.cb_p		= NULL;
-	pkt_p->hdr.cmp_p	= NULL;
-	pkt_p->hdr.ret_p	= NULL;
-	pkt_p->prm.event	= event;
-
-	INIT_WORK((struct work_struct*)pkt_p,shbatt_task);
-
-	queue_work(shbatt_task_workqueue_p,(struct work_struct*)pkt_p);
 
 	SHBATT_TRACE("[E] %s()\n",__FUNCTION__);
 
@@ -2809,6 +3134,9 @@ static int shbatt_drv_ioctl_cmd_set_timer(
 			hrtimer_cancel( &(shbatt_poll_timer[pti.ptt].alm.hr_timer) );
 			hrtimer_start( &(shbatt_poll_timer[pti.ptt].alm.hr_timer),
 						set_time, HRTIMER_MODE_ABS );
+
+			shbatt_poll_timer[pti.ptt].in_use = true;
+			SHBATT_TRACE("%s : Change timer[%d] in use=%d\n",__FUNCTION__,pti.ptt,shbatt_poll_timer[pti.ptt].in_use);
 			break;
 
 		case SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC:
@@ -2822,6 +3150,11 @@ static int shbatt_drv_ioctl_cmd_set_timer(
 			alarm_cancel( &(shbatt_poll_timer[pti.ptt].alm.alarm_timer) );
 			alarm_start_relative(&(shbatt_poll_timer[pti.ptt].alm.alarm_timer),
 						set_time);
+
+			shbatt_poll_timer[pti.ptt].in_use = true;
+			SHBATT_TRACE("%s : Change timer[%d] in use=%d\n",__FUNCTION__,pti.ptt,shbatt_poll_timer[pti.ptt].in_use);
+			SHPWR_LOG( SHPWR_LOG_LEVEL_DEBUG,SHPWR_LOG_TYPE_BATT,
+						"[P] %s():type:%d expire_time=%d\n",__FUNCTION__, pti.ptt, pti.ms );
 			break;
 
 		default:
@@ -2858,6 +3191,9 @@ static int shbatt_drv_ioctl_cmd_clr_timer(
 		case SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP:
 		case SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP_MULTI:
 			hrtimer_cancel( &(shbatt_poll_timer[pti.ptt].alm.hr_timer) );
+
+			shbatt_poll_timer[pti.ptt].in_use = false;
+			SHBATT_TRACE("%s : Change timer[%d] in use=%d\n",__FUNCTION__,pti.ptt,shbatt_poll_timer[pti.ptt].in_use);
 			break;
 
 		case SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC:
@@ -2866,6 +3202,9 @@ static int shbatt_drv_ioctl_cmd_clr_timer(
 		case SHBATT_POLL_TIMER_TYPE_LOW_BATTERY:
 		case SHBATT_POLL_TIMER_TYPE_FATAL_BATTERY:
 			alarm_cancel( &(shbatt_poll_timer[pti.ptt].alm.alarm_timer) );
+
+			shbatt_poll_timer[pti.ptt].in_use = false;
+			SHBATT_TRACE("%s : Change timer[%d] in use=%d\n",__FUNCTION__,pti.ptt,shbatt_poll_timer[pti.ptt].in_use);
 			break;
 
 		default:
@@ -3957,8 +4296,10 @@ static void shbatt_input_event(struct input_handle *handle, unsigned int type,
 		SHBATT_TRACE("[P] %s(): now_time=%010lu.%09lu \n",__FUNCTION__, now_time_sub.tv_sec, now_time_sub.tv_nsec);
 		SHBATT_TRACE("[P] %s(): shbatt_timer_restarted=%d diff_time=%d \n",__FUNCTION__, shbatt_timer_restarted, diff_time);
 
-		if((shbatt_timer_restarted == false) && (diff_time > 4200))
+		if((shbatt_timer_restarted == false) && (diff_time > soc_poll_failsafe))
 		{
+			int i, timer_in_use = 0;
+
 			ts.tv_sec = now_time.tv_sec + 10;
 			ts.tv_nsec = now_time.tv_nsec;
 			
@@ -3967,12 +4308,76 @@ static void shbatt_input_event(struct input_handle *handle, unsigned int type,
 			shbatt_timer_restarted = true;
 			memset( &set_time,0x00, sizeof( set_time ) );
 			set_time.tv64 = SHBATT_TIMER_FG_PERIOD_NS;
-			shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].prm = 0;
-			alarm_cancel(&(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer));
-			alarm_start_relative(&(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer),
-						set_time);
 
-			shbatt_api_kernel_battery_log_info_event( SHBATTLOG_EVENT_CAPACITY_FAILSAFE, SHBATT_FAIL_SAFE_INPUT_EVENT );
+			timer_in_use = 0;
+			for(i=0;i<SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP_MULTI;i++)
+			{
+				SHBATT_TRACE("[P] %s : Timer[%d]=%d\n",__FUNCTION__,i,shbatt_poll_timer[i].in_use);
+				if(shbatt_poll_timer[i].in_use)
+					timer_in_use |= BIT(i);
+			}
+			SHBATT_TRACE("[P] %s : Timer use=0x%x\n",__FUNCTION__,timer_in_use);
+			switch(timer_in_use)
+			{
+				case USB_SOC:
+					shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].prm = 0;
+					alarm_cancel( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer) );
+					alarm_start_relative( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer), set_time);
+						SHBATT_TRACE("[P] %s : Cancel and set timer=%d(use:%d)\n",__FUNCTION__,
+										SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC,
+										shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].in_use);
+						/* Use same timer, so need not to update in_use */
+					break;
+				case USE_SOC_MULTI:
+					shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].prm = 0;
+					alarm_cancel( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].alm.alarm_timer) );
+					alarm_start_relative( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].alm.alarm_timer), set_time);
+						SHBATT_TRACE("[P] %s : Cancel and set timer=%d(use:%d)\n",__FUNCTION__,
+										SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI,
+										shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].in_use);
+						/* Use same timer, so need not to update in_use */
+					break;
+				case USE_SOC_SLEEP:
+					hrtimer_cancel( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP].alm.hr_timer) );
+					shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP].in_use = 0;
+					alarm_start_relative( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer), set_time);
+					shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].in_use = 1;
+						SHBATT_TRACE("[P] %s : Cancel timer=%d(use:%d) and set timer=%d(use:%d)\n",__FUNCTION__,
+										SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP,
+										shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP].in_use,
+										SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC,
+										shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].in_use);
+					break;
+				case USE_SOC_SLEEP_MULTI:
+					hrtimer_cancel( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP_MULTI].alm.hr_timer) );
+					shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP_MULTI].in_use = 0;
+					alarm_start_relative( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].alm.alarm_timer), set_time);
+					shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].in_use = 1;
+						SHBATT_TRACE("[P] %s : Cancel timer=%d(use:%d) and set timer=%d(use:%d)\n",__FUNCTION__,
+										SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP_MULTI,
+										shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP_MULTI].in_use,
+										SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI,
+										shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].in_use);
+					break;
+				case USE_SOC_AND_SOC_SLEEP:
+					alarm_cancel( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer) );
+					alarm_start_relative( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer), set_time);
+						SHBATT_TRACE("[P] %s : Cancel and set timer=%d(use:%d)\n",__FUNCTION__,
+										SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC,
+										shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].in_use);
+						/* Use same timer, so need not to update in_use */
+					break;
+				case USE_SOC_MULTI_AND_SOC_SLEEP_MULTI:
+					alarm_cancel( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].alm.alarm_timer) );
+					alarm_start_relative( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].alm.alarm_timer), set_time);
+						SHBATT_TRACE("[P] %s : Cancel and set timer=%d(use:%d)\n",__FUNCTION__,
+										SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI,
+										shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].in_use);
+						/* Use same timer, so need not to update in_use */
+					break;
+				default:
+					SHBATT_ERROR("%s : Invalid timer use(0x%x)\n",__FUNCTION__,timer_in_use);
+			}
 		}
 	}
 
@@ -4443,6 +4848,10 @@ static int shbatt_drv_probe(
 	
 	shbatt_task_is_initialized = true;
 
+#ifdef CONFIG_PM_SUPPORT_BATT_TRACEABILITY
+	shbatt_api_write_traceability();
+#endif /* CONFIG_PM_SUPPORT_BATT_TRACEABILITY */
+
 	SHBATT_TRACE("[E] %s \n",__FUNCTION__);
 
 	return 0;
@@ -4493,10 +4902,12 @@ static void shbatt_drv_shutdown(
 		{
 		case SHBATT_TIMER_TYPE_HRTIMER:
 			hrtimer_cancel(&(shbatt_poll_timer[alm_cnt].alm.hr_timer));
+			shbatt_poll_timer[alm_cnt].in_use = false;
 			break;
 
 		case SHBATT_TIMER_TYPE_ALARMTIMER:
 			alarm_cancel( &(shbatt_poll_timer[alm_cnt].alm.alarm_timer) );
+			shbatt_poll_timer[alm_cnt].in_use = false;
 			break;
 
 		default:
@@ -4536,17 +4947,83 @@ static int shbatt_drv_resume(
 				 now_time.tv_sec, now_time.tv_nsec, sleep_time.tv_sec, sleep_time.tv_nsec);
 	SHBATT_TRACE("[P] %s(): shbatt_timer_restarted=%d diff_time=%d\n",__FUNCTION__, shbatt_timer_restarted, diff_time);
 
-	if((shbatt_timer_restarted == false) && (diff_time > 4200))
+	if((shbatt_timer_restarted == false) && (diff_time > soc_poll_failsafe))
 	{
+		int i, timer_in_use = 0;
+
 		shbatt_timer_restarted = true;
 		memset( &set_time,0x00, sizeof( set_time ) );
 		set_time.tv64 = SHBATT_TIMER_FG_PERIOD_NS;
-		shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].prm = 0;
-		alarm_cancel( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer) );
-		alarm_start_relative( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer),
-							set_time);
 
-		shbatt_api_kernel_battery_log_info_event( SHBATTLOG_EVENT_CAPACITY_FAILSAFE, SHBATT_FAIL_SAFE_RESUME );
+		timer_in_use = 0;
+		for(i=0;i<=SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP_MULTI;i++)
+		{
+			SHBATT_TRACE("[P] %s : Timer[%d]=%d\n",__FUNCTION__,i,shbatt_poll_timer[i].in_use);
+			if(shbatt_poll_timer[i].in_use)
+				timer_in_use |= BIT(i);
+		}
+		SHBATT_TRACE("[P] %s : Timer use=0x%x\n",__FUNCTION__,timer_in_use);
+		switch(timer_in_use)
+		{
+			case USB_SOC:
+				shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].prm = 0;
+				alarm_cancel( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer) );
+				alarm_start_relative( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer), set_time);
+					SHBATT_TRACE("[P] %s : Cancel and set timer=%d(use:%d)\n",__FUNCTION__,
+									SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC,
+									shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].in_use);
+					/* Use same timer, so need not to update in_use */
+				break;
+			case USE_SOC_MULTI:
+				shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].prm = 0;
+				alarm_cancel( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].alm.alarm_timer) );
+				alarm_start_relative( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].alm.alarm_timer), set_time);
+					SHBATT_TRACE("[P] %s : Cancel and set timer=%d(use:%d)\n",__FUNCTION__,
+									SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI,
+									shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].in_use);
+					/* Use same timer, so need not to update in_use */
+				break;
+			case USE_SOC_SLEEP:
+				hrtimer_cancel( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP].alm.hr_timer) );
+				shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP].in_use = 0;
+				alarm_start_relative( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer), set_time);
+				shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].in_use = 1;
+					SHBATT_TRACE("[P] %s : Cancel timer=%d(use:%d) and set timer=%d(use:%d)\n",__FUNCTION__,
+									SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP,
+									shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP].in_use,
+									SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC,
+									shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].in_use);
+				break;
+			case USE_SOC_SLEEP_MULTI:
+				hrtimer_cancel( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP_MULTI].alm.hr_timer) );
+				shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP_MULTI].in_use = 0;
+				alarm_start_relative( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].alm.alarm_timer), set_time);
+				shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].in_use = 1;
+					SHBATT_TRACE("[P] %s : Cancel timer=%d(use:%d) and set timer=%d(use:%d)\n",__FUNCTION__,
+									SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP_MULTI,
+									shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_SLEEP_MULTI].in_use,
+									SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI,
+									shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].in_use);
+				break;
+			case USE_SOC_AND_SOC_SLEEP:
+				alarm_cancel( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer) );
+				alarm_start_relative( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].alm.alarm_timer), set_time);
+					SHBATT_TRACE("[P] %s : Cancel and set timer=%d(use:%d)\n",__FUNCTION__,
+									SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC,
+									shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC].in_use);
+					/* Use same timer, so need not to update in_use */
+				break;
+			case USE_SOC_MULTI_AND_SOC_SLEEP_MULTI:
+				alarm_cancel( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].alm.alarm_timer) );
+				alarm_start_relative( &(shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].alm.alarm_timer), set_time);
+					SHBATT_TRACE("[P] %s : Cancel and set timer=%d(use:%d)\n",__FUNCTION__,
+									SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI,
+									shbatt_poll_timer[SHBATT_POLL_TIMER_TYPE_FUELGAUGE_SOC_MULTI].in_use);
+					/* Use same timer, so need not to update in_use */
+				break;
+			default:
+				SHBATT_ERROR("%s : Invalid timer use(0x%x)\n",__FUNCTION__,timer_in_use);
+		}
 	}
 
 	SHBATT_TRACE("[E] %s \n",__FUNCTION__);
@@ -4695,6 +5172,10 @@ static void __exit shbatt_drv_module_exit( void )
 	platform_driver_unregister(&shbatt_platform_driver);
 
 	SHBATT_TRACE("[E] %s \n",__FUNCTION__);
+}
+
+bool is_shbatt_prs_launched( void ) {
+	return shbatt_seq_is_initialized;
 }
 
 module_init(shbatt_drv_module_init);

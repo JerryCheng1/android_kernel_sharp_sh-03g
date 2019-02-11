@@ -84,9 +84,6 @@ static void uart8250_32bit_printch(char ch)
 
 void msm_hsl_uart_printch(char ch)
 {
-/* SHARP_EXTEND SYS_ANA C162 MOD shrink printk Start */
-#ifndef CONFIG_SHSYS_CUST
-/* SHARP_EXTEND SYS_ANA C162 MOD shrink printk End */
 	while (!(readl_relaxed(early_base + MSM_HSL_UART_SR) &
 						       MSM_HSL_UART_SR_TXEMT) &&
 	       !(readl_relaxed(early_base + MSM_HSL_UART_ISR) &
@@ -97,9 +94,6 @@ void msm_hsl_uart_printch(char ch)
 	writel_relaxed(1, early_base + MSM_HSL_UART_NCF_TX);
 	readl_relaxed(early_base + MSM_HSL_UART_NCF_TX);
 	writel_relaxed(ch, early_base + MSM_HSL_UART_TF);
-/* SHARP_EXTEND SYS_ANA C162 MOD shrink printk Start */
-#endif	/* CONFIG_SHSYS_CUST */
-/* SHARP_EXTEND SYS_ANA C162 MOD shrink printk End */
 }
 
 struct earlycon_match {

@@ -414,6 +414,7 @@ struct input_keymap_entry {
 #define KEY_F24			194
 
 #ifdef CONFIG_TOUCHSCREEN_SHTPS
+#define KEY_DOUBLETAP	197
 #define KEY_SWEEPON		198
 #endif /* CONFIG_TOUCHSCREEN_SHTPS */
 
@@ -887,8 +888,17 @@ struct input_keymap_entry {
 #define SW_UNSUPPORT_INSERT	0x10  /* set = unsupported device inserted */
 #define SW_MICROPHONE2_INSERT   0x11  /* set = inserted */
 #define SW_MUTE_DEVICE		0x12  /* set = device disabled */
+
+#if defined( CONFIG_SH_SMARTPHONE_PIERCE )
+#define SW_PIERCE 0x15
+#endif
+
 #define SW_MAX			0x20
 #define SW_CNT			(SW_MAX+1)
+
+#define SW_GRIP_00	0x1d
+#define SW_GRIP_01	0x1e
+#define SW_GRIP_02	0x1f
 
 /*
  * Misc events
@@ -902,14 +912,6 @@ struct input_keymap_entry {
 #define MSC_TIMESTAMP		0x05
 #define MSC_MAX			0x07
 #define MSC_CNT			(MSC_MAX+1)
-
-#ifdef CONFIG_SENSOR_SHGRIP
-/* COORDINATOR Q3025 MERGE start */
-#define SW_GRIP_00	0x12
-#define SW_GRIP_01	0x13
-#define SW_GRIP_02	0x14
-/* COORDINATOR Q3025 MERGE end */
-#endif /* CONFIG_SENSOR_SHGRIP*/
 
 /*
  * LEDs

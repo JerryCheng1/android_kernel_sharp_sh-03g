@@ -565,12 +565,33 @@ static inline void free_boot_cpu_mask(void)
 		free_bootmem_cpumask_var(boot_cpu_mask);
 }
 
+#ifdef CONFIG_BATTERY_SH
+unsigned int battery_voltage;
+static int __init battery_voltage_setup(char *str)
+{
+	get_option(&str, &battery_voltage);
+	return 1;
+}
+__setup("androidboot.battvol=", battery_voltage_setup);
+#endif
+
+#if (defined(CONFIG_SHSYS_CUST) && defined(CONFIG_BATTERY_SH))
+#define	LOW_VOLTAGE_THRESHOLD	3750000		/* 3750mV */
+#endif /* CONFIG_SHSYS_CUST && CONFIG_BATTERY_SH */
+
 /* Called by boot processor to activate the rest. */
 void __init smp_init(void)
 {
 	unsigned int cpu;
 
 	idle_threads_init();
+
+#if (defined(CONFIG_SHSYS_CUST) && defined(CONFIG_BATTERY_SH))
+	if(battery_voltage <= LOW_VOLTAGE_THRESHOLD) {
+		cpumask_clear_cpu(4, boot_cpu_mask);
+		cpumask_clear_cpu(5, boot_cpu_mask);
+	}
+#endif /* CONFIG_SHSYS_CUST && CONFIG_BATTERY_SH */
 
 	/* FIXME: This should be done in userspace --RR */
 	for_each_present_cpu(cpu) {
@@ -690,7 +711,7 @@ void on_each_cpu_cond(bool (*cond_func)(int cpu, void *info),
 			if (cond_func(cpu, info)) {
 				ret = smp_call_function_single(cpu, func,
 								info, wait);
-				WARN_ON_ONCE(!ret);
+				WARN_ON_ONCE(ret);
 			}
 		preempt_enable();
 	}

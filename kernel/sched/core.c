@@ -840,7 +840,6 @@ static void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 	sched_info_queued(p);
 	p->sched_class->enqueue_task(rq, p, flags);
 	trace_sched_enq_deq_task(p, 1, cpumask_bits(&p->cpus_allowed)[0]);
-	inc_cumulative_runnable_avg(rq, p);
 }
 
 static void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
@@ -849,7 +848,6 @@ static void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
 	sched_info_dequeued(p);
 	p->sched_class->dequeue_task(rq, p, flags);
 	trace_sched_enq_deq_task(p, 0, cpumask_bits(&p->cpus_allowed)[0]);
-	dec_cumulative_runnable_avg(rq, p);
 }
 
 void activate_task(struct rq *rq, struct task_struct *p, int flags)
@@ -1078,7 +1076,7 @@ static int __init set_sched_enable_power_aware(char *str)
 
 	get_option(&str, &enable_power_aware);
 
-	sched_enable_power_aware = !!enable_power_aware;
+	sysctl_sched_enable_power_aware = !!enable_power_aware;
 
 	return 0;
 }
@@ -1211,7 +1209,11 @@ unsigned int min_max_freq = 1;
 
 unsigned int max_capacity = 1024; /* max(rq->capacity) */
 unsigned int min_capacity = 1024; /* min(rq->capacity) */
-unsigned int max_load_scale_factor = 1024; /* max(rq->load_scale_factor) */
+unsigned int max_load_scale_factor = 1024; /* max possible load scale factor */
+unsigned int max_possible_capacity = 1024; /* max(rq->max_possible_capacity) */
+
+/* Mask of all CPUs that have  max_possible_capacity */
+cpumask_t mpc_mask = CPU_MASK_ALL;
 
 /* Window size (in ns) */
 __read_mostly unsigned int sched_ravg_window = 10000000;
@@ -1271,8 +1273,12 @@ static inline u64 scale_exec_time(u64 delta, struct rq *rq)
 		      rq->max_freq < rq->max_possible_freq)))
 		cur_freq = rq->max_possible_freq;
 
-	delta = div64_u64(delta  * cur_freq, max_possible_freq);
-	sf = (rq->efficiency * 1024) / max_possible_efficiency;
+	/* round up div64 */
+	delta = div64_u64(delta * cur_freq + max_possible_freq - 1,
+			  max_possible_freq);
+
+	sf = DIV_ROUND_UP(rq->efficiency * 1024, max_possible_efficiency);
+
 	delta *= sf;
 	delta >>= 10;
 
@@ -1322,6 +1328,8 @@ static inline unsigned int load_to_freq(struct rq *rq, u64 load)
 static int send_notification(struct rq *rq)
 {
 	unsigned int cur_freq, freq_required;
+	unsigned long flags;
+	int rc = 0;
 
 	if (!sched_enable_hmp)
 		return 0;
@@ -1332,7 +1340,14 @@ static int send_notification(struct rq *rq)
 	if (nearly_same_freq(cur_freq, freq_required))
 		return 0;
 
-	return 1;
+	raw_spin_lock_irqsave(&rq->lock, flags);
+	if (!rq->notifier_sent) {
+		rq->notifier_sent = 1;
+		rc = 1;
+	}
+	raw_spin_unlock_irqrestore(&rq->lock, flags);
+
+	return rc;
 }
 
 /* Alert governor if there is a need to change frequency */
@@ -1582,14 +1597,8 @@ static void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 		/* The IRQ busy time spanned multiple windows. Process the
 		 * busy time preceding the current window start first. */
 		delta = window_start - mark_start;
-		if (delta > window_size) {
+		if (delta > window_size)
 			delta = window_size;
-			/* If there's 1 or more full windows of IRQ busy time
-			 * then the entire prev_runnable_sum will be a window
-			 * of IRQ time - there should be no contribution from
-			 * anything else. */
-			rq->prev_runnable_sum = 0;
-		}
 		delta = scale_exec_time(delta, rq);
 		rq->prev_runnable_sum += delta;
 
@@ -1665,12 +1674,8 @@ static void update_history(struct rq *rq, struct task_struct *p,
 	}
 
 	p->ravg.sum = 0;
-	if (p->on_rq) {
-		rq->cumulative_runnable_avg -= p->ravg.demand;
-		BUG_ON((s64)rq->cumulative_runnable_avg < 0);
-		if (p->sched_class == &fair_sched_class)
-			dec_nr_big_small_task(rq, p);
-	}
+	if (p->on_rq)
+		p->sched_class->dec_hmp_sched_stats(rq, p);
 
 	avg = div64_u64(sum, sched_ravg_hist_size);
 
@@ -1685,11 +1690,8 @@ static void update_history(struct rq *rq, struct task_struct *p,
 
 	p->ravg.demand = demand;
 
-	if (p->on_rq) {
-		rq->cumulative_runnable_avg += p->ravg.demand;
-		if (p->sched_class == &fair_sched_class)
-			inc_nr_big_small_task(rq, p);
-	}
+	if (p->on_rq)
+		p->sched_class->inc_hmp_sched_stats(rq, p);
 
 done:
 	trace_sched_update_history(rq, p, runtime, samples, event);
@@ -2075,8 +2077,9 @@ void reset_all_window_stats(u64 window_start, unsigned int window_size)
 #ifdef CONFIG_SCHED_FREQ_INPUT
 		rq->curr_runnable_sum = rq->prev_runnable_sum = 0;
 #endif
-		rq->cumulative_runnable_avg = 0;
-		fixup_nr_big_small_task(cpu);
+		reset_cpu_hmp_stats(cpu, 1);
+
+		fixup_nr_big_small_task(cpu, 0);
 	}
 
 	if (sched_window_stats_policy != sysctl_sched_window_stats_policy) {
@@ -2124,35 +2127,93 @@ void reset_all_window_stats(u64 window_start, unsigned int window_size)
 
 #ifdef CONFIG_SCHED_FREQ_INPUT
 
-unsigned long sched_get_busy(int cpu)
+static inline u64
+scale_load_to_freq(u64 load, unsigned int src_freq, unsigned int dst_freq)
+{
+	return div64_u64(load * (u64)src_freq, (u64)dst_freq);
+}
+
+void sched_get_cpus_busy(unsigned long *busy, const struct cpumask *query_cpus)
 {
 	unsigned long flags;
-	struct rq *rq = cpu_rq(cpu);
-	u64 load;
+	struct rq *rq;
+	const int cpus = cpumask_weight(query_cpus);
+	u64 load[cpus];
+	unsigned int cur_freq[cpus], max_freq[cpus];
+	int notifier_sent[cpus];
+	int cpu, i = 0;
+	unsigned int window_size;
+
+	if (unlikely(cpus == 0))
+		return;
 
 	/*
 	 * This function could be called in timer context, and the
 	 * current task may have been executing for a long time. Ensure
 	 * that the window stats are current by doing an update.
 	 */
-	raw_spin_lock_irqsave(&rq->lock, flags);
-	update_task_ravg(rq->curr, rq, TASK_UPDATE, sched_clock(), 0);
-	load = rq->old_busy_time = rq->prev_runnable_sum;
-	raw_spin_unlock_irqrestore(&rq->lock, flags);
+	local_irq_save(flags);
+	for_each_cpu(cpu, query_cpus)
+		raw_spin_lock(&cpu_rq(cpu)->lock);
 
-	/*
-	 * Scale load in reference to rq->max_possible_freq.
-	 *
-	 * Note that scale_load_to_cpu() scales load in reference to
-	 * rq->max_freq
-	 */
-	load = scale_load_to_cpu(load, cpu);
-	load = div64_u64(load * (u64)rq->max_freq, (u64)rq->max_possible_freq);
-	load = div64_u64(load, NSEC_PER_USEC);
+	window_size = sched_ravg_window;
 
-	trace_sched_get_busy(cpu, load);
+	for_each_cpu(cpu, query_cpus) {
+		rq = cpu_rq(cpu);
 
-	return load;
+		update_task_ravg(rq->curr, rq, TASK_UPDATE, sched_clock(), 0);
+		load[i] = rq->old_busy_time = rq->prev_runnable_sum;
+		/*
+		 * Scale load in reference to rq->max_possible_freq.
+		 *
+		 * Note that scale_load_to_cpu() scales load in reference to
+		 * rq->max_freq.
+		 */
+		load[i] = scale_load_to_cpu(load[i], cpu);
+
+		notifier_sent[i] = rq->notifier_sent;
+		rq->notifier_sent = 0;
+		cur_freq[i] = rq->cur_freq;
+		max_freq[i] = rq->max_freq;
+		i++;
+	}
+
+	for_each_cpu(cpu, query_cpus)
+		raw_spin_unlock(&(cpu_rq(cpu))->lock);
+	local_irq_restore(flags);
+
+	i = 0;
+	for_each_cpu(cpu, query_cpus) {
+		rq = cpu_rq(cpu);
+
+		if (!notifier_sent[i]) {
+			load[i] = scale_load_to_freq(load[i], max_freq[i],
+						     cur_freq[i]);
+			if (load[i] > window_size)
+				load[i] = window_size;
+			load[i] = scale_load_to_freq(load[i], cur_freq[i],
+						     rq->max_possible_freq);
+		} else {
+			load[i] = scale_load_to_freq(load[i], max_freq[i],
+						     rq->max_possible_freq);
+		}
+
+		busy[i] = div64_u64(load[i], NSEC_PER_USEC);
+
+		trace_sched_get_busy(cpu, busy[i]);
+		i++;
+	}
+}
+
+unsigned long sched_get_busy(int cpu)
+{
+	struct cpumask query_cpu = CPU_MASK_NONE;
+	unsigned long busy;
+
+	cpumask_set_cpu(cpu, &query_cpu);
+	sched_get_cpus_busy(&busy, &query_cpu);
+
+	return busy;
 }
 
 void sched_set_io_is_busy(int val)
@@ -2229,11 +2290,8 @@ static void fixup_busy_time(struct task_struct *p, int new_cpu)
 	 * reflect new demand. Restore load temporarily for such
 	 * task on its runqueue
 	 */
-	if (p->on_rq) {
-		inc_cumulative_runnable_avg(src_rq, p);
-		if (p->sched_class == &fair_sched_class)
-			inc_nr_big_small_task(src_rq, p);
-	}
+	if (p->on_rq)
+		p->sched_class->inc_hmp_sched_stats(src_rq, p);
 
 	update_task_ravg(p, task_rq(p), TASK_MIGRATE,
 			 wallclock, 0);
@@ -2242,11 +2300,8 @@ static void fixup_busy_time(struct task_struct *p, int new_cpu)
 	 * Remove task's load from rq as its now migrating to
 	 * another cpu.
 	 */
-	if (p->on_rq) {
-		dec_cumulative_runnable_avg(src_rq, p);
-		if (p->sched_class == &fair_sched_class)
-			dec_nr_big_small_task(src_rq, p);
-	}
+	if (p->on_rq)
+		p->sched_class->dec_hmp_sched_stats(src_rq, p);
 
 	if (p->ravg.curr_window) {
 		src_rq->curr_runnable_sum -= p->ravg.curr_window;
@@ -2282,25 +2337,36 @@ heavy_task_wakeup(struct task_struct *p, struct rq *rq, int event)
 #endif	/* CONFIG_SCHED_FREQ_INPUT */
 
 /* Keep track of max/min capacity possible across CPUs "currently" */
-static void update_min_max_capacity(void)
+static void __update_min_max_capacity(void)
 {
 	int i;
 	int max = 0, min = INT_MAX;
-	int max_lsf = 0;
 
-	for_each_possible_cpu(i) {
+	for_each_online_cpu(i) {
 		if (cpu_rq(i)->capacity > max)
 			max = cpu_rq(i)->capacity;
 		if (cpu_rq(i)->capacity < min)
 			min = cpu_rq(i)->capacity;
-
-		if (cpu_rq(i)->load_scale_factor > max_lsf)
-			max_lsf = cpu_rq(i)->load_scale_factor;
 	}
 
 	max_capacity = max;
 	min_capacity = min;
-	max_load_scale_factor = max_lsf;
+}
+
+static void update_min_max_capacity(void)
+{
+	unsigned long flags;
+	int i;
+
+	local_irq_save(flags);
+	for_each_possible_cpu(i)
+		raw_spin_lock(&cpu_rq(i)->lock);
+
+	__update_min_max_capacity();
+
+	for_each_possible_cpu(i)
+		raw_spin_unlock(&cpu_rq(i)->lock);
+	local_irq_restore(flags);
 }
 
 /*
@@ -2327,7 +2393,8 @@ unsigned long capacity_scale_cpu_freq(int cpu)
  */
 static inline unsigned long load_scale_cpu_efficiency(int cpu)
 {
-	return (1024 * max_possible_efficiency) / cpu_rq(cpu)->efficiency;
+	return DIV_ROUND_UP(1024 * max_possible_efficiency,
+			    cpu_rq(cpu)->efficiency);
 }
 
 /*
@@ -2337,7 +2404,7 @@ static inline unsigned long load_scale_cpu_efficiency(int cpu)
  */
 static inline unsigned long load_scale_cpu_freq(int cpu)
 {
-	return (1024 * max_possible_freq) / cpu_rq(cpu)->max_freq;
+	return DIV_ROUND_UP(1024 * max_possible_freq, cpu_rq(cpu)->max_freq);
 }
 
 static int compute_capacity(int cpu)
@@ -2376,15 +2443,21 @@ static int cpufreq_notifier_policy(struct notifier_block *nb,
 		unsigned long val, void *data)
 {
 	struct cpufreq_policy *policy = (struct cpufreq_policy *)data;
-	int i;
+	int i, update_max = 0;
+	u64 highest_mpc = 0, highest_mplsf = 0;
 	const struct cpumask *cpus = policy->related_cpus;
 	unsigned int orig_min_max_freq = min_max_freq;
 	unsigned int orig_max_possible_freq = max_possible_freq;
 	/* Initialized to policy->max in case policy->related_cpus is empty! */
 	unsigned int orig_max_freq = policy->max;
 
-	if (val != CPUFREQ_NOTIFY)
+	if (val != CPUFREQ_NOTIFY && val != CPUFREQ_REMOVE_POLICY)
 		return 0;
+
+	if (val == CPUFREQ_REMOVE_POLICY) {
+		update_min_max_capacity();
+		return 0;
+	}
 
 	for_each_cpu(i, policy->related_cpus) {
 		cpumask_copy(&cpu_rq(i)->freq_domain_cpumask,
@@ -2401,11 +2474,6 @@ static int cpufreq_notifier_policy(struct notifier_block *nb,
 	min_max_freq = min(min_max_freq, policy->cpuinfo.max_freq);
 	BUG_ON(!min_max_freq);
 	BUG_ON(!policy->max);
-
-	if (orig_max_possible_freq == max_possible_freq &&
-		orig_min_max_freq == min_max_freq &&
-		orig_max_freq == policy->max)
-			return 0;
 
 	/*
 	 * A changed min_max_freq or max_possible_freq (possible during bootup)
@@ -2431,8 +2499,10 @@ static int cpufreq_notifier_policy(struct notifier_block *nb,
 	 */
 
 	if (orig_min_max_freq != min_max_freq ||
-		orig_max_possible_freq != max_possible_freq)
+		orig_max_possible_freq != max_possible_freq) {
 			cpus = cpu_possible_mask;
+			update_max = 1;
+	}
 
 	/*
 	 * Changed load_scale_factor can trigger reclassification of tasks as
@@ -2442,17 +2512,39 @@ static int cpufreq_notifier_policy(struct notifier_block *nb,
 	pre_big_small_task_count_change(cpu_possible_mask);
 	for_each_cpu(i, cpus) {
 		struct rq *rq = cpu_rq(i);
-		u64 max_possible_capacity;
 
 		rq->capacity = compute_capacity(i);
-		max_possible_capacity = ((u64) rq->capacity) *
-					rq->max_possible_freq / rq->max_freq;
-		rq->max_possible_capacity = (int) max_possible_capacity;
-
 		rq->load_scale_factor = compute_load_scale_factor(i);
+
+		if (update_max) {
+			u64 mpc, mplsf;
+
+			mpc = div_u64(((u64) rq->capacity) *
+				rq->max_possible_freq, rq->max_freq);
+			rq->max_possible_capacity = (int) mpc;
+
+			mplsf = div_u64(((u64) rq->load_scale_factor) *
+				rq->max_possible_freq, rq->max_freq);
+
+			if (mpc > highest_mpc) {
+				highest_mpc = mpc;
+				cpumask_clear(&mpc_mask);
+				cpumask_set_cpu(i, &mpc_mask);
+			} else if (mpc == highest_mpc) {
+				cpumask_set_cpu(i, &mpc_mask);
+			}
+
+			if (mplsf > highest_mplsf)
+				highest_mplsf = mplsf;
+		}
 	}
 
-	update_min_max_capacity();
+	if (update_max) {
+		max_possible_capacity = highest_mpc;
+		max_load_scale_factor = highest_mplsf;
+	}
+
+	__update_min_max_capacity();
 	post_big_small_task_count_change(cpu_possible_mask);
 
 	return 0;
@@ -2831,7 +2923,7 @@ out:
 		 * leave kernel.
 		 */
 		if (p->mm && printk_ratelimit()) {
-			printk_sched("process %d (%s) no longer affine to cpu%d\n",
+			printk_deferred("process %d (%s) no longer affine to cpu%d\n",
 					task_pid_nr(p), p->comm, cpu);
 		}
 	}
@@ -3212,7 +3304,7 @@ static void try_to_wake_up_local(struct task_struct *p)
 	struct rq *rq = task_rq(p);
 
 	if (rq != this_rq() || p == current) {
-		printk_sched("%s: Failed to wakeup task %d (%s), rq = %p, this_rq = %p, p = %p, current = %p\n",
+		printk_deferred("%s: Failed to wakeup task %d (%s), rq = %p, this_rq = %p, p = %p, current = %p\n",
 			__func__, task_pid_nr(p), p->comm, rq,
 			this_rq(), p, current);
 		return;
@@ -5803,6 +5895,7 @@ int sched_setscheduler_nocheck(struct task_struct *p, int policy,
 	};
 	return __sched_setscheduler(p, &attr, false);
 }
+EXPORT_SYMBOL(sched_setscheduler_nocheck);
 
 static int
 do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
@@ -9036,17 +9129,18 @@ void __init sched_init(void)
 		rq->wakeup_latency = 0;
 		rq->wakeup_energy = 0;
 #ifdef CONFIG_SCHED_HMP
+		cpumask_set_cpu(i, &rq->freq_domain_cpumask);
 		rq->cur_freq = 1;
 		rq->max_freq = 1;
 		rq->min_freq = 1;
 		rq->max_possible_freq = 1;
 		rq->max_possible_capacity = 0;
-		rq->cumulative_runnable_avg = 0;
+		rq->hmp_stats.cumulative_runnable_avg = 0;
 		rq->efficiency = 1024;
 		rq->capacity = 1024;
 		rq->load_scale_factor = 1024;
 		rq->window_start = 0;
-		rq->nr_small_tasks = rq->nr_big_tasks = 0;
+		rq->hmp_stats.nr_small_tasks = rq->hmp_stats.nr_big_tasks = 0;
 		rq->hmp_flags = 0;
 		rq->mostly_idle_load = pct_to_real(20);
 		rq->mostly_idle_nr_run = 3;
@@ -9055,9 +9149,13 @@ void __init sched_init(void)
 		rq->avg_irqload = 0;
 		rq->irqload_ts = 0;
 		rq->prefer_idle = 1;
+#ifdef CONFIG_SHSYS_CUST
+		cpumask_set_cpu(i, &rq->freq_domain_cpumask);
+#endif /* CONFIG_SHSYS_CUST */
 #ifdef CONFIG_SCHED_FREQ_INPUT
 		rq->old_busy_time = 0;
 		rq->curr_runnable_sum = rq->prev_runnable_sum = 0;
+		rq->notifier_sent = 0;
 #endif
 #endif
 
@@ -9754,23 +9852,6 @@ static void cpu_cgroup_css_offline(struct cgroup *cgrp)
 	sched_offline_group(tg);
 }
 
-static int
-cpu_cgroup_allow_attach(struct cgroup *cgrp, struct cgroup_taskset *tset)
-{
-	const struct cred *cred = current_cred(), *tcred;
-	struct task_struct *task;
-
-	cgroup_taskset_for_each(task, cgrp, tset) {
-		tcred = __task_cred(task);
-
-		if ((current != task) && !capable(CAP_SYS_NICE) &&
-		    cred->euid != tcred->uid && cred->euid != tcred->suid)
-			return -EACCES;
-	}
-
-	return 0;
-}
-
 static int cpu_cgroup_can_attach(struct cgroup *cgrp,
 				 struct cgroup_taskset *tset)
 {
@@ -10206,7 +10287,7 @@ struct cgroup_subsys cpu_cgroup_subsys = {
 	.css_offline	= cpu_cgroup_css_offline,
 	.can_attach	= cpu_cgroup_can_attach,
 	.attach		= cpu_cgroup_attach,
-	.allow_attach	= cpu_cgroup_allow_attach,
+	.allow_attach	= subsys_cgroup_allow_attach,
 	.exit		= cpu_cgroup_exit,
 	.subsys_id	= cpu_cgroup_subsys_id,
 	.base_cftypes	= cpu_files,

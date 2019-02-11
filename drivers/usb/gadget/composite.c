@@ -342,6 +342,7 @@ int usb_interface_id(struct usb_configuration *config,
 
 	if (id < MAX_CONFIG_INTERFACES) {
 		config->interface[id] = function;
+		function->intf_id = id;
 		config->next_interface_id = id + 1;
 		return id;
 	}
@@ -349,46 +350,20 @@ int usb_interface_id(struct usb_configuration *config,
 }
 EXPORT_SYMBOL_GPL(usb_interface_id);
 
-/**
- * usb_get_func_interface_id() - Find the interface ID of a function
- * @function: the function for which want to find the interface ID
- * Context: single threaded
- *
- * Returns the interface ID of the function or -ENODEV if this function
- * is not part of this configuration
- */
-int usb_get_func_interface_id(struct usb_function *func)
-{
-	int id;
-	struct usb_configuration *config;
-
-	if (!func)
-		return -EINVAL;
-
-	config = func->config;
-
-	for (id = 0; id < MAX_CONFIG_INTERFACES; id++) {
-		if (config->interface[id] == func)
-			return id;
-	}
-	return -ENODEV;
-}
-
-static int usb_func_wakeup_int(struct usb_function *func,
-					bool use_pending_flag)
+static int usb_func_wakeup_int(struct usb_function *func)
 {
 	int ret;
-	int interface_id;
 	unsigned long flags;
 	struct usb_gadget *gadget;
 	struct usb_composite_dev *cdev;
 
-	pr_debug("%s - %s function wakeup, use pending: %u\n",
-		__func__, func->name ? func->name : "", use_pending_flag);
 
 	if (!func || !func->config || !func->config->cdev ||
 		!func->config->cdev->gadget)
 		return -EINVAL;
+
+	pr_debug("%s - %s function wakeup\n", __func__,
+					func->name ? func->name : "");
 
 	gadget = func->config->cdev->gadget;
 	if ((gadget->speed != USB_SPEED_SUPER) || !func->func_wakeup_allowed) {
@@ -401,34 +376,9 @@ static int usb_func_wakeup_int(struct usb_function *func,
 	}
 
 	cdev = get_gadget_data(gadget);
+
 	spin_lock_irqsave(&cdev->lock, flags);
-
-	if (use_pending_flag && !func->func_wakeup_pending) {
-		pr_debug("Pending flag is cleared - Function wakeup is cancelled.\n");
-		spin_unlock_irqrestore(&cdev->lock, flags);
-		return 0;
-	}
-
-	ret = usb_get_func_interface_id(func);
-	if (ret < 0) {
-		ERROR(func->config->cdev,
-			"Function %s - Unknown interface id. Canceling USB request. ret=%d\n",
-			func->name ? func->name : "", ret);
-
-		spin_unlock_irqrestore(&cdev->lock, flags);
-		return ret;
-	}
-
-	interface_id = ret;
-	ret = usb_gadget_func_wakeup(gadget, interface_id);
-
-	if (use_pending_flag) {
-		func->func_wakeup_pending = false;
-	} else {
-		if (ret == -EAGAIN)
-			func->func_wakeup_pending = true;
-	}
-
+	ret = usb_gadget_func_wakeup(gadget, func->intf_id);
 	spin_unlock_irqrestore(&cdev->lock, flags);
 
 	return ret;
@@ -441,7 +391,7 @@ int usb_func_wakeup(struct usb_function *func)
 	pr_debug("%s function wakeup\n",
 		func->name ? func->name : "");
 
-	ret = usb_func_wakeup_int(func, false);
+	ret = usb_func_wakeup_int(func);
 	if (ret == -EAGAIN) {
 		DBG(func->config->cdev,
 			"Function wakeup for %s could not complete due to suspend state. Delayed until after bus resume.\n",
@@ -673,7 +623,7 @@ static int bos_desc(struct usb_composite_dev *cdev)
 	usb_ext->bLength = USB_DT_USB_EXT_CAP_SIZE;
 	usb_ext->bDescriptorType = USB_DT_DEVICE_CAPABILITY;
 	usb_ext->bDevCapabilityType = USB_CAP_TYPE_EXT;
-	usb_ext->bmAttributes = cpu_to_le32(USB_LPM_SUPPORT);
+	usb_ext->bmAttributes = cpu_to_le32(USB_LPM_SUPPORT | USB_BESL_SUPPORT);
 
 	if (gadget_is_superspeed(cdev->gadget)) {
 		/*
@@ -820,6 +770,12 @@ static int set_config(struct usb_composite_dev *cdev,
 		 */
 		switch (gadget->speed) {
 		case USB_SPEED_SUPER:
+			if (!f->ss_descriptors) {
+				pr_err("%s(): No SS desc for function:%s\n",
+							__func__, f->name);
+				usb_gadget_set_state(gadget, USB_STATE_ADDRESS);
+				return -EINVAL;
+			}
 			descriptors = f->ss_descriptors;
 			break;
 		case USB_SPEED_HIGH:
@@ -1964,7 +1920,7 @@ composite_resume(struct usb_gadget *gadget)
 
 	if (cdev->config) {
 		list_for_each_entry(f, &cdev->config->functions, list) {
-			ret = usb_func_wakeup_int(f, true);
+			ret = usb_func_wakeup_int(f);
 			if (ret) {
 				if (ret == -EAGAIN) {
 					ERROR(f->config->cdev,

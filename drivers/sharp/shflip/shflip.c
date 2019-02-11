@@ -111,18 +111,18 @@ irqreturn_t sh_flip_irq_thread(int irq, void *dev_id)
 		input_report_switch(input, SW_LID, 0);
 		switch_set_state(&fd->sdev_flip, value);
 		msm_tps_set_cover_state(0);
-		#ifdef CONFIG_SHTERM
+#ifdef CONFIG_SHTERM
 		shterm_flip_status_set(SHTERM_FLIP_STATE_OPEN);
-		#endif /* CONFIG_SHTERM */
+#endif /* CONFIG_SHTERM */
 	}
 	else if(value == FLIP_CLOSE) {
 		printk("flip: close\n");
 		input_report_switch(input, SW_LID, 1);
 		switch_set_state(&fd->sdev_flip, value);
 		msm_tps_set_cover_state(1);
-		#ifdef CONFIG_SHTERM
+#ifdef CONFIG_SHTERM
 		shterm_flip_status_set(SHTERM_FLIP_STATE_CLOSE);
-		#endif /* CONFIG_SHTERM */
+#endif /* CONFIG_SHTERM */
 	}
 
 	input_sync(input);
