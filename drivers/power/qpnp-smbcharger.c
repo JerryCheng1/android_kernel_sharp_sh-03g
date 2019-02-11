@@ -48,6 +48,9 @@
 #define SMB_MASK(LEFT_BIT_POS, RIGHT_BIT_POS) \
 		_SMB_MASK((LEFT_BIT_POS) - (RIGHT_BIT_POS) + 1, \
 				(RIGHT_BIT_POS))
+
+#define DISABLE_HVDCP_9V
+
 /* Config registers */
 struct smbchg_regulator {
 	struct regulator_desc	rdesc;
@@ -973,6 +976,15 @@ out:
 	return status;
 }
 
+#ifdef DISABLE_HVDCP_9V
+#define CHGPTH_CFG		0xF4
+#define HVDCP_EN_BIT			BIT(3)
+static int smbchg_debug_hvdcp_th = 90;
+module_param_named(
+	hvdcp_thresh, smbchg_debug_hvdcp_th, int, S_IRUSR | S_IWUSR
+);
+#endif
+
 #ifdef CONFIG_BATTERY_SH
 static int sh_get_prop_batt_status(struct smbchg_chip *chip)
 {
@@ -990,7 +1002,12 @@ static int sh_get_prop_batt_status(struct smbchg_chip *chip)
 	union power_supply_propval prop = {0, };
 	static int jeita_pre_status = POWER_SUPPLY_HEALTH_UNKNOWN;
 	static int jeita_cur_status = POWER_SUPPLY_HEALTH_UNKNOWN;
-	
+#ifdef DISABLE_HVDCP_9V
+	static bool hvdcp_disabled = false;
+	bool change_to_feeding = false;
+	bool capacity_is_high = false;
+#endif
+
 	mutex_lock( &(chip->batt_status_lock) );
 	
 	rc = smbchg_read(chip, &reg, chip->chgr_base + RT_STS, 1);
@@ -1013,18 +1030,35 @@ static int sh_get_prop_batt_status(struct smbchg_chip *chip)
 
 	jeita_cur_status = get_prop_batt_health(chip);
 
+#ifdef DISABLE_HVDCP_9V
+	if(jeita_cur_status == POWER_SUPPLY_HEALTH_COLD)
+		change_to_feeding = true;
+#endif
+
 	if (bat_tcc_reached && chip->batt_warm && charger_present && get_prop_batt_capacity(chip) != 100) {
 		status = POWER_SUPPLY_STATUS_CHARGING;
+#ifdef DISABLE_HVDCP_9V
+		/* disable HVDCP */
+		change_to_feeding = true;
+#endif
 		goto out;
 	}
 
 	if (bat_tcc_reached && charger_present) {
 		status = POWER_SUPPLY_STATUS_FULL;
+#ifdef DISABLE_HVDCP_9V
+		/* disable HVDCP */
+		change_to_feeding = true;
+#endif
 		goto out;
 	}
 
 	if (chg_inhibit && charger_present) {
 		status = POWER_SUPPLY_STATUS_FULL;
+#ifdef DISABLE_HVDCP_9V
+		/* disable HVDCP */
+		change_to_feeding = true;
+#endif
 		goto out;
 	}
 
@@ -1153,7 +1187,25 @@ out:
 		}
 	}
 	jeita_pre_status = jeita_cur_status;
-	
+
+#ifdef DISABLE_HVDCP_9V
+	capacity_is_high = (get_prop_batt_capacity(chip) >= smbchg_debug_hvdcp_th);
+
+	/* Control HVDCP_EN */
+	if((change_to_feeding || capacity_is_high) && !hvdcp_disabled)
+	{
+		rc = smbchg_sec_masked_write(chip, chip->usb_chgpth_base + CHGPTH_CFG, HVDCP_EN_BIT, 0);
+		hvdcp_disabled = true;
+		pr_smb(PR_STATUS, "Disable HVDCP_EN, feeding=%d, capacity=%d, health=%d\n", change_to_feeding, capacity_is_high, jeita_cur_status);
+	}
+	else if(!change_to_feeding && !capacity_is_high && hvdcp_disabled)
+	{
+		rc = smbchg_sec_masked_write(chip, chip->usb_chgpth_base + CHGPTH_CFG, HVDCP_EN_BIT, HVDCP_EN_BIT);
+		hvdcp_disabled = false;
+		pr_smb(PR_STATUS, "Enable HVDCP_EN, feeding=%d, capacity=%d, health=%d\n", change_to_feeding, capacity_is_high, jeita_cur_status);
+	}
+#endif
+
 	mutex_unlock( &(chip->batt_status_lock) );
 	return status;
 }
@@ -1668,7 +1720,7 @@ out:
 	return rc;
 }
 
-#define CHGPTH_CFG		0xF4
+//#define CHGPTH_CFG		0xF4
 #define CFG_USB_2_3_SEL_BIT	BIT(7)
 #define CFG_USB_2		0
 #define CFG_USB_3		BIT(7)
@@ -3621,7 +3673,7 @@ struct regulator_ops smbchg_otg_reg_ops = {
 
 #define USBIN_CHGR_CFG			0xF1
 #define USBIN_ADAPTER_9V		0x3
-#define HVDCP_EN_BIT			BIT(3)
+//#define HVDCP_EN_BIT			BIT(3)
 static int smbchg_external_otg_regulator_enable(struct regulator_dev *rdev)
 {
 	bool changed;
