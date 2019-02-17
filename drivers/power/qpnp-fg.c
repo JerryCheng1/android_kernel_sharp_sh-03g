@@ -4059,7 +4059,11 @@ static void charge_full_work(struct work_struct *work)
 	int rc;
 	u8 buffer[3];
 	int bsoc;
+#ifdef CONFIG_BATTERY_SH
+	int resume_soc_raw = settings[FG_MEM_RESUME_SOC].value;
+#else
 	int resume_soc_raw = FULL_SOC_RAW - settings[FG_MEM_RESUME_SOC].value;
+#endif
 	bool disable = false;
 	u8 reg;
 

@@ -13,4 +13,10 @@ bool "enable SHLOG_SYSTEM logcat"
 depends on SHLOG_SYSTEM
 default n
 
+
+config SHLOG_SYSTEM_PANIC_ON_SUBSYS
+bool "enable SHARP handler to call panic when subsystem crashed."
+depends on SHLOG_SYSTEM
+default n
+
 endmenu

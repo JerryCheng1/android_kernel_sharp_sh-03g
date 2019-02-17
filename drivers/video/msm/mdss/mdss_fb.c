@@ -2,7 +2,7 @@
  * Core MDSS framebuffer driver.
  *
  * Copyright (C) 2007 Google Incorporated
- * Copyright (c) 2008-2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2008-2016, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -599,10 +599,14 @@ static ssize_t mdss_fb_get_panel_status(struct device *dev,
 	int ret;
 	int panel_status;
 
-	panel_status = mdss_fb_send_panel_event(mfd,
-			MDSS_EVENT_DSI_PANEL_STATUS, NULL);
-	ret = scnprintf(buf, PAGE_SIZE, "panel_status=%s\n",
-		panel_status > 0 ? "alive" : "dead");
+	if (mdss_panel_is_power_off(mfd->panel_power_state)) {
+		ret = scnprintf(buf, PAGE_SIZE, "panel_status=%s\n", "suspend");
+	} else {
+		panel_status = mdss_fb_send_panel_event(mfd,
+				MDSS_EVENT_DSI_PANEL_STATUS, NULL);
+		ret = scnprintf(buf, PAGE_SIZE, "panel_status=%s\n",
+			panel_status > 0 ? "alive" : "dead");
+	}
 
 	return ret;
 }
@@ -620,8 +624,8 @@ static ssize_t mdss_fb_force_panel_dead(struct device *dev,
 		return len;
 	}
 
-	if (sscanf(buf, "%d", &pdata->panel_info.panel_force_dead) != 1)
-		pr_err("sccanf buf error!\n");
+	if (kstrtouint(buf, 0, &pdata->panel_info.panel_force_dead))
+		pr_err("kstrtouint buf error\n");
 
 	return len;
 }
@@ -734,8 +738,8 @@ static ssize_t mdss_fb_change_dfps_mode(struct device *dev,
 	}
 	pinfo = &pdata->panel_info;
 
-	if (sscanf(buf, "%d", &dfps_mode) != 1) {
-		pr_err("sccanf buf error!\n");
+	if (kstrtouint(buf, 0, &dfps_mode)) {
+		pr_err("kstrtouint buf error\n");
 		return len;
 	}
 
@@ -1143,6 +1147,8 @@ static int mdss_fb_remove(struct platform_device *pdev)
 
 	if (mfd->key != MFD_KEY)
 		return -EINVAL;
+
+	mdss_panel_debugfs_cleanup(mfd->panel_info);
 
 	if (mdss_fb_suspend_sub(mfd))
 		pr_err("msm_fb_remove: can't stop the device %d\n",
@@ -1721,7 +1727,7 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 		blank_mode);
 #ifdef CONFIG_SHDISP /* CUST_ID_00050 */
 	if (mfd->index == 0) {
-		mdss_shdisp_lock_recovery();
+		mdss_shdisp_lock_blank();
 	}
 #endif /* CONFIG_SHDISP */
 
@@ -1808,9 +1814,9 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 
 	ATRACE_END(trace_buffer);
 
-#ifdef CONFIG_SHDISP /*CUST_ID_00050 */
+#ifdef CONFIG_SHDISP /* CUST_ID_00050 */
 	if (mfd->index == 0) {
-		mdss_shdisp_unlock_recovery();
+		mdss_shdisp_unlock_blank();
 	}
 #endif /* CONFIG_SHDISP */
 	return ret;
@@ -3379,9 +3385,9 @@ static int __mdss_fb_display_thread(void *data)
 		MDSS_XLOG(mfd->index, XLOG_FUNC_ENTRY);
 #ifdef CONFIG_SHDISP /* CUST_ID_00050 */
 		if (mfd->index == 0) {
-			mdss_shdisp_lock_recovery();
+			mdss_shdisp_lock_display();
 			ret = __mdss_fb_perform_commit(mfd);
-			mdss_shdisp_unlock_recovery();
+			mdss_shdisp_unlock_display();
 		} else {
 			ret = __mdss_fb_perform_commit(mfd);
 		}

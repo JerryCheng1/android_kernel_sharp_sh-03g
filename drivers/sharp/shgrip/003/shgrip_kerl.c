@@ -5503,6 +5503,19 @@ static int shgrip_dev_spi_probe(struct spi_device *spi)
 	
 	pin = devm_pinctrl_get(&spi->dev);
 	if(pin) {
+
+		pin_state = pinctrl_lookup_state(pin, "grip_spi_cs_active");
+		if(pin_state){
+			ret = pinctrl_select_state(pin, pin_state);
+			if(ret){
+				SHGRIP_ERR("GPIO(SPI_CS) pinctrl_select_state: Err\n");
+			} else {
+				pin_state = NULL;
+			}
+		} else {
+			SHGRIP_ERR("GPIO(SPI_CS) pin_state: Null\n");	
+		}
+
 		pin_state = pinctrl_lookup_state(pin, "grip_int_active");
 		if(pin_state){
 			ret = pinctrl_select_state(pin, pin_state);
@@ -5602,6 +5615,10 @@ request_irq_err:
 			pinctrl_select_state(pin, pin_state);
 		}
 /* SH_BSP_CUST <- Add */
+		pin_state = pinctrl_lookup_state(pin, "grip_spi_cs_suspend");
+		if(pin_state){
+			pinctrl_select_state(pin, pin_state);
+		}
 
 		pin_state = pinctrl_lookup_state(pin, "grip_pu_suspend");
 		if(pin_state){
@@ -5711,6 +5728,17 @@ cls_err:
 			SHGRIP_ERR("GPIO(INT) pin_state: Null\n");	
 		}
 
+		pin_state = pinctrl_lookup_state(pin, "grip_spi_cs_suspend");
+		if(pin_state){
+			ret = pinctrl_select_state(pin, pin_state);
+			if(ret){
+				SHGRIP_ERR("GPIO(SPI_CS) pinctrl_select_state: Err\n");
+			} else {
+				pin_state = NULL;
+			}
+		} else {
+			SHGRIP_ERR("GPIO(SPI_CS) pin_state: Null\n");	
+		}
 /* SH_BSP_CUST -> Add */
 		pin_state = pinctrl_lookup_state(pin, "grip_spi_suspend");
 		if(pin_state){

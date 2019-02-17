@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -167,7 +167,7 @@ static int msm_isp_prepare_isp_buf(struct msm_isp_buf_mgr *buf_mgr,
 		ion_import_dma_buf(buf_mgr->client,
 			qbuf_buf->planes[i].addr);
 		if (IS_ERR_OR_NULL(mapped_info->handle)) {
-			pr_err_ratelimited("%s: null/error ION handle %pK\n",
+			pr_err_ratelimited("%s: null/error ION handle %p\n",
 				__func__, mapped_info->handle);
 			goto ion_map_error;
 		}
@@ -1325,9 +1325,8 @@ static int msm_isp_buf_mgr_debug(struct msm_isp_buf_mgr *buf_mgr)
 			strlcat(print_buf, temp_buf, print_buf_size);
 			for (j = 0; j < buf_mgr->bufq[i].num_bufs; j++) {
 				bufs = &buf_mgr->bufq[i].bufs[j];
-				if (!bufs) {
+				if (!bufs)
 					break;
-				}
 				for (k = 0; k < bufs->num_planes; k++) {
 					start_addr = bufs->
 							mapped_info[k].paddr;

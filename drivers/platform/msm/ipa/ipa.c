@@ -466,7 +466,8 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (unlikely(((struct ipa_ioc_add_rt_rule *)param)->num_rules
 			!= pre_entry)) {
 			IPAERR("current %d pre %d\n",
-				((struct ipa_ioc_add_rt_rule *)param)->num_rules,
+				((struct ipa_ioc_add_rt_rule *)param)->
+				num_rules,
 				pre_entry);
 			retval = -EFAULT;
 			break;
@@ -505,7 +506,8 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (unlikely(((struct ipa_ioc_mdfy_rt_rule *)param)->num_rules
 			!= pre_entry)) {
 			IPAERR("current %d pre %d\n",
-				((struct ipa_ioc_mdfy_rt_rule *)param)->num_rules,
+				((struct ipa_ioc_mdfy_rt_rule *)param)->
+				num_rules,
 				pre_entry);
 			retval = -EFAULT;
 			break;
@@ -583,7 +585,8 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (unlikely(((struct ipa_ioc_add_flt_rule *)param)->num_rules
 			!= pre_entry)) {
 			IPAERR("current %d pre %d\n",
-				((struct ipa_ioc_add_flt_rule *)param)->num_rules,
+				((struct ipa_ioc_add_flt_rule *)param)->
+				num_rules,
 				pre_entry);
 			retval = -EFAULT;
 			break;
@@ -622,7 +625,8 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (unlikely(((struct ipa_ioc_del_flt_rule *)param)->num_hdls
 			!= pre_entry)) {
 			IPAERR("current %d pre %d\n",
-				((struct ipa_ioc_del_flt_rule *)param)->num_hdls,
+				((struct ipa_ioc_del_flt_rule *)param)->
+				num_hdls,
 				pre_entry);
 			retval = -EFAULT;
 			break;
@@ -661,7 +665,8 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (unlikely(((struct ipa_ioc_mdfy_flt_rule *)param)->num_rules
 			!= pre_entry)) {
 			IPAERR("current %d pre %d\n",
-				((struct ipa_ioc_mdfy_flt_rule *)param)->num_rules,
+				((struct ipa_ioc_mdfy_flt_rule *)param)->
+				num_rules,
 				pre_entry);
 			retval = -EFAULT;
 			break;
@@ -1102,7 +1107,8 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (unlikely(((struct ipa_ioc_del_hdr_proc_ctx *)
 			param)->num_hdls != pre_entry)) {
 			IPAERR("current %d pre %d\n",
-				((struct ipa_ioc_del_hdr_proc_ctx *)param)->num_hdls,
+				((struct ipa_ioc_del_hdr_proc_ctx *)param)->
+				num_hdls,
 				pre_entry);
 			retval = -EFAULT;
 			break;
@@ -1437,7 +1443,7 @@ static int ipa_q6_clean_q6_tables(void)
 	u32 *entry;
 
 	mem.base = dma_alloc_coherent(ipa_ctx->pdev, 4, &mem.phys_base,
-		GFP_KERNEL);
+		GFP_ATOMIC);
 	if (!mem.base) {
 		IPAERR("failed to alloc DMA buff of size %d\n", mem.size);
 		return -ENOMEM;
@@ -1672,9 +1678,6 @@ static int ipa_q6_set_ex_path_dis_agg(void)
 */
 int ipa_q6_cleanup(void)
 {
-	int client_idx;
-	int res;
-
 	ipa_inc_client_enable_clks();
 
 	if (ipa_q6_pipe_delay()) {
@@ -1693,20 +1696,34 @@ int ipa_q6_cleanup(void)
 		IPAERR("Failed to disable aggregation on Q6 pipes\n");
 		BUG();
 	}
+	return 0;
+}
 
-	if (!ipa_ctx->uc_ctx.uc_loaded) {
+/**
+* ipa_q6_pipe_reset() - A cleanup for the Q6 pipes
+*                    in IPA HW. This is performed in case of SSR.
+*
+* Return codes:
+* 0: success
+* This is a mandatory procedure, in case one of the steps fails, the
+* AP needs to restart.
+*/
+int ipa_q6_pipe_reset(void)
+{
+	int client_idx;
+	int res;
+
+	if (!atomic_read(&ipa_ctx->uc_ctx.uc_loaded)) {
 		IPAERR("uC is not loaded, won't reset Q6 pipes\n");
-		ipa_dec_client_disable_clks();
-		return 0;
+	} else {
+		for (client_idx = 0; client_idx < IPA_CLIENT_MAX; client_idx++)
+			if (IPA_CLIENT_IS_Q6_CONS(client_idx) ||
+			    IPA_CLIENT_IS_Q6_PROD(client_idx)) {
+				res = ipa_uc_reset_pipe(client_idx);
+				if (res)
+					BUG();
+			}
 	}
-
-	for (client_idx = 0; client_idx < IPA_CLIENT_MAX; client_idx++)
-		if (IPA_CLIENT_IS_Q6_CONS(client_idx) ||
-		    IPA_CLIENT_IS_Q6_PROD(client_idx)) {
-			res = ipa_uc_reset_pipe(client_idx);
-			if (res)
-				BUG();
-		}
 
 	/* set proxy vote before decrement */
 	ipa_proxy_clk_vote();

@@ -25,12 +25,26 @@
 #include <linux/delay.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
-#include <sharp/shsmartamp_ssm4329.h>
-#ifdef SHSMARTAMP_FBUILD
-#include <sharp/shsmartamp_ssm4329_fw_fbuild.h>
+
+#include <sharp/shsmartamp/shsmartamp_ssm4329.h>
+#if defined(SHSMARTAMP_FBUILD)
+#include <sharp/shsmartamp/shsmartamp_ssm4329_fw_fbuild.h>
 #else
-#include <sharp/shsmartamp_ssm4329_fw.h>
+#if (CONFIG_SH_AUDIO_DRIVER_MODEL_NUMBER == 101)
+#include <sharp/shsmartamp/shsmartamp_ssm4329_DL70_fw.h>
+#elif (CONFIG_SH_AUDIO_DRIVER_MODEL_NUMBER == 102)
+#include <sharp/shsmartamp/shsmartamp_ssm4329_DL80_fw.h>
+#elif (CONFIG_SH_AUDIO_DRIVER_MODEL_NUMBER == 103)
+#include <sharp/shsmartamp/shsmartamp_ssm4329_DL85_fw.h>
+#elif (CONFIG_SH_AUDIO_DRIVER_MODEL_NUMBER == 301)
+#include <sharp/shsmartamp/shsmartamp_ssm4329_AL20_fw.h>
+#elif (CONFIG_SH_AUDIO_DRIVER_MODEL_NUMBER == 302)
+#include <sharp/shsmartamp/shsmartamp_ssm4329_AL25_fw.h>
+#else
+#include <sharp/shsmartamp/shsmartamp_ssm4329_fw.h>
 #endif
+#endif
+
 #include <linux/of_gpio.h>
 #include <linux/qpnp/pin.h>
 #ifdef SHSMARTAMP_ENG

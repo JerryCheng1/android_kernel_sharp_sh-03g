@@ -185,6 +185,21 @@ out:
 	return rc;
 }
 
+#ifdef CONFIG_SHSYS_CUST
+static int ecryptfs_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	struct file *lower_file = ecryptfs_file_to_lower(file);
+	/*
+	 * Don't allow mmap on top of file systems that don't support it
+	 * natively.  If FILESYSTEM_MAX_STACK_DEPTH > 2 or ecryptfs
+	 * allows recursive mounting, this will need to be extended.
+	 */
+	if (!lower_file->f_op->mmap)
+		return -ENODEV;
+	return generic_file_mmap(file, vma);
+}
+#endif /* CONFIG_SHSYS_CUST */
+
 /**
  * ecryptfs_open
  * @inode: inode speciying file to open
@@ -360,7 +375,11 @@ const struct file_operations ecryptfs_main_fops = {
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = ecryptfs_compat_ioctl,
 #endif
+#ifdef CONFIG_SHSYS_CUST
+	.mmap = ecryptfs_mmap,
+#else  /* CONFIG_SHSYS_CUST */
 	.mmap = generic_file_mmap,
+#endif /* CONFIG_SHSYS_CUST */
 	.open = ecryptfs_open,
 	.flush = ecryptfs_flush,
 	.release = ecryptfs_release,

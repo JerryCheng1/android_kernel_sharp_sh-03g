@@ -29,10 +29,16 @@ DTB_OBJS := $(addprefix $(obj)/dts/,$(DTB_LIST))
 $(obj)/Image: vmlinux FORCE
 	$(call if_changed,objcopy)
 
+$(obj)/ImageSize: $(obj)/Image FORCE
+	$(call if_changed,dumpsizel)
+
 $(obj)/Image.gz: $(obj)/Image FORCE
 	$(call if_changed,gzip)
 
 $(obj)/Image.gz-dtb: $(obj)/Image.gz $(DTB_OBJS) FORCE
+	$(call if_changed,cat)
+
+$(obj)/Image-dtb: $(obj)/Image $(DTB_OBJS) $(obj)/ImageSize FORCE
 	$(call if_changed,cat)
 
 install: $(obj)/Image

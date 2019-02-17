@@ -41,10 +41,10 @@
 
 #include <asm/current.h>
 
-#ifdef CONFIG_SHLOG_SYSTEM
+#ifdef CONFIG_SHLOG_SYSTEM_PANIC_ON_SUBSYS
 #include <soc/qcom/restart.h>
 static int is_ssr_modem_crashed = 0;
-#endif /* CONFIG_SHLOG_SYSTEM */
+#endif /* CONFIG_SHLOG_SYSTEM_PANIC_ON_SUBSYS */
 
 #define DISABLE_SSR 0x9889deed
 /* If set to 0x9889deed, call to subsystem_restart_dev() returns immediately */
@@ -876,13 +876,13 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 
 	for_each_subsys_device(list, count, NULL, subsystem_free_memory);
 
-#ifdef CONFIG_SHLOG_SYSTEM
+#ifdef CONFIG_SHLOG_SYSTEM_PANIC_ON_SUBSYS
 	if ( is_ssr_modem_crashed ){
 		msm_set_restart_mode(RESTART_MODEM_CRASH);
 	}
 	msleep(500);
 	panic("subsys-restart: Resetting the SoC - subsys crashed.\n");
-#endif /*  CONFIG_SHLOG_SYSTEM*/
+#endif /*  CONFIG_SHLOG_SYSTEM_PANIC_ON_SUBSYS*/
 
 	notify_each_subsys_device(list, count, SUBSYS_BEFORE_POWERUP, NULL);
 	for_each_subsys_device(list, count, NULL, subsystem_powerup);
@@ -937,11 +937,11 @@ static void device_restart_work_hdlr(struct work_struct *work)
 							device_restart_work);
 
 	notify_each_subsys_device(&dev, 1, SUBSYS_SOC_RESET, NULL);
-#ifdef CONFIG_SHLOG_SYSTEM
+#ifdef CONFIG_SHLOG_SYSTEM_PANIC_ON_SUBSYS
 	if (!strcmp(dev->desc->name, "modem")) {
 		msm_set_restart_mode(RESTART_MODEM_CRASH);
 	}
-#endif /* CONFIG_SHLOG_SYSTEM */
+#endif /* CONFIG_SHLOG_SYSTEM_PANIC_ON_SUBSYS */
 	panic("subsys-restart: Resetting the SoC - %s crashed.",
 							dev->desc->name);
 }
@@ -982,11 +982,11 @@ int subsystem_restart_dev(struct subsys_device *dev)
 	switch (dev->restart_level) {
 
 	case RESET_SUBSYS_COUPLED:
-#ifdef CONFIG_SHLOG_SYSTEM
+#ifdef CONFIG_SHLOG_SYSTEM_PANIC_ON_SUBSYS
 		if (!strcmp(name, "modem")) {
 			is_ssr_modem_crashed = 1;
 		}
-#endif /* CONFIG_SHLOG_SYSTEM */
+#endif /* CONFIG_SHLOG_SYSTEM_PANIC_ON_SUBSYS */
 		__subsystem_restart_dev(dev);
 		break;
 	case RESET_SOC:

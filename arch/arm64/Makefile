@@ -53,13 +53,16 @@ libs-y		+= $(LIBGCC)
 # Default target when executing plain make
 ifeq ($(CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE),y)
 KBUILD_IMAGE	:= Image.gz-dtb
+KBUILD_IMAGE_UNCOMPRESSED	:= Image-dtb
 else
 KBUILD_IMAGE	:= Image.gz
+KBUILD_IMAGE_UNCOMPRESSED	:= Image
 endif
 
 KBUILD_DTBS	:= dtbs
 
-all:	$(KBUILD_IMAGE) $(KBUILD_DTBS)
+all:	$(KBUILD_IMAGE) $(KBUILD_IMAGE_UNCOMPRESSED) $(KBUILD_DTBS)
+$(KBUILD_IMAGE):	$(KBUILD_IMAGE_UNCOMPRESSED)
 
 boot := arch/arm64/boot
 
@@ -81,6 +84,9 @@ vdso_install:
 	$(Q)$(MAKE) $(build)=arch/arm64/kernel/vdso $@
 
 Image.gz-dtb: vmlinux scripts dtbs
+	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@
+
+Image-dtb: vmlinux scripts dtbs
 	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@
 
 # We use MRPROPER_FILES and CLEAN_FILES now

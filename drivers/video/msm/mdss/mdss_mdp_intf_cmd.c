@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1672,7 +1672,7 @@ int mdss_mdp_cmd_cancel_clk_work(struct mdss_mdp_ctl *pctl)
 {
 	struct mdss_mdp_cmd_ctx *pctx;
 
-	pr_debug("%s: enter - (ctl=%pK)\n", __func__, pctl);
+	pr_debug("%s: enter - (ctl=%p)\n", __func__, pctl);
 
 	if (!pctl) {
 		pr_err("invalid argument.\n");
@@ -1698,7 +1698,7 @@ int mdss_mdp_cmd_clk_ctrl(struct mdss_mdp_ctl *pctl, bool onoff)
 	unsigned long flags;
 	struct mdss_mdp_cmd_ctx *pctx;
 
-	pr_debug("%s: enter - (ctl=%pK onoff=%d)\n", __func__, pctl, onoff);
+	pr_debug("%s: enter - (ctl=%p onoff=%d)\n", __func__, pctl, onoff);
 
 	if (!pctl) {
 		pr_err("invalid argument.\n");
@@ -1740,7 +1740,7 @@ int mdss_mdp_cmd_tearcheck_enable(struct mdss_mdp_ctl *ctl, bool enable)
 {
 	int ret;
 
-	pr_debug("%s: in ctl=%pK enable=%d\n", __func__, ctl, enable);
+	pr_debug("%s: in ctl=%p enable=%d\n", __func__, ctl, enable);
 
 	if (!ctl) {
 		pr_err("%s: ctl is NULL.\n", __func__);

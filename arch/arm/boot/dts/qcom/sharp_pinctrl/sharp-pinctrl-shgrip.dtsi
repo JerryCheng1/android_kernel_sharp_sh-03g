@@ -20,6 +20,21 @@
 		/*  pinctrl customize setting            */
 		/*  GripSensor                           */
 		/*****************************************/
+
+		sharp_pinctrl_grip_cs{
+			qcom,pins = <&gp 2>;
+			qcom,pin-func = <0>;
+			qcom,num-grp-pins = <1>;
+			label = "grip_pin_cs";
+			grip_spi_cs_active: active {
+				drive-strength = <2>;
+				bias-disable;
+			};
+			grip_spi_cs_suspend: suspend {
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
 		sharp_pinctrl_grip_pu{
 			qcom,pins = <&gp 11>;
 			qcom,pin-func = <0>;

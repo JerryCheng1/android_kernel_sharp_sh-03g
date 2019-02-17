@@ -3905,7 +3905,7 @@ static int voice_send_cvs_packet_exchange_config_cmd(struct voice_data *v)
 	packet_exchange_config_pkt.enc_buf_addr = (uint32_t)enc_buf;
 	packet_exchange_config_pkt.enc_buf_size = 4096;
 
-	pr_debug("%s: dec buf: add %pa, size %d, enc buf: add %pa, size %d\n",
+	pr_debug("%s: dec buf: add %pK, size %d, enc buf: add %pK, size %d\n",
 		__func__,
 		&dec_buf,
 		packet_exchange_config_pkt.dec_buf_size,
