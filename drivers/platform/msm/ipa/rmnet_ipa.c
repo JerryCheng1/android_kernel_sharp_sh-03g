@@ -2593,6 +2593,8 @@ static int __init ipa_wwan_init(void)
 	atomic_set(&is_initialized, 0);
 	atomic_set(&is_ssr, 0);
 	mutex_init(&add_mux_channel_lock);
+	ipa_qmi_init();
+	
 	/* Register for Modem SSR */
 	subsys = subsys_notif_register_notifier(SUBSYS_MODEM, &ssr_notifier);
 	if (!IS_ERR(subsys))
@@ -2604,6 +2606,7 @@ static int __init ipa_wwan_init(void)
 static void __exit ipa_wwan_cleanup(void)
 {
 	mutex_destroy(&add_mux_channel_lock);
+	ipa_qmi_cleanup();
 	platform_driver_unregister(&rmnet_ipa_driver);
 }
 
