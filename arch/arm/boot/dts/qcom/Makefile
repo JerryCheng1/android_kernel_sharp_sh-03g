@@ -283,6 +283,7 @@ dtb-$(CONFIG_ARCH_MM7) += msm8992-sharp-mm7-mtp.dtb
 else
 dtb-$(CONFIG_ARCH_LYNX_DL85) += msm8992-sharp-dl85-mtp.dtb
 endif
+dtb-$(CONFIG_ARCH_DECKARD_AL25) += msm8992-sharp-al25-mtp.dtb
 
 DTB_NAMES := $(subst $\",,$(CONFIG_BUILD_ARM_APPENDED_DTB_IMAGE_NAMES))
 ifneq ($(DTB_NAMES),)

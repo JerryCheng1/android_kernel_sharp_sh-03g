@@ -92,7 +92,7 @@
 /* System Parameter                                          */
 /* --------------------------------------------------------- */
 #define SPI_BUFFER							(259)
-#define SPI_CLK_SPEED						(960000)
+#define SPI_CLK_SPEED						(400000)
 #define SPI_BIT_WORD						(8)
 
 #define SHGRIP_PM_QOS_LATENCY_VALUE			(1)

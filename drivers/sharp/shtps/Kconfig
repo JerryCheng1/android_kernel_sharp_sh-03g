@@ -22,6 +22,11 @@ if TOUCHSCREEN_SHTPS
 		default n
 		depends on SHTPS_SY3X00_DEV
 
+	config SHTPS_SY3000_PLG543_001_1
+		tristate "SY3000 PLG543-001-1"
+		default n
+		depends on SHTPS_SY3X00_DEV
+
 	config SHTPS_SY3000_PLG543_001_4
 		tristate "SY3000 PLG543-001-4"
 		default n

@@ -1,0 +1,296 @@
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+#include "sharp-al25-shdisp.dtsi"
+#include "sharp_pinctrl/sharp-pinctrl-al25.dtsi"
+#include "msm8992-camera-sensor-ois-13M-5M.dtsi"
+
+&soc {
+	/*****************************************/
+	/*  BLSP1                                */
+	/*****************************************/
+	/*---------------------*/
+	/* BLSP1 QUP0(BLSP#1)  */
+	/*---------------------*/
+	spi@f9923000 {
+		status = "ok";
+		shgrip_dev@0 {
+			status = "ok";
+			compatible = "sharp,shgrip_dev";
+			reg = <0>;
+			spi-max-frequency = <2000000>;
+			sharp,spi-cs  = <&msm_gpio 2 0x00>;
+			sharp,irq-int = <&msm_gpio 64 0x00>;
+			sharp,irq-rst = <&pm8994_gpios 12 0>;
+
+			pinctrl-names = "grip_int_active","grip_int_suspend";
+			pinctrl-0 = <&grip_int_active>;
+			pinctrl-1 = <&grip_int_suspend>;
+		};
+	};
+
+	/*---------------------*/
+	/* BLSP1 QUP1(BLSP#2)  */
+	/*---------------------*/
+	spi@f9924000 {
+		status = "ok";
+		shtps_rmi@0 {
+			status = "ok";
+			compatible = "sharp,shtps_rmi";
+			reg = <0>;
+			spi-max-frequency = <400000>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <61 0>;
+			spi-cpol;
+			spi-cpha;
+
+			/* user defined property */
+			shtps_rmi,rst_pin = <&msm_gpio 60 0>;
+			shtps_rmi,vdd_3_0V = <&pm8994_l21>;
+			shtps_rmi,tpin = <&msm_gpio 69 0>;
+		};
+	};
+
+	/*---------------------*/
+	/* BLSP1 QUP2(BLSP#3)  */
+	/*---------------------*/
+
+	/*---------------------*/
+	/* BLSP1 QUP3(BLSP#4)  */
+	/*---------------------*/
+	i2c@f9926000 {
+		status = "ok";
+	};
+
+	/*---------------------*/
+	/* BLSP1 QUP4(BLSP#5)  */
+	/*---------------------*/
+	i2c@f9927000 {
+		status = "ok";
+		STC3100@70 {
+			status = "ok";
+			compatible = "STC3100";
+			reg = <0x70>;
+		};
+	};
+
+	/*---------------------*/
+	/* BLSP1 QUP5(BLSP#6)  */
+	/*---------------------*/
+	uart@f9922000 {
+		status = "ok";
+	};
+
+	/*****************************************/
+	/*  BLSP2                                */
+	/*****************************************/
+	/*---------------------*/
+	/* BLSP2 QUP0(BLSP#7)  */
+	/*---------------------*/
+
+	/*---------------------*/
+	/* BLSP2 QUP1(BLSP#8)  */
+	/*---------------------*/
+	uart@f995e000 {
+		status = "ok";
+	};
+
+	/*---------------------*/
+	/* BLSP2 QUP2(BLSP#9)  */
+	/*---------------------*/
+
+	/*---------------------*/
+	/* BLSP2 QUP3(BLSP#10)  */
+	/*---------------------*/
+	spi@f9966000 {
+		status = "ok";
+		sensorhub@0 {
+			status = "ok";
+			compatible = "sharp,sensorhub";
+			reg = <0>;
+			spi-max-frequency = <2000000>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <75 0>;
+			spi-cpol;
+			spi-cpha;
+			qcom,shub-gpio-reset = <&msm_gpio 93 0>;
+			qcom,shub-gpio-brmp = <&msm_gpio 94 0>;
+			qcom,shub-gpio-int0 = <&msm_gpio 75 0>;
+			qcom,shub-gpio-int1 = <&msm_gpio 76 0>;
+			pinctrl-names = "shub_reset_active","shub_reset_suspend",
+							"shub_int0_active","shub_int0_suspend",
+							"shub_int1_active","shub_int1_suspend",
+							"shub_brmp_active","shub_brmp_suspend";
+			pinctrl-0 = <&shub_reset_active>;
+			pinctrl-1 = <&shub_reset_suspend>;
+			pinctrl-2 = <&shub_int0_active>;
+			pinctrl-3 = <&shub_int0_suspend>;
+			pinctrl-4 = <&shub_int1_active>;
+			pinctrl-5 = <&shub_int1_suspend>;
+			pinctrl-6 = <&shub_brmp_active>;
+			pinctrl-7 = <&shub_brmp_suspend>;
+			shub,shub_acc_axis_val = <0>;
+			shub,shub_gyro_axis_val = <0>;
+			shub,shub_mag_axis_val = <0>;
+		};
+	};
+
+	/*---------------------*/
+	/* BLSP2 QUP4(BLSP#11)  */
+	/*---------------------*/
+	i2c@f9967000 {
+		status = "ok";
+/* SH_AUDIO_DRIVER -> */ /*18-002*/
+		shsmartamp@34 {
+			status = "ok";
+			compatible = "sharp,shsmartamp_i2c";
+			sharp,shsmartamp-en-gpio = <&pm8994_gpios 5 0>;
+			reg = <0x34>;
+		};
+/* SH_AUDIO_DRIVER <- */ /*14-002*/
+	};
+
+	/*---------------------*/
+	/* BLSP2 QUP5(BLSP#12)  */
+	/*---------------------*/
+	i2c@f9968000 {
+		status = "ok";
+		nfc_i2c_drv@55 {
+			status = "ok";
+			compatible = "sharp,nfc_i2c_drv";
+			reg = <0x55>;
+
+			sharp,nfc-nint-gpio = <&msm_gpio 29 0x00>;
+			pinctrl-names = "nfc_nint_active","nfc_nint_suspend";
+			pinctrl-0 = <&nfc_nint_active>;
+			pinctrl-1 = <&nfc_nint_suspend>;
+		};
+	};
+
+	nfc_gpio_drv {
+		compatible = "nfc_gpio_drv";
+		qcom,nfc-nint   = <&msm_gpio 29  0x00>;
+		qcom,nfc-pon    = <&msm_gpio 95  0x00>;
+		qcom,nfc-status = <&msm_gpio 108 0x00>;
+		pinctrl-names = "nfc_pon_active","nfc_pon_suspend",
+						"nfc_status_active","nfc_status_suspend";
+		pinctrl-0 = <&nfc_pon_active>;
+		pinctrl-1 = <&nfc_pon_suspend>;
+		pinctrl-2 = <&nfc_status_active>;
+		pinctrl-3 = <&nfc_status_suspend>;
+	};
+
+	snfc_en {
+		compatible = "snfc_en";
+	};
+
+    tunctrl {
+        compatible = "tunctrl";
+		qcom,dtv-en-gpio = <&pm8994_gpios 22 0>;
+		qcom,dtv-rst-gpio  = <&msm_gpio 106 0x00>;
+		qcom,ofdm-rst-gpio  = <&msm_gpio 38 0x00>;
+    };
+
+/* => SH_AUDIO_DRIVER 18-001 */
+	sound {
+		qcom,model = "msm8994-tomtom-mtp-snd-card";
+
+		qcom,audio-routing =
+			"AIF4 VI", "MCLK",
+			"RX_BIAS", "MCLK",
+			"LDO_H", "MCLK",
+			"MADINPUT", "MCLK",
+/* => SH_AUDIO_DRIVER 18-002 */
+			"Lineout_1 amp", "LINEOUT1",
+			"Lineout_3 amp", "LINEOUT3",
+/* <= SH_AUDIO_DRIVER 18-002 */
+			"AMIC1", "MIC BIAS1 External",
+			"MIC BIAS1 External", "Primary Mic",
+			"AMIC2", "MIC BIAS2 External",
+			"MIC BIAS2 External", "Headset Mic",
+			"AMIC3", "MIC BIAS3 External",
+			"MIC BIAS3 External", "Secondary Mic";
+/* => SH_AUDIO_DRIVER 18-004 */
+		/delete-property/ qcom,us-euro-gpios;
+		/delete-property/ qcom,ext-ult-spk-amp-gpio;
+		qcom,mbhc-audio-jack-type = "4-pole-jack";
+/* <= SH_AUDIO_DRIVER 18-004 */
+/* => SH_AUDIO_DRIVER 18-060 */
+		/delete-property/ qcom,hdmi-audio-rx;
+/* <= SH_AUDIO_DRIVER 18-060 */
+	};
+/* <= SH_AUDIO_DRIVER 18-001 */
+
+	gp2a_prox {
+		compatible = "gp2a-prox";
+		qcom,prox-int-gpio  = <&msm_gpio 40 0x00>;
+		interrupt-parent  = <&msm_gpio>;
+		interrupts = <40 0>;
+		interrupt-names = "prox_int";
+		pinctrl-names = "prox_int_active","prox_int_suspend";
+		pinctrl-0 = <&prox_int_active>;
+		pinctrl-1 = <&prox_int_active>;
+	};
+
+	flip_switch {
+		compatible = "flip_switch";
+		qcom,flip-det-gpio  = <&msm_gpio 77 0x00>;
+		interrupt-parent  = <&msm_gpio>;
+		interrupts = <77 0>;
+		interrupt-names = "flip_det";
+		pinctrl-names = "flip_det_active","flip_det_suspend";
+		pinctrl-0 = <&flip_det_active>;
+		pinctrl-1 = <&flip_det_suspend>;
+	};
+
+/* SH_WLAN_DRIVER ADD -> */
+	qcom,cnss {
+		pinctrl-0 = <&sharp_cnss_default>;
+	};
+
+	pcie0: qcom,pcie@fc520000 {
+		pinctrl-0 = <&sharp_pcie0_clkreq_default &sharp_pcie0_perst_default &sharp_pcie0_wake_default>;
+		pinctrl-1 = <&sharp_pcie0_clkreq_default &sharp_pcie0_perst_default &sharp_pcie0_wake_sleep>;
+	};
+/* <- SH_WLAN_DRIVER ADD */
+};
+
+/* => SH_AUDIO_DRIVER 18-003 */
+&slim_msm {
+	tomtom_codec {
+		qcom,cdc-micbias-cfilt1-mv = <2700>;
+		qcom,cdc-micbias-cfilt2-mv = <2700>;
+		qcom,cdc-micbias1-cfilt-sel = <0x0>;
+		qcom,cdc-micbias2-cfilt-sel = <0x1>;
+		qcom,cdc-micbias3-cfilt-sel = <0x0>;
+		qcom,cdc-micbias4-cfilt-sel = <0x0>;
+		/delete-property/ qcom,cdc-micbias1-ext-cap;
+		/delete-property/ qcom,cdc-micbias2-ext-cap;
+		/delete-property/ qcom,cdc-micbias3-ext-cap;
+		/delete-property/ qcom,cdc-micbias4-ext-cap;
+/* => SH_AUDIO_DRIVER 18-062 */
+		qcom,cdc-mad-dmic-rate = <4800000>;
+/* <= SH_AUDIO_DRIVER 18-062 */
+	};
+};
+/* <= SH_AUDIO_DRIVER 18-003 */
+&spmi_bus {
+
+	qcom,pmi8994@3 {
+
+		pmi8994_haptics: qcom,haptic@c000 {
+				qcom,vmax-mv = <1624>; 
+				};
+	};
+};
+
+#include "sharp-al25-pm8994.dtsi"
+#include "sharp-al25-pmi8994.dtsi"

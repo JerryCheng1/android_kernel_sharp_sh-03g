@@ -22,7 +22,11 @@
 #if defined(SHDISP_MODEL_FS)
 #include "shdisp_bl71y8_led_fs_dl.h"
 #elif defined(SHDISP_MODEL_MID)
+ #if defined(SHDISP_AL)
+#include "shdisp_bl71y8_led_mid_al.h"
+ #else
 #include "shdisp_bl71y8_led_mid_dl.h"
+ #endif /* SHDISP_AL */
 #else
  #if defined(SHDISP_DL)
 #include "shdisp_bl71y8_led_dl.h"

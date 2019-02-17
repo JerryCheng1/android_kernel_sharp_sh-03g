@@ -308,6 +308,9 @@ static struct rcg_clk blsp1_qup1_i2c_apps_clk_src = {
 };
 
 static struct clk_freq_tbl ftbl_blsp1_qup1_spi_apps_clk_src[] = {
+#if defined( CONFIG_SENSOR_SHGRIP )
+	F(    400000,         gcc_xo,   12,    1,     4),
+#endif /* #if defined( CONFIG_SENSOR_SHGRIP ) */
 	F(    960000,         gcc_xo,   10,    1,     2),
 #if defined( CONFIG_SENSOR_SHGRIP )
 	F(   2000000, gpll0_out_main,   10,    1,    30),

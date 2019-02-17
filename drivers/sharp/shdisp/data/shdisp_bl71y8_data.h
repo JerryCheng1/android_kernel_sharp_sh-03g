@@ -21,7 +21,11 @@
 #if defined(SHDISP_MODEL_FS)
 #include "shdisp_bl71y8_data_fs.h"
 #elif defined(SHDISP_MODEL_MID)
+ #if defined(SHDISP_AL)
+#include "shdisp_bl71y8_data_mid_al.h"
+ #else
 #include "shdisp_bl71y8_data_mid_dl.h"
+ #endif /* SHDISP_AL */
 #else
  #if defined(SHDISP_DL)
 #include "shdisp_bl71y8_data_dl.h"
