@@ -90,6 +90,7 @@ static int shdisp_bdic_IO_set_bit_reg(unsigned char reg, unsigned char val);
 static int shdisp_bdic_IO_clr_bit_reg(unsigned char reg, unsigned char val);
 static int shdisp_bdic_IO_msk_bit_reg(unsigned char reg, unsigned char val, unsigned char msk);
 static int shdisp_bdic_IO_bank_set(unsigned char val);
+static int shdisp_bdic_IO_chk_write_reg(unsigned char reg, unsigned char val);
 #if defined(USE_LINUX) || defined(SHDISP_APPSBL)
 static int shdisp_bdic_IO_psals_write_reg(unsigned char reg, unsigned char val);
 static int shdisp_bdic_IO_psals_msk_bit_reg(unsigned char reg, unsigned char val, unsigned char mask);
@@ -106,6 +107,8 @@ static int shdisp_bdic_register_driver(void);
 /* VARIABLES                                                                 */
 /* ------------------------------------------------------------------------- */
 static int rst_gpio = 0;
+
+#define SHDISP_BANK_RETRY (3)
 
 /* ------------------------------------------------------------------------- */
 /* FUNCTIONS                                                                 */
@@ -216,7 +219,7 @@ unsigned char shdisp_bdic_API_correct_proh_val(unsigned char value)
     unsigned int cnt = 0;
     for (; cnt < ARRAY_SIZE(shdisp_bdic_prohibit_tbl); cnt++) {
         if (shdisp_bdic_prohibit_tbl[cnt].prohibit == value) {
-            SHDISP_DEBUG(": change to %X from %X", 
+            SHDISP_DEBUG(": change to %X from %X",
                 shdisp_bdic_prohibit_tbl[cnt].correct, value);
             value = shdisp_bdic_prohibit_tbl[cnt].correct;
             break;
@@ -672,6 +675,9 @@ static int shdisp_bdic_seq_regset(const shdisp_bdicRegSetting_t *regtable, int s
         case SHDISP_BDIC_STR:
             ret = shdisp_bdic_IO_write_reg(tbl->addr, tbl->data);
             break;
+        case SHDISP_BDIC_CHKWR:
+            ret = shdisp_bdic_IO_chk_write_reg(tbl->addr, tbl->data);
+            break;
         case SHDISP_BDIC_SET:
             ret = shdisp_bdic_IO_set_bit_reg(tbl->addr, tbl->data);
             break;
@@ -958,6 +964,38 @@ static int shdisp_bdic_IO_msk_bit_reg(unsigned char reg, unsigned char val, unsi
 
     ret = shdisp_SYS_API_bdic_i2c_mask_write(reg, val, msk);
     return ret;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_bdic_IO_chk_write_reg                                              */
+/* ------------------------------------------------------------------------- */
+static int shdisp_bdic_IO_chk_write_reg(unsigned char reg, unsigned char val)
+{
+    int ret = SHDISP_RESULT_SUCCESS;
+    unsigned char read_val = 0;
+    int bank_retry = 0;
+
+    for (bank_retry = 0; bank_retry < SHDISP_BANK_RETRY; bank_retry++) {
+        ret = shdisp_SYS_API_bdic_i2c_write(reg, val);
+        if (ret != SHDISP_RESULT_SUCCESS) {
+            SHDISP_ERR("<RESULT_FAILURE> i2c_write.")
+            return ret;
+        }
+
+        ret = shdisp_SYS_API_bdic_i2c_dummy_read(reg, &read_val);
+        if (ret != SHDISP_RESULT_SUCCESS) {
+            SHDISP_ERR("<RESULT_FAILURE> i2c_read.")
+            return ret;
+        }
+
+        if (val == read_val) {
+            return SHDISP_RESULT_SUCCESS;
+        }
+        SHDISP_ERR("<BANK1_ERROR> addr:0x%02X, write_data:0x%02X, read_data:0x%02X, retry:%d", reg, val, read_val, bank_retry);
+    }
+
+    SHDISP_ERR("<RESULT_FAILURE> chk_write.")
+    return SHDISP_RESULT_FAILURE;
 }
 
 #if defined(USE_LINUX) || defined(SHDISP_APPSBL)

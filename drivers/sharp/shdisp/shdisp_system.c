@@ -61,6 +61,7 @@
 /* ------------------------------------------------------------------------- */
 #define SHDISP_INT_FLAGS (IRQF_TRIGGER_LOW | IRQF_DISABLED)
 #define SHDISP_I2C_SPEED_KHZ (400)
+#define SHDISP_I2C_RETRY (10)
 
 /* ------------------------------------------------------------------------- */
 /* PROTOTYPES                                                                */
@@ -775,6 +776,84 @@ int  shdisp_SYS_API_bdic_i2c_multi_read(unsigned char addr, unsigned char *data,
                         addr, size,
                         read_buf[0], read_buf[1], read_buf[2], read_buf[3],
                         read_buf[4], read_buf[5], read_buf[6], read_buf[7]);
+
+    if (result == 1) {
+        SHDISP_ERR("<OTHER> i2c_transfer time out(i2c_ret = %d).", i2c_ret);
+        return SHDISP_RESULT_FAILURE_I2C_TMO;
+    }
+
+    return SHDISP_RESULT_SUCCESS;
+}
+
+/* ------------------------------------------------------------------------- */
+/* shdisp_SYS_API_bdic_i2c_dummy_read                                        */
+/* ------------------------------------------------------------------------- */
+int shdisp_SYS_API_bdic_i2c_dummy_read(unsigned char addr, unsigned char *data)
+{
+    struct i2c_msg msg;
+    unsigned char write_buf[2];
+    unsigned char read_buf[2];
+    unsigned char dummy_addr = 0;
+    int i2c_ret;
+    int result = 1;
+    int retry;
+
+    memset(&write_buf, 0, sizeof(write_buf));
+    memset(&read_buf, 0, sizeof(read_buf));
+
+    if (data == NULL) {
+        SHDISP_ERR("<NULL_POINTER> data.");
+        return SHDISP_RESULT_FAILURE;
+    }
+
+    if (addr == 0x00) {
+        *data = 0;
+        SHDISP_I2CLOG("(addr=0x%02X, data=0x%02X)", addr, *data);
+        return SHDISP_RESULT_SUCCESS;
+    }
+
+    for (retry = 0; retry <= SHDISP_I2C_RETRY; retry++) {
+        dummy_addr   = addr -1;
+        msg.addr     = bdic_i2c_p->this_client->addr;
+        msg.flags    = 0;
+        msg.len      = 1;
+        msg.buf      = write_buf;
+        write_buf[0] = dummy_addr;
+        i2c_ret = i2c_transfer(bdic_i2c_p->this_client->adapter, &msg, 1);
+        if (i2c_ret > 0) {
+            msg.addr  = bdic_i2c_p->this_client->addr;
+            msg.flags = I2C_M_RD;
+            msg.len   = 1;
+            msg.buf   = read_buf;
+            i2c_transfer(bdic_i2c_p->this_client->adapter, &msg, 1);
+            SHDISP_I2CLOG(" dummy_read (addr=0x%02X, data=0x%02X)", dummy_addr, read_buf[0]);
+        }
+
+        msg.addr     = bdic_i2c_p->this_client->addr;
+        msg.flags    = 0;
+        msg.len      = 1;
+        msg.buf      = write_buf;
+        write_buf[0] = addr;
+
+        i2c_ret = i2c_transfer(bdic_i2c_p->this_client->adapter, &msg, 1);
+
+        if (i2c_ret > 0) {
+
+            msg.addr  = bdic_i2c_p->this_client->addr;
+            msg.flags = I2C_M_RD;
+            msg.len   = 1;
+            msg.buf   = read_buf;
+
+            i2c_ret = i2c_transfer(bdic_i2c_p->this_client->adapter, &msg, 1);
+            if (i2c_ret > 0) {
+                *data = read_buf[0];
+                result = 0;
+                break;
+            }
+        }
+    }
+
+    SHDISP_I2CLOG("(addr=0x%02X, data=0x%02X)", addr, *data);
 
     if (result == 1) {
         SHDISP_ERR("<OTHER> i2c_transfer time out(i2c_ret = %d).", i2c_ret);

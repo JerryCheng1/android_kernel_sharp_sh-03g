@@ -141,6 +141,7 @@ int  shdisp_SYS_API_bdic_i2c_mask_write(unsigned char addr, unsigned char data, 
 int  shdisp_SYS_API_bdic_i2c_multi_write(unsigned char addr, unsigned char *wval, unsigned char size);
 int  shdisp_SYS_API_bdic_i2c_read(unsigned char addr, unsigned char *data);
 int  shdisp_SYS_API_bdic_i2c_multi_read(unsigned char addr, unsigned char *data, int size);
+int  shdisp_SYS_API_bdic_i2c_dummy_read(unsigned char addr, unsigned char *data);
 
 int  shdisp_SYS_API_sensor_i2c_init(void);
 int  shdisp_SYS_API_sensor_i2c_exit(void);

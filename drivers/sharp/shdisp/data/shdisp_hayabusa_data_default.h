@@ -414,6 +414,8 @@ static char mipi_sh_hayabusa_cmd_OSCtrimONE0[2][2] = {
     {0xED, 0x06}
 };
 
+static char mipi_sh_hayabusa_cmd_ExtendClockControlF0[2] = {0x22, 0x04};
+
 static char mipi_sh_hayabusa_cmd_OSCtrimONF0[4][2] = {
     {0x39, 0x0A},
     {0x29, 0x23},
@@ -2271,6 +2273,8 @@ static struct shdisp_dsi_cmd_desc mipi_sh_hayabusa_cmds_initialE0_cut1_1[] = {
 static struct shdisp_dsi_cmd_desc mipi_sh_hayabusa_cmds_initialF0[] = {
     {SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_hayabusa_cmd_SwitchCommandF0, 0, 0},
     {SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_hayabusa_cmd_MTPLoadStop,     0, 0},
+
+    {SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_hayabusa_cmd_ExtendClockControlF0,  0, 0},
 
     {SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_hayabusa_cmd_OSCtrimONF0[0],  0, 0},
     {SHDISP_DTYPE_DCS_WRITE1, 2, mipi_sh_hayabusa_cmd_OSCtrimONF0[1],  0, 0},
